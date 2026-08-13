@@ -15,6 +15,11 @@
     return config.targetOutput > 0 ? config.utilitiesMonthly / config.targetOutput : 0;
   }
 
+  function materialEffectivePrice(material) {
+    if (!material) return 0;
+    return material.price * (1 + (material.lossPercent || 0) / 100);
+  }
+
   function materialsCostPerM3(recipe, materials) {
     if (!recipe) return 0;
     var byId = {};
@@ -22,8 +27,7 @@
     return recipe.items.reduce(function (sum, item) {
       var mat = byId[item.materialId];
       if (!mat) return sum;
-      var lossFactor = 1 + (mat.lossPercent || 0) / 100;
-      return sum + item.qty * mat.price * lossFactor;
+      return sum + item.qty * materialEffectivePrice(mat);
     }, 0);
   }
 
@@ -41,6 +45,7 @@
     payrollPerM3: payrollPerM3,
     plantDeprPerM3: plantDeprPerM3,
     utilitiesPerM3: utilitiesPerM3,
+    materialEffectivePrice: materialEffectivePrice,
     materialsCostPerM3: materialsCostPerM3,
     amortPerKm: amortPerKm,
     tripsForVolume: tripsForVolume

@@ -75,7 +75,10 @@
 
     var header = document.createElement('div');
     header.className = 'mat-catalog-row';
-    header.innerHTML = '<div class="col-label">Материал</div><div class="col-label">Ед.</div><div class="col-label">Цена</div><div></div>';
+    header.innerHTML =
+      '<div class="col-label">Материал</div><div class="col-label">Ед.</div>' +
+      '<div class="col-label">Закупочная цена</div><div class="col-label">Потери</div>' +
+      '<div class="col-label">Цена с учётом потерь</div><div></div>';
     container.appendChild(header);
 
     State.data.materials.forEach(function (mat) {
@@ -85,11 +88,15 @@
         '<div class="mat-name"></div>' +
         '<div class="mat-unit"></div>' +
         '<div class="mat-price"></div>' +
+        '<div class="mat-loss"></div>' +
+        '<div class="mat-real-price"></div>' +
         '<div class="tile-actions"></div>';
+      var effectivePrice = Calc.materialEffectivePrice(mat);
       row.querySelector('.mat-name').textContent = mat.name;
       row.querySelector('.mat-unit').textContent = mat.unit;
-      row.querySelector('.mat-price').textContent = Format.fmt(mat.price, 2) + ' / ' + mat.unit +
-        (mat.lossPercent ? ' · потери ' + mat.lossPercent + '%' : '');
+      row.querySelector('.mat-price').textContent = Format.fmt(mat.price, 2) + ' / ' + mat.unit;
+      row.querySelector('.mat-loss').textContent = (mat.lossPercent || 0) + '%';
+      row.querySelector('.mat-real-price').textContent = Format.fmt(effectivePrice, 2) + ' / ' + mat.unit;
       var actions = row.querySelector('.tile-actions');
       actions.style.marginTop = '0';
 
