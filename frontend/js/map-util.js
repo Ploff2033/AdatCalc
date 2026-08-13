@@ -12,5 +12,18 @@
     return R * c;
   }
 
-  window.MapUtil = { haversineKm: haversineKm };
+  function geocode(query) {
+    return ymaps.geocode(query, { results: 1 }).then(function (res) {
+      var obj = res.geoObjects.get(0);
+      if (!obj) return null;
+      var coords = obj.geometry.getCoordinates();
+      return { lat: coords[0], lng: coords[1], name: obj.getAddressLine() };
+    });
+  }
+
+  window.MapUtil = {
+    haversineKm: haversineKm,
+    geocode: geocode,
+    DEFAULT_CENTER: [43.9053, 42.7183] // Кисловодск
+  };
 })();

@@ -25,7 +25,7 @@
 
     loading = true;
     var script = document.createElement('script');
-    script.src = 'https://api-maps.yandex.ru/2.1/?apikey=' + encodeURIComponent(window.YANDEX_MAPS_API_KEY) + '&lang=ru_RU';
+    script.src = 'https://api-maps.yandex.ru/2.1/?apikey=' + encodeURIComponent(window.YANDEX_MAPS_API_KEY) + '&lang=ru_RU&load=package.full';
     script.onload = function () {
       ymaps.ready(function () {
         loaded = true;

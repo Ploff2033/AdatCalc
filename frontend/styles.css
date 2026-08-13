@@ -293,29 +293,6 @@ section.card.compact{
   font-weight:600;
 }
 
-.result-pill{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  background:var(--accent-soft);
-  border-radius:10px;
-  padding:14px 18px;
-  gap:12px;
-  flex-wrap:wrap;
-}
-.result-pill .label{
-  font-size:13px;
-  font-weight:600;
-  color:var(--text);
-}
-.result-pill .value{
-  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums;
-  font-size:22px;
-  font-weight:800;
-  color:var(--accent);
-}
-
 .checkbox-row{
   display:flex;
   align-items:center;
@@ -444,6 +421,8 @@ section.card.compact{
   overflow:hidden;
   border:1px solid var(--border);
 }
+.map-container.large{ height:560px; }
+.map-container.small{ height:280px; }
 .map-placeholder{
   height:100%;
   display:flex;
@@ -456,23 +435,13 @@ section.card.compact{
   background:var(--surface-2);
   line-height:1.6;
 }
-.link-btn{
-  align-self:flex-start;
-  border:none;
-  background:transparent;
-  color:var(--accent);
-  font-size:12px;
-  font-weight:700;
-  padding:2px 0;
-  cursor:pointer;
-  margin-top:4px;
+.search-row{
+  display:flex;
+  gap:8px;
+  align-items:stretch;
 }
-.link-btn:hover{ text-decoration:underline; }
-.dialog-hint{
-  margin:0;
-  font-size:13px;
-  color:var(--text-muted);
-}
+.search-row .field{ flex:1; }
+.search-row .ghost-btn{ flex-shrink:0; }
 
 input:focus-visible{ outline:none; }
 

@@ -114,8 +114,15 @@
 
     <section class="card compact">
       <div class="card-head"><span class="num">01</span><h2>Расположение завода</h2></div>
-      <p class="hint">Кликните на карте, чтобы отметить местоположение завода. Используется для автоматического расчёта расстояния до объекта на вкладке «Главная».</p>
-      <div class="map-container" id="plant-map"></div>
+      <p class="hint">Кликните на карте или найдите по адресу, чтобы отметить местоположение завода. Используется для автоматического расчёта расстояния до объекта на вкладке «Главная».</p>
+      <div class="field-group">
+        <label for="plant-address-search">Найти по адресу</label>
+        <div class="search-row">
+          <div class="field"><input type="text" id="plant-address-search" placeholder="Город, улица, дом"></div>
+          <button type="button" class="ghost-btn" id="plant-address-search-btn">Найти</button>
+        </div>
+      </div>
+      <div class="map-container large" id="plant-map"></div>
       <div class="breakdown compact">
         <div class="line"><span class="l">Координаты завода</span><span class="v" id="plant-coords-display">—</span></div>
       </div>
@@ -146,12 +153,23 @@
             <div class="field-group">
               <label for="dist">Расстояние (в одну сторону)</label>
               <div class="field"><input type="number" id="dist" min="0" step="any" value="15" inputmode="decimal"><span class="unit">км</span></div>
-              <button type="button" class="link-btn" id="pick-on-map-btn">📍 Указать на карте</button>
             </div>
             <div class="field-group">
               <label for="fuel-price">Цена топлива</label>
               <div class="field"><input type="number" id="fuel-price" min="0" step="any" value="62" inputmode="decimal"><span class="unit">₽/л</span></div>
             </div>
+          </div>
+
+          <div class="field-group">
+            <label for="delivery-address-search">Адрес доставки</label>
+            <div class="search-row">
+              <div class="field"><input type="text" id="delivery-address-search" placeholder="Город, улица, дом"></div>
+              <button type="button" class="ghost-btn" id="delivery-address-search-btn">Найти</button>
+            </div>
+          </div>
+          <div class="map-container small" id="delivery-map"></div>
+          <div class="breakdown compact">
+            <div class="line"><span class="l">Расстояние по маршруту</span><span class="v" id="delivery-map-distance">—</span></div>
           </div>
 
           <div class="checkbox-row">
@@ -174,13 +192,19 @@
       </div>
 
       <div class="main-col">
-        <div class="result-pill">
-          <span class="label">Себестоимость 1 м³</span>
-          <span class="value" id="cost-per-m3">—</span>
-        </div>
+        <section class="card compact">
+          <div class="card-head"><span class="num">02</span><h2>Себестоимость 1 м³</h2></div>
+          <div class="breakdown compact">
+            <div class="line"><span class="l" id="cost-materials-label">Материалы</span><span class="v" id="cost-materials">—</span></div>
+            <div class="line"><span class="l">ФОТ</span><span class="v" id="cost-payroll">—</span></div>
+            <div class="line"><span class="l">Амортизация завода</span><span class="v" id="cost-depr">—</span></div>
+            <div class="line"><span class="l">Коммуналка</span><span class="v" id="cost-utilities">—</span></div>
+            <div class="line total"><span class="l">Итого себестоимость 1 м³</span><span class="v" id="cost-per-m3">—</span></div>
+          </div>
+        </section>
 
         <section class="card compact">
-          <div class="card-head"><span class="num">02</span><h2>Смесь</h2></div>
+          <div class="card-head"><span class="num">03</span><h2>Смесь</h2></div>
           <div class="split-cols">
             <div class="split-col expense">
               <div class="split-col-label">Расход</div>
@@ -200,7 +224,7 @@
         </section>
 
         <section class="card compact">
-          <div class="card-head"><span class="num">03</span><h2>Доставка</h2></div>
+          <div class="card-head"><span class="num">04</span><h2>Доставка</h2></div>
           <div class="split-cols">
             <div class="split-col expense">
               <div class="split-col-label">Расход</div>
@@ -224,7 +248,7 @@
         </section>
 
         <section class="card compact final-card">
-          <div class="card-head"><span class="num">04</span><h2>Итого</h2></div>
+          <div class="card-head"><span class="num">05</span><h2>Итого</h2></div>
           <div class="final-grid compact">
             <div class="final-result" id="profit-total-wrap">
               <span class="label">Чистая прибыль</span>
@@ -353,21 +377,6 @@
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
       <button type="submit" class="primary-btn">Сохранить</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog class="app-dialog wide" id="delivery-map-dialog">
-  <form method="dialog" id="delivery-map-form">
-    <h3>Точка доставки</h3>
-    <p class="dialog-hint">Кликните на карте, чтобы отметить адрес доставки. Расстояние считается по дороге (маршрут Яндекс.Карт).</p>
-    <div class="map-container" id="delivery-map"></div>
-    <div class="breakdown compact">
-      <div class="line"><span class="l">Расстояние по маршруту</span><span class="v" id="delivery-map-distance">—</span></div>
-    </div>
-    <div class="dialog-actions">
-      <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
-      <button type="submit" class="primary-btn">Использовать</button>
     </div>
   </form>
 </dialog>

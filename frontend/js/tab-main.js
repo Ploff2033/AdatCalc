@@ -23,6 +23,8 @@
   }
 
   function recalc() {
+    refreshPlantMarker();
+
     var data = State.data;
     var recipeSelect = document.getElementById('main-recipe');
     var mixerSelect = document.getElementById('main-mixer');
@@ -38,6 +40,12 @@
     var depr = Calc.plantDeprPerM3(data.config);
     var utilities = Calc.utilitiesPerM3(data.config);
     var costPerM3 = materialsCost + payroll + depr + utilities;
+
+    document.getElementById('cost-materials-label').textContent = recipe ? ('Материалы (' + recipe.name + ')') : 'Материалы';
+    document.getElementById('cost-materials').textContent = Format.fmt(materialsCost, 2);
+    document.getElementById('cost-payroll').textContent = Format.fmt(payroll, 2);
+    document.getElementById('cost-depr').textContent = Format.fmt(depr, 2);
+    document.getElementById('cost-utilities').textContent = Format.fmt(utilities, 2);
     document.getElementById('cost-per-m3').textContent = Format.fmt(costPerM3, 2);
 
     var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
@@ -93,41 +101,99 @@
     profitPerM3Wrap.classList.add(profitPerM3Total >= 0 ? 'positive' : 'negative');
   }
 
-  // ---- Delivery destination map picker ----
+  // ---- Delivery destination map (inline on Главная) ----
   var deliveryMap = null;
   var deliveryMapInitStarted = false;
   var deliveryPlantPlacemark = null;
   var deliveryDestPlacemark = null;
-  var deliverySelectedCoords = null;
   var deliveryRouteRequestId = 0;
-  var lastRouteKm = null;
 
   function showDeliveryMapUnavailable() {
     document.getElementById('delivery-map').innerHTML =
       '<div class="map-placeholder">Карта недоступна: не задан API-ключ Яндекс.Карт.<br>Добавьте его в frontend/js/yandex-config.js.</div>';
   }
 
-  function updateDeliveryDistance(plantCoords, destCoords) {
+  function currentPlantCoords() {
+    var loc = State.data.config.plantLocation;
+    return loc && loc.lat != null ? [loc.lat, loc.lng] : MapUtil.DEFAULT_CENTER;
+  }
+
+  function refreshPlantMarker() {
+    if (!deliveryMap) return;
+    var loc = State.data.config.plantLocation;
+    if (!loc || loc.lat == null) {
+      if (deliveryPlantPlacemark) {
+        deliveryMap.geoObjects.remove(deliveryPlantPlacemark);
+        deliveryPlantPlacemark = null;
+      }
+      return;
+    }
+    var coords = [loc.lat, loc.lng];
+    if (deliveryPlantPlacemark) {
+      deliveryPlantPlacemark.geometry.setCoordinates(coords);
+    } else {
+      deliveryPlantPlacemark = new ymaps.Placemark(coords, { hintContent: 'Завод' }, { preset: 'islands#blueFactoryIcon' });
+      deliveryMap.geoObjects.add(deliveryPlantPlacemark);
+    }
+  }
+
+  function applyDistance(km, unitLabel) {
+    document.getElementById('delivery-map-distance').textContent = Format.fmtNum(km, 1, unitLabel);
+    document.getElementById('dist').value = km.toFixed(1);
+    recalc();
+  }
+
+  function updateDeliveryDistance(destCoords) {
     var distEl = document.getElementById('delivery-map-distance');
+    var plantCoords = currentPlantCoords();
     distEl.textContent = 'Считаем маршрут…';
     var requestId = ++deliveryRouteRequestId;
-    ymaps.route([plantCoords, destCoords], { multiRoute: false }).then(
-      function (route) {
+    var fallback = function () {
+      if (requestId !== deliveryRouteRequestId) return;
+      var km = MapUtil.haversineKm({ lat: plantCoords[0], lng: plantCoords[1] }, { lat: destCoords[0], lng: destCoords[1] });
+      applyDistance(km, 'км по прямой (маршрут недоступен)');
+    };
+    try {
+      ymaps.route([plantCoords, destCoords], { multiRoute: false }).then(function (route) {
         if (requestId !== deliveryRouteRequestId) return;
-        var km = route.getLength() / 1000;
-        lastRouteKm = km;
-        distEl.textContent = Format.fmtNum(km, 1, 'км по дороге');
+        applyDistance(route.getLength() / 1000, 'км по дороге');
+      }, fallback);
+    } catch (err) {
+      fallback();
+    }
+  }
+
+  function setDestination(coords) {
+    if (deliveryDestPlacemark) {
+      deliveryDestPlacemark.geometry.setCoordinates(coords);
+    } else {
+      deliveryDestPlacemark = new ymaps.Placemark(coords, { hintContent: 'Точка доставки', draggable: true }, { preset: 'islands#redGeolocationIcon' });
+      deliveryMap.geoObjects.add(deliveryDestPlacemark);
+      deliveryDestPlacemark.events.add('dragend', function () {
+        setDestination(deliveryDestPlacemark.geometry.getCoordinates());
+      });
+    }
+    updateDeliveryDistance(coords);
+  }
+
+  function handleDeliveryAddressSearch() {
+    var input = document.getElementById('delivery-address-search');
+    var query = input.value.trim();
+    if (!query || !deliveryMap) return;
+    MapUtil.geocode(query).then(
+      function (result) {
+        if (!result) {
+          alert('Адрес не найден.');
+          return;
+        }
+        deliveryMap.setCenter([result.lat, result.lng], 15);
+        setDestination([result.lat, result.lng]);
       },
-      function () {
-        if (requestId !== deliveryRouteRequestId) return;
-        var km = MapUtil.haversineKm({ lat: plantCoords[0], lng: plantCoords[1] }, { lat: destCoords[0], lng: destCoords[1] });
-        lastRouteKm = km;
-        distEl.textContent = Format.fmtNum(km, 1, 'км по прямой (маршрут недоступен)');
-      }
+      function () { alert('Не удалось найти адрес.'); }
     );
   }
 
-  function ensureDeliveryMap(plantCoords) {
+  function ensureDeliveryMap() {
     if (deliveryMapInitStarted) return;
     deliveryMapInitStarted = true;
     YandexLoader.whenReady(function () {
@@ -135,55 +201,29 @@
         showDeliveryMapUnavailable();
         return;
       }
-      deliveryMap = new ymaps.Map('delivery-map', { center: plantCoords, zoom: 11, controls: ['zoomControl'] });
-      deliveryPlantPlacemark = new ymaps.Placemark(plantCoords, { hintContent: 'Завод' }, { preset: 'islands#blueFactoryIcon' });
-      deliveryMap.geoObjects.add(deliveryPlantPlacemark);
+      deliveryMap = new ymaps.Map('delivery-map', { center: currentPlantCoords(), zoom: 12, controls: ['zoomControl'] });
+      refreshPlantMarker();
       deliveryMap.events.add('click', function (e) {
-        var coords = e.get('coords');
-        deliverySelectedCoords = coords;
-        if (deliveryDestPlacemark) {
-          deliveryDestPlacemark.geometry.setCoordinates(coords);
-        } else {
-          deliveryDestPlacemark = new ymaps.Placemark(coords, { hintContent: 'Точка доставки' }, { preset: 'islands#redGeolocationIcon' });
-          deliveryMap.geoObjects.add(deliveryDestPlacemark);
+        setDestination(e.get('coords'));
+      });
+
+      var searchBtn = document.getElementById('delivery-address-search-btn');
+      var searchInput = document.getElementById('delivery-address-search');
+      searchBtn.addEventListener('click', handleDeliveryAddressSearch);
+      searchInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleDeliveryAddressSearch();
         }
-        updateDeliveryDistance(plantCoords, coords);
       });
     });
   }
 
-  function openDeliveryMapDialog() {
-    var loc = State.data.config.plantLocation;
-    if (!loc || loc.lat == null) {
-      alert('Сначала отметьте завод на вкладке «Карта».');
-      return;
-    }
-    var plantCoords = [loc.lat, loc.lng];
-    var dialog = document.getElementById('delivery-map-dialog');
-    dialog.showModal();
-    deliverySelectedCoords = null;
-    lastRouteKm = null;
-    document.getElementById('delivery-map-distance').textContent = '—';
-    ensureDeliveryMap(plantCoords);
+  function onShowMain() {
+    ensureDeliveryMap();
     if (deliveryMap) {
-      deliveryMap.setCenter(plantCoords, 11);
-      if (deliveryDestPlacemark) {
-        deliveryMap.geoObjects.remove(deliveryDestPlacemark);
-        deliveryDestPlacemark = null;
-      }
+      setTimeout(function () { deliveryMap.container.fitToViewport(); }, 30);
     }
-    setTimeout(function () {
-      if (deliveryMap) deliveryMap.container.fitToViewport();
-    }, 30);
-  }
-
-  function handleDeliveryMapSubmit(e) {
-    e.preventDefault();
-    if (lastRouteKm != null) {
-      document.getElementById('dist').value = lastRouteKm.toFixed(1);
-      recalc();
-    }
-    document.getElementById('delivery-map-dialog').close();
   }
 
   function init() {
@@ -200,13 +240,7 @@
       selectedMixerId = this.value;
       recalc();
     });
-
-    document.getElementById('pick-on-map-btn').addEventListener('click', openDeliveryMapDialog);
-    document.getElementById('delivery-map-form').addEventListener('submit', handleDeliveryMapSubmit);
-    Array.prototype.forEach.call(document.getElementById('delivery-map-dialog').querySelectorAll('[data-close-dialog]'), function (btn) {
-      btn.addEventListener('click', function () { document.getElementById('delivery-map-dialog').close(); });
-    });
   }
 
-  window.MainTab = { init: init, render: recalc };
+  window.MainTab = { init: init, render: recalc, onShow: onShowMain };
 })();
