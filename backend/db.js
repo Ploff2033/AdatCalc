@@ -18,10 +18,10 @@ function seedData() {
       plantLocation: null
     },
     materials: [
-      { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000 },
-      { id: 'mat_sand', name: 'Песок', unit: 'т', price: 1100 },
-      { id: 'mat_gravel', name: 'Щебень', unit: 'т', price: 1600 },
-      { id: 'mat_water', name: 'Вода', unit: 'м³', price: 50 }
+      { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000, lossPercent: 0 },
+      { id: 'mat_sand', name: 'Песок', unit: 'т', price: 1100, lossPercent: 0 },
+      { id: 'mat_gravel', name: 'Щебень', unit: 'т', price: 1600, lossPercent: 0 },
+      { id: 'mat_water', name: 'Вода', unit: 'м³', price: 50, lossPercent: 0 }
     ],
     recipes: [
       {
@@ -37,7 +37,7 @@ function seedData() {
       }
     ],
     mixers: [
-      { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35 }
+      { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35, maintenancePerKm: 0 }
     ]
   };
 }

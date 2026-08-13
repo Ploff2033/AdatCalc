@@ -65,15 +65,18 @@
     var fuelPrice = parseFloat(document.getElementById('fuel-price').value) || 0;
     var fuelRate = mixer ? mixer.fuelRate : 0;
     var amortPerKm = Calc.amortPerKm(mixer);
+    var maintenancePerKm = mixer ? (mixer.maintenancePerKm || 0) : 0;
     var fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
     var amortCostPerTrip = roundTrip * amortPerKm;
+    var maintenanceCostPerTrip = roundTrip * maintenancePerKm;
     var neighborCity = document.getElementById('nb-city').checked;
     var surchargePerTrip = neighborCity ? 1000 : 0;
-    var deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
+    var deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + maintenanceCostPerTrip + surchargePerTrip) * trips;
 
     document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
     document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
     document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
+    document.getElementById('maintenance-cost').textContent = Format.fmt(maintenanceCostPerTrip, 2);
     document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
     document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
     document.getElementById('delivery-cost-total').textContent = Format.fmt(deliveryCostTotal, 2);

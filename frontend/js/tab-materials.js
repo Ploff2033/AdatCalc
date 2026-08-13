@@ -8,6 +8,7 @@
   var matNameInput = document.getElementById('material-name');
   var matUnitInput = document.getElementById('material-unit');
   var matPriceInput = document.getElementById('material-price');
+  var matLossInput = document.getElementById('material-loss');
 
   function openMaterialForCreate() {
     matTitleEl.textContent = 'Новый материал';
@@ -15,6 +16,7 @@
     matNameInput.value = '';
     matUnitInput.value = '';
     matPriceInput.value = '';
+    matLossInput.value = '0';
     matErrorEl.hidden = true;
     matDialog.showModal();
   }
@@ -25,6 +27,7 @@
     matNameInput.value = mat.name;
     matUnitInput.value = mat.unit;
     NumericInput.setFormattedValue(matPriceInput, mat.price);
+    matLossInput.value = mat.lossPercent || 0;
     matErrorEl.hidden = true;
     matDialog.showModal();
   }
@@ -35,7 +38,8 @@
     var payload = {
       name: matNameInput.value,
       unit: matUnitInput.value,
-      price: NumericInput.parseNumber(matPriceInput.value)
+      price: NumericInput.parseNumber(matPriceInput.value),
+      lossPercent: parseFloat(matLossInput.value) || 0
     };
     try {
       if (matIdInput.value) {
@@ -84,7 +88,8 @@
         '<div class="tile-actions"></div>';
       row.querySelector('.mat-name').textContent = mat.name;
       row.querySelector('.mat-unit').textContent = mat.unit;
-      row.querySelector('.mat-price').textContent = Format.fmt(mat.price, 2) + ' / ' + mat.unit;
+      row.querySelector('.mat-price').textContent = Format.fmt(mat.price, 2) + ' / ' + mat.unit +
+        (mat.lossPercent ? ' · потери ' + mat.lossPercent + '%' : '');
       var actions = row.querySelector('.tile-actions');
       actions.style.marginTop = '0';
 

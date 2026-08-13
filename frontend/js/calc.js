@@ -21,7 +21,9 @@
     materials.forEach(function (m) { byId[m.id] = m; });
     return recipe.items.reduce(function (sum, item) {
       var mat = byId[item.materialId];
-      return sum + (mat ? item.qty * mat.price : 0);
+      if (!mat) return sum;
+      var lossFactor = 1 + (mat.lossPercent || 0) / 100;
+      return sum + item.qty * mat.price * lossFactor;
     }, 0);
   }
 

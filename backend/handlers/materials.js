@@ -6,7 +6,8 @@ function sanitize(body) {
   return {
     name: str(body.name, 'name'),
     unit: str(body.unit, 'unit'),
-    price: num(body.price, 'price')
+    price: num(body.price, 'price'),
+    lossPercent: num(body.lossPercent, 'lossPercent')
   };
 }
 

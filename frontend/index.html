@@ -232,6 +232,7 @@
                 <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
                 <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
                 <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
+                <div class="line"><span class="l">Ремонт и обслуживание (1 рейс)</span><span class="v" id="maintenance-cost">—</span></div>
                 <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
                 <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
                 <div class="line total"><span class="l">Итого расход</span><span class="v" id="delivery-cost-total">—</span></div>
@@ -309,6 +310,10 @@
       <label for="material-price">Цена за единицу</label>
       <div class="field"><input type="text" id="material-price" inputmode="decimal" required><span class="unit">₽</span></div>
     </div>
+    <div class="field-group">
+      <label for="material-loss">Потери при хранении/дозировке</label>
+      <div class="field"><input type="number" id="material-loss" min="0" step="any" value="0"><span class="unit">%</span></div>
+    </div>
     <p class="dialog-error" id="material-dialog-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
@@ -372,6 +377,10 @@
     <div class="field-group">
       <label for="mixer-fuel-rate">Расход топлива</label>
       <div class="field"><input type="number" id="mixer-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
+    </div>
+    <div class="field-group">
+      <label for="mixer-maintenance">Ремонт и обслуживание</label>
+      <div class="field"><input type="number" id="mixer-maintenance" min="0" step="any" value="0"><span class="unit">₽/км</span></div>
     </div>
     <p class="dialog-error" id="mixer-dialog-error" hidden></p>
     <div class="dialog-actions">
