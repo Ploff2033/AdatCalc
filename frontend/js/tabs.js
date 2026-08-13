@@ -9,6 +9,9 @@
     panels.forEach(function (panel) {
       panel.hidden = panel.dataset.tab !== tabName;
     });
+    if (tabName === 'location' && window.LocationTab) {
+      window.LocationTab.onShow();
+    }
     if (location.hash.slice(1) !== tabName) {
       history.replaceState(null, '', '#' + tabName);
     }

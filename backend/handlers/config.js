@@ -17,6 +17,13 @@ function applyPatch(body, current) {
       lifespanMonths: num(pd.lifespanMonths, 'plantDepr.lifespanMonths')
     };
   }
+  if (body.plantLocation !== undefined) {
+    const pl = body.plantLocation || {};
+    next.plantLocation = {
+      lat: num(pl.lat, 'plantLocation.lat'),
+      lng: num(pl.lng, 'plantLocation.lng')
+    };
+  }
   return next;
 }
 

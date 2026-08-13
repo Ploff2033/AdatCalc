@@ -14,7 +14,8 @@ function seedData() {
     config: {
       targetOutput: 500,
       plantDepr: { balance: 1200000, residual: 100000, lifespanMonths: 96 },
-      utilitiesMonthly: 40000
+      utilitiesMonthly: 40000,
+      plantLocation: null
     },
     materials: [
       { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000 },

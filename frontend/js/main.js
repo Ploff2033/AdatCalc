@@ -25,6 +25,7 @@
     PersonnelTab.render();
     MaterialsTab.render();
     EquipmentTab.render();
+    LocationTab.render();
     MainTab.render();
   }
 
@@ -42,6 +43,7 @@
     PersonnelTab.init();
     MaterialsTab.init();
     EquipmentTab.init();
+    LocationTab.init();
     MainTab.init();
 
     renderAll();

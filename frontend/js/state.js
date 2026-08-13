@@ -1,7 +1,7 @@
 (function () {
   var data = {
     employees: [],
-    config: { targetOutput: 0, plantDepr: { balance: 0, residual: 0, lifespanMonths: 0 }, utilitiesMonthly: 0 },
+    config: { targetOutput: 0, plantDepr: { balance: 0, residual: 0, lifespanMonths: 0 }, utilitiesMonthly: 0, plantLocation: null },
     materials: [],
     recipes: [],
     mixers: []

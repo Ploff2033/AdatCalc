@@ -25,6 +25,7 @@
     <button class="tab-btn" data-tab="personnel" role="tab" type="button">Персонал</button>
     <button class="tab-btn" data-tab="materials" role="tab" type="button">Смеси</button>
     <button class="tab-btn" data-tab="equipment" role="tab" type="button">Техника</button>
+    <button class="tab-btn" data-tab="location" role="tab" type="button">Карта</button>
     <button class="tab-btn" data-tab="main" role="tab" type="button">Главная</button>
   </nav>
 
@@ -108,6 +109,20 @@
 
   </section>
 
+  <!-- ============ КАРТА ============ -->
+  <section class="tab-panel" id="tab-location" data-tab="location" hidden>
+
+    <section class="card compact">
+      <div class="card-head"><span class="num">01</span><h2>Расположение завода</h2></div>
+      <p class="hint">Кликните на карте, чтобы отметить местоположение завода. Используется для автоматического расчёта расстояния до объекта на вкладке «Главная».</p>
+      <div class="map-container" id="plant-map"></div>
+      <div class="breakdown compact">
+        <div class="line"><span class="l">Координаты завода</span><span class="v" id="plant-coords-display">—</span></div>
+      </div>
+    </section>
+
+  </section>
+
   <!-- ============ ГЛАВНАЯ ============ -->
   <section class="tab-panel" id="tab-main" data-tab="main" hidden>
     <div class="main-grid">
@@ -131,6 +146,7 @@
             <div class="field-group">
               <label for="dist">Расстояние (в одну сторону)</label>
               <div class="field"><input type="number" id="dist" min="0" step="any" value="15" inputmode="decimal"><span class="unit">км</span></div>
+              <button type="button" class="link-btn" id="pick-on-map-btn">📍 Указать на карте</button>
             </div>
             <div class="field-group">
               <label for="fuel-price">Цена топлива</label>
@@ -165,26 +181,46 @@
 
         <section class="card compact">
           <div class="card-head"><span class="num">02</span><h2>Смесь</h2></div>
-          <div class="breakdown compact">
-            <div class="line"><span class="l">Цена отпуска (рецепт)</span><span class="v" id="recipe-sale-price-display">—</span></div>
-            <div class="line"><span class="l">Выручка со смеси</span><span class="v" id="mix-revenue">—</span></div>
-            <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
-            <div class="line total"><span class="l">Прибыль от смеси</span><span class="v" id="mix-profit">—</span></div>
+          <div class="split-cols">
+            <div class="split-col expense">
+              <div class="split-col-label">Расход</div>
+              <div class="breakdown compact">
+                <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
+              </div>
+            </div>
+            <div class="split-col income">
+              <div class="split-col-label">Доход</div>
+              <div class="breakdown compact">
+                <div class="line"><span class="l">Цена отпуска (рецепт)</span><span class="v" id="recipe-sale-price-display">—</span></div>
+                <div class="line"><span class="l">Выручка со смеси</span><span class="v" id="mix-revenue">—</span></div>
+              </div>
+            </div>
           </div>
+          <div class="split-total"><span class="l">Прибыль от смеси</span><span class="v" id="mix-profit">—</span></div>
         </section>
 
         <section class="card compact">
           <div class="card-head"><span class="num">03</span><h2>Доставка</h2></div>
-          <div class="breakdown compact">
-            <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
-            <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
-            <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
-            <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
-            <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
-            <div class="line"><span class="l">Расход на доставку</span><span class="v" id="delivery-cost-total">—</span></div>
-            <div class="line"><span class="l">Доход от доставки</span><span class="v" id="delivery-revenue">—</span></div>
-            <div class="line total"><span class="l">Прибыль от доставки</span><span class="v" id="delivery-profit">—</span></div>
+          <div class="split-cols">
+            <div class="split-col expense">
+              <div class="split-col-label">Расход</div>
+              <div class="breakdown compact">
+                <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
+                <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
+                <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
+                <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
+                <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
+                <div class="line total"><span class="l">Итого расход</span><span class="v" id="delivery-cost-total">—</span></div>
+              </div>
+            </div>
+            <div class="split-col income">
+              <div class="split-col-label">Доход</div>
+              <div class="breakdown compact">
+                <div class="line"><span class="l">Доход от доставки</span><span class="v" id="delivery-revenue">—</span></div>
+              </div>
+            </div>
           </div>
+          <div class="split-total"><span class="l">Прибыль от доставки</span><span class="v" id="delivery-profit">—</span></div>
         </section>
 
         <section class="card compact final-card">
@@ -321,6 +357,21 @@
   </form>
 </dialog>
 
+<dialog class="app-dialog wide" id="delivery-map-dialog">
+  <form method="dialog" id="delivery-map-form">
+    <h3>Точка доставки</h3>
+    <p class="dialog-hint">Кликните на карте, чтобы отметить адрес доставки. Расстояние считается по дороге (маршрут Яндекс.Карт).</p>
+    <div class="map-container" id="delivery-map"></div>
+    <div class="breakdown compact">
+      <div class="line"><span class="l">Расстояние по маршруту</span><span class="v" id="delivery-map-distance">—</span></div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
+      <button type="submit" class="primary-btn">Использовать</button>
+    </div>
+  </form>
+</dialog>
+
 <template id="recipe-item-row-template">
   <div class="recipe-item-row">
     <select class="select recipe-item-material"></select>
@@ -332,12 +383,16 @@
 <script src="/js/format.js"></script>
 <script src="/js/numeric-input.js"></script>
 <script src="/js/calc.js"></script>
+<script src="/js/map-util.js"></script>
+<script src="/js/yandex-config.js"></script>
+<script src="/js/yandex-loader.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/state.js"></script>
 <script src="/js/tabs.js"></script>
 <script src="/js/tab-personnel.js"></script>
 <script src="/js/tab-materials.js"></script>
 <script src="/js/tab-equipment.js"></script>
+<script src="/js/tab-location.js"></script>
 <script src="/js/tab-main.js"></script>
 <script src="/js/main.js"></script>
 </body>

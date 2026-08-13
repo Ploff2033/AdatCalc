@@ -93,6 +93,99 @@
     profitPerM3Wrap.classList.add(profitPerM3Total >= 0 ? 'positive' : 'negative');
   }
 
+  // ---- Delivery destination map picker ----
+  var deliveryMap = null;
+  var deliveryMapInitStarted = false;
+  var deliveryPlantPlacemark = null;
+  var deliveryDestPlacemark = null;
+  var deliverySelectedCoords = null;
+  var deliveryRouteRequestId = 0;
+  var lastRouteKm = null;
+
+  function showDeliveryMapUnavailable() {
+    document.getElementById('delivery-map').innerHTML =
+      '<div class="map-placeholder">Карта недоступна: не задан API-ключ Яндекс.Карт.<br>Добавьте его в frontend/js/yandex-config.js.</div>';
+  }
+
+  function updateDeliveryDistance(plantCoords, destCoords) {
+    var distEl = document.getElementById('delivery-map-distance');
+    distEl.textContent = 'Считаем маршрут…';
+    var requestId = ++deliveryRouteRequestId;
+    ymaps.route([plantCoords, destCoords], { multiRoute: false }).then(
+      function (route) {
+        if (requestId !== deliveryRouteRequestId) return;
+        var km = route.getLength() / 1000;
+        lastRouteKm = km;
+        distEl.textContent = Format.fmtNum(km, 1, 'км по дороге');
+      },
+      function () {
+        if (requestId !== deliveryRouteRequestId) return;
+        var km = MapUtil.haversineKm({ lat: plantCoords[0], lng: plantCoords[1] }, { lat: destCoords[0], lng: destCoords[1] });
+        lastRouteKm = km;
+        distEl.textContent = Format.fmtNum(km, 1, 'км по прямой (маршрут недоступен)');
+      }
+    );
+  }
+
+  function ensureDeliveryMap(plantCoords) {
+    if (deliveryMapInitStarted) return;
+    deliveryMapInitStarted = true;
+    YandexLoader.whenReady(function () {
+      if (window.YandexMapsUnavailable) {
+        showDeliveryMapUnavailable();
+        return;
+      }
+      deliveryMap = new ymaps.Map('delivery-map', { center: plantCoords, zoom: 11, controls: ['zoomControl'] });
+      deliveryPlantPlacemark = new ymaps.Placemark(plantCoords, { hintContent: 'Завод' }, { preset: 'islands#blueFactoryIcon' });
+      deliveryMap.geoObjects.add(deliveryPlantPlacemark);
+      deliveryMap.events.add('click', function (e) {
+        var coords = e.get('coords');
+        deliverySelectedCoords = coords;
+        if (deliveryDestPlacemark) {
+          deliveryDestPlacemark.geometry.setCoordinates(coords);
+        } else {
+          deliveryDestPlacemark = new ymaps.Placemark(coords, { hintContent: 'Точка доставки' }, { preset: 'islands#redGeolocationIcon' });
+          deliveryMap.geoObjects.add(deliveryDestPlacemark);
+        }
+        updateDeliveryDistance(plantCoords, coords);
+      });
+    });
+  }
+
+  function openDeliveryMapDialog() {
+    var loc = State.data.config.plantLocation;
+    if (!loc || loc.lat == null) {
+      alert('Сначала отметьте завод на вкладке «Карта».');
+      return;
+    }
+    var plantCoords = [loc.lat, loc.lng];
+    var dialog = document.getElementById('delivery-map-dialog');
+    dialog.showModal();
+    deliverySelectedCoords = null;
+    lastRouteKm = null;
+    document.getElementById('delivery-map-distance').textContent = '—';
+    ensureDeliveryMap(plantCoords);
+    if (deliveryMap) {
+      deliveryMap.setCenter(plantCoords, 11);
+      if (deliveryDestPlacemark) {
+        deliveryMap.geoObjects.remove(deliveryDestPlacemark);
+        deliveryDestPlacemark = null;
+      }
+    }
+    setTimeout(function () {
+      if (deliveryMap) deliveryMap.container.fitToViewport();
+    }, 30);
+  }
+
+  function handleDeliveryMapSubmit(e) {
+    e.preventDefault();
+    if (lastRouteKm != null) {
+      document.getElementById('dist').value = lastRouteKm.toFixed(1);
+      recalc();
+    }
+    document.getElementById('delivery-map-dialog').close();
+  }
+
   function init() {
     NumericInput.attach(document.getElementById('delivery-charge'));
     inputIds.forEach(function (id) {
@@ -106,6 +199,12 @@
     document.getElementById('main-mixer').addEventListener('change', function () {
       selectedMixerId = this.value;
       recalc();
+    });
+
+    document.getElementById('pick-on-map-btn').addEventListener('click', openDeliveryMapDialog);
+    document.getElementById('delivery-map-form').addEventListener('submit', handleDeliveryMapSubmit);
+    Array.prototype.forEach.call(document.getElementById('delivery-map-dialog').querySelectorAll('[data-close-dialog]'), function (btn) {
+      btn.addEventListener('click', function () { document.getElementById('delivery-map-dialog').close(); });
     });
   }
 
