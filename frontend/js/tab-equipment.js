@@ -10,7 +10,6 @@
   var residualInput = document.getElementById('mixer-residual');
   var mileageInput = document.getElementById('mixer-mileage');
   var fuelRateInput = document.getElementById('mixer-fuel-rate');
-  var maintenanceInput = document.getElementById('mixer-maintenance');
 
   function openForCreate() {
     titleEl.textContent = 'Новый миксер';
@@ -21,7 +20,6 @@
     residualInput.value = '';
     mileageInput.value = '';
     fuelRateInput.value = '';
-    maintenanceInput.value = '0';
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -35,7 +33,6 @@
     NumericInput.setFormattedValue(residualInput, mixer.residual);
     mileageInput.value = mixer.mileage;
     fuelRateInput.value = mixer.fuelRate;
-    maintenanceInput.value = mixer.maintenancePerKm || 0;
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -49,8 +46,7 @@
       balance: NumericInput.parseNumber(balanceInput.value),
       residual: NumericInput.parseNumber(residualInput.value),
       mileage: parseFloat(mileageInput.value),
-      fuelRate: parseFloat(fuelRateInput.value),
-      maintenancePerKm: parseFloat(maintenanceInput.value) || 0
+      fuelRate: parseFloat(fuelRateInput.value)
     };
     try {
       if (idInput.value) {
@@ -86,16 +82,11 @@
       tile.innerHTML =
         '<div class="tile-title"></div>' +
         '<div class="tile-meta"></div>' +
-        '<div class="breakdown compact">' +
-          '<div class="line"><span class="l">Амортизация</span><span class="v cost"></span></div>' +
-          '<div class="line"><span class="l">Ремонт и ТО</span><span class="v cost"></span></div>' +
-        '</div>' +
+        '<div class="tile-value"></div>' +
         '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = mixer.name;
       tile.querySelector('.tile-meta').textContent = Format.fmtNum(mixer.capacity, 1, 'м³') + ' · ' + Format.fmtNum(mixer.fuelRate, 1, 'л/100км');
-      var costEls = tile.querySelectorAll('.v.cost');
-      costEls[0].textContent = Format.fmt(amortPerKm, 2) + '/км';
-      costEls[1].textContent = Format.fmt(mixer.maintenancePerKm || 0, 2) + '/км';
+      tile.querySelector('.tile-value').textContent = Format.fmt(amortPerKm, 2) + '/км';
       tile.querySelector('.edit-btn').addEventListener('click', function () { openForEdit(mixer); });
       tile.querySelector('.del-btn').addEventListener('click', function () { handleDelete(mixer); });
       container.appendChild(tile);

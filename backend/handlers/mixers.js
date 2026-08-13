@@ -9,8 +9,7 @@ function sanitize(body) {
     balance: num(body.balance, 'balance'),
     residual: num(body.residual, 'residual'),
     mileage: num(body.mileage, 'mileage'),
-    fuelRate: num(body.fuelRate, 'fuelRate'),
-    maintenancePerKm: num(body.maintenancePerKm, 'maintenancePerKm')
+    fuelRate: num(body.fuelRate, 'fuelRate')
   };
 }
 

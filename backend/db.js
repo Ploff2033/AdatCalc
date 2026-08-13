@@ -37,7 +37,7 @@ function seedData() {
       }
     ],
     mixers: [
-      { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35, maintenancePerKm: 0 }
+      { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35 }
     ]
   };
 }
