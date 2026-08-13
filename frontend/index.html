@@ -51,15 +51,15 @@
         </div>
         <div class="field-group">
           <label for="cfg-utilities">Коммунальные платежи</label>
-          <div class="field"><input type="number" id="cfg-utilities" min="0" step="any" inputmode="decimal"><span class="unit">₽/мес</span></div>
+          <div class="field"><input type="text" id="cfg-utilities" inputmode="decimal"><span class="unit">₽/мес</span></div>
         </div>
         <div class="field-group">
           <label for="cfg-depr-balance">Балансовая стоимость завода</label>
-          <div class="field"><input type="number" id="cfg-depr-balance" min="0" step="any" inputmode="decimal"><span class="unit">₽</span></div>
+          <div class="field"><input type="text" id="cfg-depr-balance" inputmode="decimal"><span class="unit">₽</span></div>
         </div>
         <div class="field-group">
           <label for="cfg-depr-residual">Остаточная стоимость завода</label>
-          <div class="field"><input type="number" id="cfg-depr-residual" min="0" step="any" inputmode="decimal"><span class="unit">₽</span></div>
+          <div class="field"><input type="text" id="cfg-depr-residual" inputmode="decimal"><span class="unit">₽</span></div>
         </div>
         <div class="field-group">
           <label for="cfg-depr-lifespan">Срок службы до списания</label>
@@ -82,7 +82,7 @@
 
     <section class="card">
       <div class="card-head"><span class="num">01</span><h2>Материалы и цены</h2></div>
-      <p class="hint">Общий справочник закупочных цен. Цемент, песок, щебень, вода, присадки — список можно расширять.</p>
+      <p class="hint">Общий справочник закупочных цен. Закупка обычно ведётся в тоннах и кубометрах. Цемент, песок, щебень, вода, присадки — список можно расширять.</p>
       <div class="mat-catalog" id="material-rows"></div>
       <button class="add-btn" id="add-material-btn" type="button">+ Добавить материал</button>
     </section>
@@ -132,7 +132,7 @@
 
     <section class="card">
       <div class="card-head"><span class="num">02</span><h2>Доставка — расход завода за рейс</h2></div>
-      <p class="hint">Внутренние расходы завода на один рейс (не цена для клиента): топливо + амортизация миксера, плюс доплата водителю при рейсе в другой город.</p>
+      <p class="hint">Внутренние расходы завода на рейсы (не цена для клиента): топливо + амортизация миксера, плюс доплата водителю при рейсе в другой город. Если объём заказа больше вместимости одного миксера, потребуется несколько рейсов — расходы и доплата умножаются на их число.</p>
 
       <div class="two-col">
         <div class="field-group">
@@ -148,26 +148,27 @@
       <div class="checkbox-row">
         <input type="checkbox" id="nb-city">
         <label for="nb-city">Рейс в соседний город (доплата водителю за сложность)</label>
-        <span class="badge">+1 000 ₽</span>
+        <span class="badge">+1 000 ₽ за рейс</span>
       </div>
 
       <div class="breakdown">
-        <div class="line"><span class="l">Пробег туда-обратно</span><span class="v" id="round-trip">—</span></div>
-        <div class="line"><span class="l">Топливо</span><span class="v" id="fuel-cost">—</span></div>
-        <div class="line"><span class="l">Амортизация</span><span class="v" id="amort-cost">—</span></div>
-        <div class="line"><span class="l">Доплата водителю</span><span class="v" id="surcharge-cost">—</span></div>
-        <div class="line total"><span class="l">Итого за рейс</span><span class="v" id="delivery-total">—</span></div>
+        <div class="line"><span class="l">Пробег туда-обратно (1 рейс)</span><span class="v" id="round-trip">—</span></div>
+        <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
+        <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
+        <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
+        <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
+        <div class="line total"><span class="l">Итого за доставку</span><span class="v" id="delivery-total">—</span></div>
       </div>
     </section>
 
     <section class="card final-card">
       <div class="card-head"><span class="num">03</span><h2>Продажа и чистая прибыль</h2></div>
-      <p class="hint">Доставка за рейс — фиксированная сумма и вычитается из прибыли по партии целиком.</p>
+      <p class="hint">Доставка — фиксированная сумма за все рейсы и вычитается из прибыли по партии целиком.</p>
 
       <div class="two-col">
         <div class="field-group">
           <label for="sale-price">Цена продажи</label>
-          <div class="field"><input type="number" id="sale-price" min="0" step="any" value="6800" inputmode="decimal"><span class="unit">₽/м³</span></div>
+          <div class="field"><input type="text" id="sale-price" inputmode="decimal" value="6800"><span class="unit">₽/м³</span></div>
         </div>
         <div class="field-group">
           <label for="sale-volume">Объём заказа</label>
@@ -178,7 +179,7 @@
       <div class="breakdown">
         <div class="line"><span class="l">Выручка</span><span class="v" id="revenue">—</span></div>
         <div class="line"><span class="l">Себестоимость партии</span><span class="v" id="batch-cost">—</span></div>
-        <div class="line"><span class="l">Доставка за рейс</span><span class="v" id="delivery-line">—</span></div>
+        <div class="line"><span class="l">Доставка</span><span class="v" id="delivery-line">—</span></div>
       </div>
 
       <div class="final-grid">
@@ -220,7 +221,7 @@
     </div>
     <div class="field-group">
       <label for="employee-salary">Оклад</label>
-      <div class="field"><input type="number" id="employee-salary" min="0" step="any" required><span class="unit">₽/мес</span></div>
+      <div class="field"><input type="text" id="employee-salary" inputmode="decimal" required><span class="unit">₽/мес</span></div>
     </div>
     <p class="dialog-error" id="employee-dialog-error" hidden></p>
     <div class="dialog-actions">
@@ -240,11 +241,11 @@
     </div>
     <div class="field-group">
       <label for="material-unit">Единица измерения</label>
-      <div class="field"><input type="text" id="material-unit" placeholder="кг, л, шт" required></div>
+      <div class="field"><input type="text" id="material-unit" placeholder="т, м³, шт" required></div>
     </div>
     <div class="field-group">
       <label for="material-price">Цена за единицу</label>
-      <div class="field"><input type="number" id="material-price" min="0" step="any" required><span class="unit">₽</span></div>
+      <div class="field"><input type="text" id="material-price" inputmode="decimal" required><span class="unit">₽</span></div>
     </div>
     <p class="dialog-error" id="material-dialog-error" hidden></p>
     <div class="dialog-actions">
@@ -285,12 +286,16 @@
       <div class="field"><input type="text" id="mixer-name" required></div>
     </div>
     <div class="field-group">
+      <label for="mixer-capacity">Объём кузова (обычно до 10 м³)</label>
+      <div class="field"><input type="number" id="mixer-capacity" min="0" step="any" required><span class="unit">м³</span></div>
+    </div>
+    <div class="field-group">
       <label for="mixer-balance">Балансовая стоимость</label>
-      <div class="field"><input type="number" id="mixer-balance" min="0" step="any" required><span class="unit">₽</span></div>
+      <div class="field"><input type="text" id="mixer-balance" inputmode="decimal" required><span class="unit">₽</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-residual">Остаточная стоимость</label>
-      <div class="field"><input type="number" id="mixer-residual" min="0" step="any" required><span class="unit">₽</span></div>
+      <div class="field"><input type="text" id="mixer-residual" inputmode="decimal" required><span class="unit">₽</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-mileage">Нормативный пробег до списания</label>
@@ -317,6 +322,7 @@
 </template>
 
 <script src="/js/format.js"></script>
+<script src="/js/numeric-input.js"></script>
 <script src="/js/calc.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/state.js"></script>

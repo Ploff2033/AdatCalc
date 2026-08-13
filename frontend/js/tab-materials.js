@@ -24,7 +24,7 @@
     matIdInput.value = mat.id;
     matNameInput.value = mat.name;
     matUnitInput.value = mat.unit;
-    matPriceInput.value = mat.price;
+    NumericInput.setFormattedValue(matPriceInput, mat.price);
     matErrorEl.hidden = true;
     matDialog.showModal();
   }
@@ -35,7 +35,7 @@
     var payload = {
       name: matNameInput.value,
       unit: matUnitInput.value,
-      price: parseFloat(matPriceInput.value)
+      price: NumericInput.parseNumber(matPriceInput.value)
     };
     try {
       if (matIdInput.value) {
@@ -244,6 +244,7 @@
     document.getElementById('add-material-btn').addEventListener('click', openMaterialForCreate);
     matForm.addEventListener('submit', handleMaterialSubmit);
     closeOnBackdropButtons(matDialog);
+    NumericInput.attach(matPriceInput);
 
     document.getElementById('add-recipe-btn').addEventListener('click', openRecipeForCreate);
     document.getElementById('recipe-add-item-btn').addEventListener('click', function () {

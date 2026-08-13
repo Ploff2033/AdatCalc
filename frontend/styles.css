@@ -116,7 +116,11 @@ h1{
   gap:6px;
   flex-wrap:wrap;
   border-bottom:1px solid var(--border);
-  padding-bottom:0;
+  padding:10px 0 0;
+  position:sticky;
+  top:0;
+  z-index:30;
+  background:var(--bg);
 }
 .tab-btn{
   border:1px solid transparent;
@@ -385,6 +389,7 @@ footer.bar{
   display:flex;
   justify-content:center;
 }
+footer.bar[hidden]{ display:none; }
 .bar-inner{
   max-width:900px;
   width:100%;

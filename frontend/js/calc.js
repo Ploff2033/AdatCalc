@@ -30,11 +30,17 @@
     return (mixer.balance - mixer.residual) / mixer.mileage;
   }
 
+  function tripsForVolume(mixer, volume) {
+    if (!mixer || !(mixer.capacity > 0) || !(volume > 0)) return 1;
+    return Math.max(1, Math.ceil(volume / mixer.capacity));
+  }
+
   window.Calc = {
     payrollPerM3: payrollPerM3,
     plantDeprPerM3: plantDeprPerM3,
     utilitiesPerM3: utilitiesPerM3,
     materialsCostPerM3: materialsCostPerM3,
-    amortPerKm: amortPerKm
+    amortPerKm: amortPerKm,
+    tripsForVolume: tripsForVolume
   };
 })();

@@ -34,26 +34,29 @@
     var costPerM3 = materialsCost + payroll + depr + utilities;
     document.getElementById('cost-per-m3').textContent = Format.fmt(costPerM3, 2);
 
+    var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
+    var trips = Calc.tripsForVolume(mixer, saleVolume);
+
     var dist = parseFloat(document.getElementById('dist').value) || 0;
     var roundTrip = dist * 2;
     var fuelPrice = parseFloat(document.getElementById('fuel-price').value) || 0;
     var fuelRate = mixer ? mixer.fuelRate : 0;
     var amortPerKm = Calc.amortPerKm(mixer);
-    var fuelCost = roundTrip * (fuelRate / 100) * fuelPrice;
-    var amortCost = roundTrip * amortPerKm;
+    var fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
+    var amortCostPerTrip = roundTrip * amortPerKm;
     var neighborCity = document.getElementById('nb-city').checked;
-    var surcharge = neighborCity ? 1000 : 0;
-    var deliveryTotal = fuelCost + amortCost + surcharge;
+    var surchargePerTrip = neighborCity ? 1000 : 0;
+    var deliveryTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
 
     document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
-    document.getElementById('fuel-cost').textContent = Format.fmt(fuelCost, 2);
-    document.getElementById('amort-cost').textContent = Format.fmt(amortCost, 2);
-    document.getElementById('surcharge-cost').textContent = Format.fmt(surcharge, 2);
+    document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
+    document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
+    document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
+    document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
     document.getElementById('delivery-total').textContent = Format.fmt(deliveryTotal, 2);
     document.getElementById('delivery-line').textContent = Format.fmt(deliveryTotal, 2);
 
-    var salePrice = parseFloat(document.getElementById('sale-price').value) || 0;
-    var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
+    var salePrice = NumericInput.parseNumber(document.getElementById('sale-price').value) || 0;
     var revenue = salePrice * saleVolume;
     var batchCost = costPerM3 * saleVolume;
     var profitTotal = revenue - batchCost - deliveryTotal;
@@ -81,6 +84,9 @@
   }
 
   function init() {
+    var salePriceInput = document.getElementById('sale-price');
+    NumericInput.attach(salePriceInput);
+    NumericInput.setFormattedValue(salePriceInput, parseFloat(salePriceInput.value) || 0);
     inputIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', recalc);
     });

@@ -17,25 +17,25 @@ function seedData() {
       utilitiesMonthly: 40000
     },
     materials: [
-      { id: 'mat_cement', name: 'Цемент', unit: 'кг', price: 9 },
-      { id: 'mat_sand', name: 'Песок', unit: 'кг', price: 1.1 },
-      { id: 'mat_gravel', name: 'Щебень', unit: 'кг', price: 1.6 },
-      { id: 'mat_water', name: 'Вода', unit: 'л', price: 0.05 }
+      { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000 },
+      { id: 'mat_sand', name: 'Песок', unit: 'т', price: 1100 },
+      { id: 'mat_gravel', name: 'Щебень', unit: 'т', price: 1600 },
+      { id: 'mat_water', name: 'Вода', unit: 'м³', price: 50 }
     ],
     recipes: [
       {
         id: 'rec_m200',
         name: 'М200',
         items: [
-          { materialId: 'mat_cement', qty: 350 },
-          { materialId: 'mat_sand', qty: 700 },
-          { materialId: 'mat_gravel', qty: 1100 },
-          { materialId: 'mat_water', qty: 180 }
+          { materialId: 'mat_cement', qty: 0.35 },
+          { materialId: 'mat_sand', qty: 0.7 },
+          { materialId: 'mat_gravel', qty: 1.1 },
+          { materialId: 'mat_water', qty: 0.18 }
         ]
       }
     ],
     mixers: [
-      { id: 'mix_1', name: 'КамАЗ-53229 №1', balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35 }
+      { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35 }
     ]
   };
 }

@@ -5,6 +5,7 @@ const { str, num } = require('../validate');
 function sanitize(body) {
   return {
     name: str(body.name, 'name'),
+    capacity: num(body.capacity, 'capacity'),
     balance: num(body.balance, 'balance'),
     residual: num(body.residual, 'residual'),
     mileage: num(body.mileage, 'mileage'),

@@ -9,6 +9,7 @@
   var salaryInput = document.getElementById('employee-salary');
 
   var configIds = ['cfg-target-output', 'cfg-utilities', 'cfg-depr-balance', 'cfg-depr-residual', 'cfg-depr-lifespan'];
+  var moneyConfigIds = ['cfg-utilities', 'cfg-depr-balance', 'cfg-depr-residual'];
   var configSaveTimer = null;
 
   function openForCreate() {
@@ -26,7 +27,7 @@
     idInput.value = emp.id;
     nameInput.value = emp.name;
     positionInput.value = emp.position;
-    salaryInput.value = emp.salary;
+    NumericInput.setFormattedValue(salaryInput, emp.salary);
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -37,7 +38,7 @@
     var payload = {
       name: nameInput.value,
       position: positionInput.value,
-      salary: parseFloat(salaryInput.value)
+      salary: NumericInput.parseNumber(salaryInput.value)
     };
     try {
       if (idInput.value) {
@@ -89,12 +90,18 @@
     el.value = value;
   }
 
+  function setMoneyIfNotFocused(id, value) {
+    var el = document.getElementById(id);
+    if (document.activeElement === el) return;
+    NumericInput.setFormattedValue(el, value);
+  }
+
   function renderConfigForm() {
     var cfg = State.data.config;
     setIfNotFocused('cfg-target-output', cfg.targetOutput);
-    setIfNotFocused('cfg-utilities', cfg.utilitiesMonthly);
-    setIfNotFocused('cfg-depr-balance', cfg.plantDepr.balance);
-    setIfNotFocused('cfg-depr-residual', cfg.plantDepr.residual);
+    setMoneyIfNotFocused('cfg-utilities', cfg.utilitiesMonthly);
+    setMoneyIfNotFocused('cfg-depr-balance', cfg.plantDepr.balance);
+    setMoneyIfNotFocused('cfg-depr-residual', cfg.plantDepr.residual);
     setIfNotFocused('cfg-depr-lifespan', cfg.plantDepr.lifespanMonths);
   }
 
@@ -117,10 +124,10 @@
   async function saveConfig() {
     var payload = {
       targetOutput: parseFloat(document.getElementById('cfg-target-output').value) || 0,
-      utilitiesMonthly: parseFloat(document.getElementById('cfg-utilities').value) || 0,
+      utilitiesMonthly: NumericInput.parseNumber(document.getElementById('cfg-utilities').value) || 0,
       plantDepr: {
-        balance: parseFloat(document.getElementById('cfg-depr-balance').value) || 0,
-        residual: parseFloat(document.getElementById('cfg-depr-residual').value) || 0,
+        balance: NumericInput.parseNumber(document.getElementById('cfg-depr-balance').value) || 0,
+        residual: NumericInput.parseNumber(document.getElementById('cfg-depr-residual').value) || 0,
         lifespanMonths: parseFloat(document.getElementById('cfg-depr-lifespan').value) || 0
       }
     };
@@ -137,6 +144,10 @@
     form.addEventListener('submit', handleSubmit);
     Array.prototype.forEach.call(dialog.querySelectorAll('[data-close-dialog]'), function (btn) {
       btn.addEventListener('click', function () { dialog.close(); });
+    });
+    NumericInput.attach(salaryInput);
+    moneyConfigIds.forEach(function (id) {
+      NumericInput.attach(document.getElementById(id));
     });
     configIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', scheduleConfigSave);
