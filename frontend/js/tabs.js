@@ -1,7 +1,6 @@
 (function () {
   var buttons = Array.prototype.slice.call(document.querySelectorAll('.tab-btn'));
   var panels = Array.prototype.slice.call(document.querySelectorAll('.tab-panel'));
-  var footer = document.querySelector('footer.bar');
 
   function activate(tabName) {
     buttons.forEach(function (btn) {
@@ -10,7 +9,6 @@
     panels.forEach(function (panel) {
       panel.hidden = panel.dataset.tab !== tabName;
     });
-    if (footer) footer.hidden = tabName !== 'main';
     if (location.hash.slice(1) !== tabName) {
       history.replaceState(null, '', '#' + tabName);
     }

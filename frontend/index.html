@@ -23,7 +23,7 @@
 
   <nav class="tabs" role="tablist">
     <button class="tab-btn" data-tab="personnel" role="tab" type="button">Персонал</button>
-    <button class="tab-btn" data-tab="materials" role="tab" type="button">Расходники</button>
+    <button class="tab-btn" data-tab="materials" role="tab" type="button">Смеси</button>
     <button class="tab-btn" data-tab="equipment" role="tab" type="button">Техника</button>
     <button class="tab-btn" data-tab="main" role="tab" type="button">Главная</button>
   </nav>
@@ -77,7 +77,7 @@
 
   </section>
 
-  <!-- ============ РАСХОДНИКИ ============ -->
+  <!-- ============ СМЕСИ ============ -->
   <section class="tab-panel" id="tab-materials" data-tab="materials" hidden>
 
     <section class="card">
@@ -88,10 +88,10 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><span class="num">02</span><h2>Рецепты смесей</h2></div>
-      <p class="hint">Расход каждого материала на 1 м³ для конкретной марки бетона. Себестоимость считается по актуальным ценам выше.</p>
+      <div class="card-head"><span class="num">02</span><h2>Смеси</h2></div>
+      <p class="hint">Расход материалов на 1 м³ и цена отпуска клиенту — у каждой марки бетона своя.</p>
       <div class="tile-grid" id="recipe-tiles"></div>
-      <button class="add-btn" id="add-recipe-btn" type="button">+ Добавить рецепт</button>
+      <button class="add-btn" id="add-recipe-btn" type="button">+ Добавить смесь</button>
     </section>
 
   </section>
@@ -146,8 +146,8 @@
 
           <div class="two-col">
             <div class="field-group">
-              <label for="sale-price">Цена продажи</label>
-              <div class="field"><input type="text" id="sale-price" inputmode="decimal" value="6800"><span class="unit">₽/м³</span></div>
+              <label for="delivery-charge">Доставка для клиента</label>
+              <div class="field"><input type="text" id="delivery-charge" inputmode="decimal" value="300"><span class="unit">₽/м³</span></div>
             </div>
             <div class="field-group">
               <label for="sale-volume">Объём заказа</label>
@@ -163,30 +163,39 @@
           <span class="value" id="cost-per-m3">—</span>
         </div>
 
-        <section class="card compact final-card">
-          <div class="card-head"><span class="num">02</span><h2>Доставка и прибыль</h2></div>
+        <section class="card compact">
+          <div class="card-head"><span class="num">02</span><h2>Смесь</h2></div>
+          <div class="breakdown compact">
+            <div class="line"><span class="l">Цена отпуска (рецепт)</span><span class="v" id="recipe-sale-price-display">—</span></div>
+            <div class="line"><span class="l">Выручка со смеси</span><span class="v" id="mix-revenue">—</span></div>
+            <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
+            <div class="line total"><span class="l">Прибыль от смеси</span><span class="v" id="mix-profit">—</span></div>
+          </div>
+        </section>
 
+        <section class="card compact">
+          <div class="card-head"><span class="num">03</span><h2>Доставка</h2></div>
           <div class="breakdown compact">
             <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
             <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
             <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
             <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
             <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
-            <div class="line total"><span class="l">Итого доставка</span><span class="v" id="delivery-total">—</span></div>
+            <div class="line"><span class="l">Расход на доставку</span><span class="v" id="delivery-cost-total">—</span></div>
+            <div class="line"><span class="l">Доход от доставки</span><span class="v" id="delivery-revenue">—</span></div>
+            <div class="line total"><span class="l">Прибыль от доставки</span><span class="v" id="delivery-profit">—</span></div>
           </div>
+        </section>
 
-          <div class="breakdown compact">
-            <div class="line"><span class="l">Выручка</span><span class="v" id="revenue">—</span></div>
-            <div class="line"><span class="l">Себестоимость партии</span><span class="v" id="batch-cost">—</span></div>
-          </div>
-
+        <section class="card compact final-card">
+          <div class="card-head"><span class="num">04</span><h2>Итого</h2></div>
           <div class="final-grid compact">
             <div class="final-result" id="profit-total-wrap">
               <span class="label">Чистая прибыль</span>
               <span class="value" id="profit-total">—</span>
             </div>
             <div class="final-result" id="profit-per-m3-wrap">
-              <span class="label">Прибыль на 1 м³</span>
+              <span class="label">Прибыль на 1 м³ (всего)</span>
               <span class="value" id="profit-per-m3">—</span>
             </div>
           </div>
@@ -197,13 +206,6 @@
   </section>
 
 </div>
-
-<footer class="bar">
-  <div class="bar-inner">
-    <span class="label">Чистая прибыль с заказа</span>
-    <span class="value" id="bar-profit">—</span>
-  </div>
-</footer>
 
 <!-- ============ DIALOGS ============ -->
 
@@ -259,9 +261,15 @@
   <form method="dialog" id="recipe-form">
     <h3 id="recipe-dialog-title">Рецепт</h3>
     <input type="hidden" id="recipe-id">
-    <div class="field-group">
-      <label for="recipe-name">Название / марка</label>
-      <div class="field"><input type="text" id="recipe-name" placeholder="М200" required></div>
+    <div class="two-col">
+      <div class="field-group">
+        <label for="recipe-name">Название / марка</label>
+        <div class="field"><input type="text" id="recipe-name" placeholder="М200" required></div>
+      </div>
+      <div class="field-group">
+        <label for="recipe-sale-price">Цена отпуска клиенту</label>
+        <div class="field"><input type="text" id="recipe-sale-price" inputmode="decimal" required><span class="unit">₽/м³</span></div>
+      </div>
     </div>
     <div class="recipe-items" id="recipe-items"></div>
     <button type="button" class="add-btn small" id="recipe-add-item-btn">+ Добавить компонент</button>

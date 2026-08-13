@@ -26,6 +26,7 @@ function seedData() {
       {
         id: 'rec_m200',
         name: 'М200',
+        salePrice: 6800,
         items: [
           { materialId: 'mat_cement', qty: 0.35 },
           { materialId: 'mat_sand', qty: 0.7 },

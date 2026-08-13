@@ -112,6 +112,7 @@
   var recTitleEl = document.getElementById('recipe-dialog-title');
   var recIdInput = document.getElementById('recipe-id');
   var recNameInput = document.getElementById('recipe-name');
+  var recSalePriceInput = document.getElementById('recipe-sale-price');
   var recItemsContainer = document.getElementById('recipe-items');
   var recCostEl = document.getElementById('recipe-dialog-cost');
   var recItemTemplate = document.getElementById('recipe-item-row-template');
@@ -161,9 +162,10 @@
       alert('Сначала добавьте хотя бы один материал в справочник выше.');
       return;
     }
-    recTitleEl.textContent = 'Новый рецепт';
+    recTitleEl.textContent = 'Новая смесь';
     recIdInput.value = '';
     recNameInput.value = '';
+    recSalePriceInput.value = '';
     recItemsContainer.innerHTML = '';
     recErrorEl.hidden = true;
     addRecipeItemRow();
@@ -172,9 +174,10 @@
   }
 
   function openRecipeForEdit(recipe) {
-    recTitleEl.textContent = 'Изменить рецепт';
+    recTitleEl.textContent = 'Изменить смесь';
     recIdInput.value = recipe.id;
     recNameInput.value = recipe.name;
+    NumericInput.setFormattedValue(recSalePriceInput, recipe.salePrice);
     recItemsContainer.innerHTML = '';
     recErrorEl.hidden = true;
     recipe.items.forEach(addRecipeItemRow);
@@ -187,6 +190,7 @@
     recErrorEl.hidden = true;
     var payload = {
       name: recNameInput.value,
+      salePrice: NumericInput.parseNumber(recSalePriceInput.value),
       items: readRecipeItemsFromForm()
     };
     try {
@@ -223,11 +227,15 @@
       tile.innerHTML =
         '<div class="tile-title"></div>' +
         '<div class="tile-meta"></div>' +
-        '<div class="tile-value"></div>' +
+        '<div class="breakdown compact">' +
+          '<div class="line"><span class="l">Себестоимость</span><span class="v cost"></span></div>' +
+          '<div class="line"><span class="l">Цена отпуска</span><span class="v price"></span></div>' +
+        '</div>' +
         '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = recipe.name;
       tile.querySelector('.tile-meta').textContent = recipe.items.length + ' компонент(ов)';
-      tile.querySelector('.tile-value').textContent = Format.fmt(cost, 2) + '/м³';
+      tile.querySelector('.cost').textContent = Format.fmt(cost, 2);
+      tile.querySelector('.price').textContent = Format.fmt(recipe.salePrice || 0, 2);
       tile.querySelector('.edit-btn').addEventListener('click', function () { openRecipeForEdit(recipe); });
       tile.querySelector('.del-btn').addEventListener('click', function () { handleRecipeDelete(recipe); });
       container.appendChild(tile);
@@ -252,6 +260,7 @@
     });
     recForm.addEventListener('submit', handleRecipeSubmit);
     closeOnBackdropButtons(recDialog);
+    NumericInput.attach(recSalePriceInput);
   }
 
   function render() {

@@ -1,7 +1,7 @@
 (function () {
   var selectedRecipeId = null;
   var selectedMixerId = null;
-  var inputIds = ['dist', 'fuel-price', 'sale-price', 'sale-volume'];
+  var inputIds = ['dist', 'fuel-price', 'delivery-charge', 'sale-volume'];
 
   function populateSelect(select, items, preferredId) {
     select.innerHTML = '';
@@ -14,6 +14,12 @@
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : (items[0] && items[0].id) || '';
     select.value = validId;
     return validId;
+  }
+
+  function setProfitLine(valueEl, amount) {
+    valueEl.textContent = Format.fmt(amount, 2);
+    valueEl.classList.remove('positive', 'negative');
+    valueEl.classList.add(amount >= 0 ? 'positive' : 'negative');
   }
 
   function recalc() {
@@ -35,8 +41,17 @@
     document.getElementById('cost-per-m3').textContent = Format.fmt(costPerM3, 2);
 
     var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
-    var trips = Calc.tripsForVolume(mixer, saleVolume);
+    var salePrice = recipe ? (recipe.salePrice || 0) : 0;
+    document.getElementById('recipe-sale-price-display').textContent = Format.fmt(salePrice, 2);
 
+    var mixRevenue = salePrice * saleVolume;
+    var mixCost = costPerM3 * saleVolume;
+    var mixProfit = mixRevenue - mixCost;
+    document.getElementById('mix-revenue').textContent = Format.fmt(mixRevenue, 2);
+    document.getElementById('mix-cost').textContent = Format.fmt(mixCost, 2);
+    setProfitLine(document.getElementById('mix-profit'), mixProfit);
+
+    var trips = Calc.tripsForVolume(mixer, saleVolume);
     var dist = parseFloat(document.getElementById('dist').value) || 0;
     var roundTrip = dist * 2;
     var fuelPrice = parseFloat(document.getElementById('fuel-price').value) || 0;
@@ -46,46 +61,40 @@
     var amortCostPerTrip = roundTrip * amortPerKm;
     var neighborCity = document.getElementById('nb-city').checked;
     var surchargePerTrip = neighborCity ? 1000 : 0;
-    var deliveryTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
+    var deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
 
     document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
     document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
     document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
     document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
     document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
-    document.getElementById('delivery-total').textContent = Format.fmt(deliveryTotal, 2);
+    document.getElementById('delivery-cost-total').textContent = Format.fmt(deliveryCostTotal, 2);
 
-    var salePrice = NumericInput.parseNumber(document.getElementById('sale-price').value) || 0;
-    var revenue = salePrice * saleVolume;
-    var batchCost = costPerM3 * saleVolume;
-    var profitTotal = revenue - batchCost - deliveryTotal;
-    var profitPerM3 = salePrice - costPerM3;
+    var deliveryChargePerM3 = NumericInput.parseNumber(document.getElementById('delivery-charge').value) || 0;
+    var deliveryRevenue = deliveryChargePerM3 * saleVolume;
+    var deliveryProfit = deliveryRevenue - deliveryCostTotal;
+    document.getElementById('delivery-revenue').textContent = Format.fmt(deliveryRevenue, 2);
+    setProfitLine(document.getElementById('delivery-profit'), deliveryProfit);
 
-    document.getElementById('revenue').textContent = Format.fmt(revenue, 2);
-    document.getElementById('batch-cost').textContent = Format.fmt(batchCost, 2);
+    var totalProfit = mixProfit + deliveryProfit;
+    var profitPerM3Total = saleVolume > 0 ? totalProfit / saleVolume : 0;
 
     var profitTotalEl = document.getElementById('profit-total');
     var profitTotalWrap = document.getElementById('profit-total-wrap');
     var profitPerM3El = document.getElementById('profit-per-m3');
     var profitPerM3Wrap = document.getElementById('profit-per-m3-wrap');
-    var barProfitEl = document.getElementById('bar-profit');
 
-    profitTotalEl.textContent = Format.fmt(profitTotal, 2);
-    profitPerM3El.textContent = Format.fmt(profitPerM3, 2);
-    barProfitEl.textContent = Format.fmt(profitTotal, 2);
+    profitTotalEl.textContent = Format.fmt(totalProfit, 2);
+    profitPerM3El.textContent = Format.fmt(profitPerM3Total, 2);
 
     profitTotalWrap.classList.remove('positive', 'negative');
-    profitTotalWrap.classList.add(profitTotal >= 0 ? 'positive' : 'negative');
+    profitTotalWrap.classList.add(totalProfit >= 0 ? 'positive' : 'negative');
     profitPerM3Wrap.classList.remove('positive', 'negative');
-    profitPerM3Wrap.classList.add(profitPerM3 >= 0 ? 'positive' : 'negative');
-    barProfitEl.classList.remove('positive', 'negative');
-    barProfitEl.classList.add(profitTotal >= 0 ? 'positive' : 'negative');
+    profitPerM3Wrap.classList.add(profitPerM3Total >= 0 ? 'positive' : 'negative');
   }
 
   function init() {
-    var salePriceInput = document.getElementById('sale-price');
-    NumericInput.attach(salePriceInput);
-    NumericInput.setFormattedValue(salePriceInput, parseFloat(salePriceInput.value) || 0);
+    NumericInput.attach(document.getElementById('delivery-charge'));
     inputIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', recalc);
     });

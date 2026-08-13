@@ -23,8 +23,9 @@ async function create(body) {
   let created;
   await db.mutate((draft) => {
     const name = str(body.name, 'name');
+    const salePrice = num(body.salePrice, 'salePrice');
     const items = sanitizeItems(body.items, draft.materials);
-    created = { id: db.genId('rec'), name, items };
+    created = { id: db.genId('rec'), name, salePrice, items };
     draft.recipes.push(created);
     return draft;
   });
@@ -37,8 +38,9 @@ async function update(id, body) {
     const idx = draft.recipes.findIndex((r) => r.id === id);
     if (idx === -1) throw new HttpError(404, 'Рецепт не найден');
     const name = str(body.name, 'name');
+    const salePrice = num(body.salePrice, 'salePrice');
     const items = sanitizeItems(body.items, draft.materials);
-    draft.recipes[idx] = { id, name, items };
+    draft.recipes[idx] = { id, name, salePrice, items };
     updated = draft.recipes[idx];
     return draft;
   });
