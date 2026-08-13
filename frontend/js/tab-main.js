@@ -54,7 +54,6 @@
     document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
     document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
     document.getElementById('delivery-total').textContent = Format.fmt(deliveryTotal, 2);
-    document.getElementById('delivery-line').textContent = Format.fmt(deliveryTotal, 2);
 
     var salePrice = NumericInput.parseNumber(document.getElementById('sale-price').value) || 0;
     var revenue = salePrice * saleVolume;

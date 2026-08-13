@@ -18,7 +18,7 @@
       </div>
       <button class="theme-btn" id="theme-btn" type="button" title="Переключить тему">🌓</button>
     </div>
-    <p class="sub">Персонал, расходники, техника и накладные расходы завода → себестоимость 1 м³ → доставка → чистая прибыль. Справочные данные хранятся на сервере и доступны для редактирования на каждой вкладке.</p>
+    <p class="sub">Себестоимость 1 м³ → доставка → чистая прибыль.</p>
   </header>
 
   <nav class="tabs" role="tablist">
@@ -110,90 +110,90 @@
 
   <!-- ============ ГЛАВНАЯ ============ -->
   <section class="tab-panel" id="tab-main" data-tab="main" hidden>
+    <div class="main-grid">
 
-    <section class="card">
-      <div class="card-head"><span class="num">01</span><h2>Выбор рецепта и техники</h2></div>
-      <div class="two-col">
-        <div class="field-group">
-          <label for="main-recipe">Марка / рецепт</label>
-          <select class="select" id="main-recipe"></select>
-        </div>
-        <div class="field-group">
-          <label for="main-mixer">Миксер</label>
-          <select class="select" id="main-mixer"></select>
-        </div>
+      <div class="main-col">
+        <section class="card compact">
+          <div class="card-head"><span class="num">01</span><h2>Параметры и доставка</h2></div>
+
+          <div class="two-col">
+            <div class="field-group">
+              <label for="main-recipe">Марка / рецепт</label>
+              <select class="select" id="main-recipe"></select>
+            </div>
+            <div class="field-group">
+              <label for="main-mixer">Миксер</label>
+              <select class="select" id="main-mixer"></select>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="field-group">
+              <label for="dist">Расстояние (в одну сторону)</label>
+              <div class="field"><input type="number" id="dist" min="0" step="any" value="15" inputmode="decimal"><span class="unit">км</span></div>
+            </div>
+            <div class="field-group">
+              <label for="fuel-price">Цена топлива</label>
+              <div class="field"><input type="number" id="fuel-price" min="0" step="any" value="62" inputmode="decimal"><span class="unit">₽/л</span></div>
+            </div>
+          </div>
+
+          <div class="checkbox-row">
+            <input type="checkbox" id="nb-city">
+            <label for="nb-city">Рейс в соседний город</label>
+            <span class="badge">+1 000 ₽/рейс</span>
+          </div>
+
+          <div class="two-col">
+            <div class="field-group">
+              <label for="sale-price">Цена продажи</label>
+              <div class="field"><input type="text" id="sale-price" inputmode="decimal" value="6800"><span class="unit">₽/м³</span></div>
+            </div>
+            <div class="field-group">
+              <label for="sale-volume">Объём заказа</label>
+              <div class="field"><input type="number" id="sale-volume" min="0" step="any" value="6" inputmode="decimal"><span class="unit">м³</span></div>
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
 
-    <div class="result-pill">
-      <span class="label">Себестоимость 1 м³ (материалы + персонал + завод)</span>
-      <span class="value" id="cost-per-m3">—</span>
+      <div class="main-col">
+        <div class="result-pill">
+          <span class="label">Себестоимость 1 м³</span>
+          <span class="value" id="cost-per-m3">—</span>
+        </div>
+
+        <section class="card compact final-card">
+          <div class="card-head"><span class="num">02</span><h2>Доставка и прибыль</h2></div>
+
+          <div class="breakdown compact">
+            <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
+            <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
+            <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
+            <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
+            <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
+            <div class="line total"><span class="l">Итого доставка</span><span class="v" id="delivery-total">—</span></div>
+          </div>
+
+          <div class="breakdown compact">
+            <div class="line"><span class="l">Выручка</span><span class="v" id="revenue">—</span></div>
+            <div class="line"><span class="l">Себестоимость партии</span><span class="v" id="batch-cost">—</span></div>
+          </div>
+
+          <div class="final-grid compact">
+            <div class="final-result" id="profit-total-wrap">
+              <span class="label">Чистая прибыль</span>
+              <span class="value" id="profit-total">—</span>
+            </div>
+            <div class="final-result" id="profit-per-m3-wrap">
+              <span class="label">Прибыль на 1 м³</span>
+              <span class="value" id="profit-per-m3">—</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
     </div>
-
-    <section class="card">
-      <div class="card-head"><span class="num">02</span><h2>Доставка — расход завода за рейс</h2></div>
-      <p class="hint">Внутренние расходы завода на рейсы (не цена для клиента): топливо + амортизация миксера, плюс доплата водителю при рейсе в другой город. Если объём заказа больше вместимости одного миксера, потребуется несколько рейсов — расходы и доплата умножаются на их число.</p>
-
-      <div class="two-col">
-        <div class="field-group">
-          <label for="dist">Расстояние до объекта (в одну сторону)</label>
-          <div class="field"><input type="number" id="dist" min="0" step="any" value="15" inputmode="decimal"><span class="unit">км</span></div>
-        </div>
-        <div class="field-group">
-          <label for="fuel-price">Цена топлива</label>
-          <div class="field"><input type="number" id="fuel-price" min="0" step="any" value="62" inputmode="decimal"><span class="unit">₽/л</span></div>
-        </div>
-      </div>
-
-      <div class="checkbox-row">
-        <input type="checkbox" id="nb-city">
-        <label for="nb-city">Рейс в соседний город (доплата водителю за сложность)</label>
-        <span class="badge">+1 000 ₽ за рейс</span>
-      </div>
-
-      <div class="breakdown">
-        <div class="line"><span class="l">Пробег туда-обратно (1 рейс)</span><span class="v" id="round-trip">—</span></div>
-        <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
-        <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
-        <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
-        <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
-        <div class="line total"><span class="l">Итого за доставку</span><span class="v" id="delivery-total">—</span></div>
-      </div>
-    </section>
-
-    <section class="card final-card">
-      <div class="card-head"><span class="num">03</span><h2>Продажа и чистая прибыль</h2></div>
-      <p class="hint">Доставка — фиксированная сумма за все рейсы и вычитается из прибыли по партии целиком.</p>
-
-      <div class="two-col">
-        <div class="field-group">
-          <label for="sale-price">Цена продажи</label>
-          <div class="field"><input type="text" id="sale-price" inputmode="decimal" value="6800"><span class="unit">₽/м³</span></div>
-        </div>
-        <div class="field-group">
-          <label for="sale-volume">Объём заказа</label>
-          <div class="field"><input type="number" id="sale-volume" min="0" step="any" value="6" inputmode="decimal"><span class="unit">м³</span></div>
-        </div>
-      </div>
-
-      <div class="breakdown">
-        <div class="line"><span class="l">Выручка</span><span class="v" id="revenue">—</span></div>
-        <div class="line"><span class="l">Себестоимость партии</span><span class="v" id="batch-cost">—</span></div>
-        <div class="line"><span class="l">Доставка</span><span class="v" id="delivery-line">—</span></div>
-      </div>
-
-      <div class="final-grid">
-        <div class="final-result" id="profit-total-wrap">
-          <span class="label">Чистая прибыль с заказа</span>
-          <span class="value" id="profit-total">—</span>
-        </div>
-        <div class="final-result" id="profit-per-m3-wrap">
-          <span class="label">Из неё на 1 м³ (без учёта доставки)</span>
-          <span class="value" id="profit-per-m3">—</span>
-        </div>
-      </div>
-    </section>
-
   </section>
 
 </div>
