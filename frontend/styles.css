@@ -380,6 +380,10 @@ section.card.compact{
 .final-grid.compact{ gap:10px; }
 .final-grid.compact .final-result{ padding:10px 14px; }
 .final-grid.compact .final-result .value{ font-size:19px; }
+.final-grid.compact.three{ grid-template-columns:1fr 1fr 1fr; }
+@media (max-width:760px){
+  .final-grid.compact.three{ grid-template-columns:1fr 1fr; }
+}
 
 .split-cols{
   display:grid;
@@ -405,12 +409,29 @@ section.card.compact{
   font-weight:800;
   font-size:16px;
 }
+.split-total .v-wrap{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+}
 .split-total .v{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-variant-numeric:tabular-nums;
 }
 .split-total .v.positive{ color:var(--positive); }
 .split-total .v.negative{ color:var(--negative); }
+.split-total .margin{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:12px;
+  font-weight:700;
+  padding:2px 7px;
+  border-radius:6px;
+  background:var(--surface-2);
+  color:var(--text-muted);
+}
+.split-total .margin.positive{ color:var(--positive); }
+.split-total .margin.negative{ color:var(--negative); }
 @media (max-width:640px){
   .split-cols{ grid-template-columns:1fr; gap:10px; }
 }

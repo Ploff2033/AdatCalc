@@ -41,6 +41,10 @@
     return Math.max(1, Math.ceil(volume / mixer.capacity));
   }
 
+  function marginPercent(profit, revenue) {
+    return revenue > 0 ? (profit / revenue) * 100 : 0;
+  }
+
   window.Calc = {
     payrollPerM3: payrollPerM3,
     plantDeprPerM3: plantDeprPerM3,
@@ -48,6 +52,7 @@
     materialEffectivePrice: materialEffectivePrice,
     materialsCostPerM3: materialsCostPerM3,
     amortPerKm: amortPerKm,
-    tripsForVolume: tripsForVolume
+    tripsForVolume: tripsForVolume,
+    marginPercent: marginPercent
   };
 })();

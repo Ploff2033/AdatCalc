@@ -22,6 +22,12 @@
     valueEl.classList.add(amount >= 0 ? 'positive' : 'negative');
   }
 
+  function setMarginBadge(el, percent) {
+    el.textContent = Format.fmtNum(percent, 1, '%');
+    el.classList.remove('positive', 'negative');
+    el.classList.add(percent >= 0 ? 'positive' : 'negative');
+  }
+
   function recalc() {
     refreshPlantMarker();
 
@@ -58,6 +64,7 @@
     document.getElementById('mix-revenue').textContent = Format.fmt(mixRevenue, 2);
     document.getElementById('mix-cost').textContent = Format.fmt(mixCost, 2);
     setProfitLine(document.getElementById('mix-profit'), mixProfit);
+    setMarginBadge(document.getElementById('mix-margin'), Calc.marginPercent(mixProfit, mixRevenue));
 
     var trips = Calc.tripsForVolume(mixer, saleVolume);
     var dist = parseFloat(document.getElementById('dist').value) || 0;
@@ -83,22 +90,30 @@
     var deliveryProfit = deliveryRevenue - deliveryCostTotal;
     document.getElementById('delivery-revenue').textContent = Format.fmt(deliveryRevenue, 2);
     setProfitLine(document.getElementById('delivery-profit'), deliveryProfit);
+    setMarginBadge(document.getElementById('delivery-margin'), Calc.marginPercent(deliveryProfit, deliveryRevenue));
 
+    var totalRevenue = mixRevenue + deliveryRevenue;
     var totalProfit = mixProfit + deliveryProfit;
     var profitPerM3Total = saleVolume > 0 ? totalProfit / saleVolume : 0;
+    var marginTotal = Calc.marginPercent(totalProfit, totalRevenue);
 
     var profitTotalEl = document.getElementById('profit-total');
     var profitTotalWrap = document.getElementById('profit-total-wrap');
     var profitPerM3El = document.getElementById('profit-per-m3');
     var profitPerM3Wrap = document.getElementById('profit-per-m3-wrap');
+    var marginTotalEl = document.getElementById('margin-total');
+    var marginTotalWrap = document.getElementById('margin-total-wrap');
 
     profitTotalEl.textContent = Format.fmt(totalProfit, 2);
     profitPerM3El.textContent = Format.fmt(profitPerM3Total, 2);
+    marginTotalEl.textContent = Format.fmtNum(marginTotal, 1, '%');
 
     profitTotalWrap.classList.remove('positive', 'negative');
     profitTotalWrap.classList.add(totalProfit >= 0 ? 'positive' : 'negative');
     profitPerM3Wrap.classList.remove('positive', 'negative');
     profitPerM3Wrap.classList.add(profitPerM3Total >= 0 ? 'positive' : 'negative');
+    marginTotalWrap.classList.remove('positive', 'negative');
+    marginTotalWrap.classList.add(marginTotal >= 0 ? 'positive' : 'negative');
   }
 
   // ---- Delivery destination map (inline on Главная) ----

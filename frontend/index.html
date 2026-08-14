@@ -220,7 +220,10 @@
               </div>
             </div>
           </div>
-          <div class="split-total"><span class="l">Прибыль от смеси</span><span class="v" id="mix-profit">—</span></div>
+          <div class="split-total">
+            <span class="l">Прибыль от смеси</span>
+            <span class="v-wrap"><span class="v" id="mix-profit">—</span><span class="margin" id="mix-margin">—</span></span>
+          </div>
         </section>
 
         <section class="card compact">
@@ -244,12 +247,15 @@
               </div>
             </div>
           </div>
-          <div class="split-total"><span class="l">Прибыль от доставки</span><span class="v" id="delivery-profit">—</span></div>
+          <div class="split-total">
+            <span class="l">Прибыль от доставки</span>
+            <span class="v-wrap"><span class="v" id="delivery-profit">—</span><span class="margin" id="delivery-margin">—</span></span>
+          </div>
         </section>
 
         <section class="card compact final-card">
           <div class="card-head"><span class="num">05</span><h2>Итого</h2></div>
-          <div class="final-grid compact">
+          <div class="final-grid compact three">
             <div class="final-result" id="profit-total-wrap">
               <span class="label">Чистая прибыль</span>
               <span class="value" id="profit-total">—</span>
@@ -257,6 +263,10 @@
             <div class="final-result" id="profit-per-m3-wrap">
               <span class="label">Прибыль на 1 м³ (всего)</span>
               <span class="value" id="profit-per-m3">—</span>
+            </div>
+            <div class="final-result" id="margin-total-wrap">
+              <span class="label">Рентабельность сделки</span>
+              <span class="value" id="margin-total">—</span>
             </div>
           </div>
         </section>
