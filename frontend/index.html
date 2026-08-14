@@ -335,6 +335,9 @@
         <div class="field"><input type="text" id="recipe-sale-price" inputmode="decimal" required><span class="unit">₽/м³</span></div>
       </div>
     </div>
+    <div class="recipe-items-header">
+      <span>Материал</span><span>Расход на м³</span><span>Стоимость</span><span></span>
+    </div>
     <div class="recipe-items" id="recipe-items"></div>
     <button type="button" class="add-btn small" id="recipe-add-item-btn">+ Добавить компонент</button>
     <div class="divider-total">
@@ -389,6 +392,7 @@
   <div class="recipe-item-row">
     <select class="select recipe-item-material"></select>
     <div class="field"><input type="number" class="recipe-item-qty" min="0" step="any" inputmode="decimal"><span class="unit">на м³</span></div>
+    <div class="recipe-item-cost">—</div>
     <button type="button" class="icon-btn recipe-item-remove" title="Удалить компонент">✕</button>
   </div>
 </template>

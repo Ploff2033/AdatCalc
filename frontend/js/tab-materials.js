@@ -165,8 +165,18 @@
   }
 
   function updateRecipeDialogCost() {
-    var cost = Calc.materialsCostPerM3({ items: readRecipeItemsFromForm() }, State.data.materials);
-    recCostEl.textContent = Format.fmt(cost, 2);
+    var byId = {};
+    State.data.materials.forEach(function (m) { byId[m.id] = m; });
+    var total = 0;
+    Array.prototype.forEach.call(recItemsContainer.querySelectorAll('.recipe-item-row'), function (row) {
+      var materialId = row.querySelector('.recipe-item-material').value;
+      var qty = parseFloat(row.querySelector('.recipe-item-qty').value) || 0;
+      var mat = byId[materialId];
+      var cost = mat ? qty * Calc.materialEffectivePrice(mat) : 0;
+      row.querySelector('.recipe-item-cost').textContent = Format.fmt(cost, 2);
+      total += cost;
+    });
+    recCostEl.textContent = Format.fmt(total, 2);
   }
 
   function openRecipeForCreate() {

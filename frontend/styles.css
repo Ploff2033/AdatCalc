@@ -636,6 +636,19 @@ input:focus-visible{ outline:none; }
   font-size:13px;
 }
 
+.recipe-items-header{
+  display:grid;
+  grid-template-columns:1.4fr 1fr 1fr auto;
+  gap:8px;
+  padding:0 0 2px;
+}
+.recipe-items-header span{
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--text-muted);
+}
 .recipe-items{
   display:flex;
   flex-direction:column;
@@ -643,7 +656,16 @@ input:focus-visible{ outline:none; }
 }
 .recipe-item-row{
   display:grid;
-  grid-template-columns:1.4fr 1fr auto;
+  grid-template-columns:1.4fr 1fr 1fr auto;
   gap:8px;
   align-items:center;
+}
+.recipe-item-cost{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:14px;
+  font-weight:700;
+  color:var(--text-muted);
+  text-align:right;
+  padding-right:8px;
 }
