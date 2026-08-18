@@ -73,7 +73,18 @@ async function load() {
   } catch (err) {
     throw new Error(`data/db.json is corrupted and could not be parsed: ${err.message}`);
   }
+  applyMigrations(cache);
   return cache;
+}
+
+// Fills in keys added by later versions of the app so older data/db.json
+// files (from before a feature existed) don't crash on missing fields.
+function applyMigrations(data) {
+  if (!Array.isArray(data.aggregateTrucks)) data.aggregateTrucks = [];
+  if (data.config && typeof data.config.fuelPriceDefault !== 'number') {
+    data.config.fuelPriceDefault = 62;
+  }
+  return data;
 }
 
 function get() {
