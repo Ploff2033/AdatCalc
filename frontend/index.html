@@ -319,7 +319,7 @@
   </form>
 </dialog>
 
-<dialog class="app-dialog wide" id="material-dialog">
+<dialog class="app-dialog xwide" id="material-dialog">
   <form method="dialog" id="material-form">
     <h3 id="material-dialog-title">Материал</h3>
     <input type="hidden" id="material-id">
@@ -373,15 +373,9 @@
           <div class="field"><input type="number" id="material-delivery-fuel-price" min="0" step="any"><span class="unit">₽/л</span></div>
         </div>
       </div>
-      <div class="two-col">
-        <div class="field-group">
-          <label for="material-delivery-surcharge">Доплата водителю за рейс</label>
-          <div class="field"><input type="number" id="material-delivery-surcharge" min="0" step="any"><span class="unit">₽</span></div>
-        </div>
-        <div class="field-group">
-          <label for="material-delivery-amort-rate">Амортизация техники за рейс</label>
-          <div class="field"><input type="number" id="material-delivery-amort-rate" min="0" step="any"><span class="unit">₽/км</span></div>
-        </div>
+      <div class="field-group">
+        <label for="material-delivery-surcharge">Доплата водителю за рейс</label>
+        <div class="field"><input type="number" id="material-delivery-surcharge" min="0" step="any"><span class="unit">₽</span></div>
       </div>
 
       <div class="breakdown compact">

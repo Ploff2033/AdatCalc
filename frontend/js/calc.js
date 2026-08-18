@@ -22,11 +22,13 @@
 
   // Внутренние рейсы за инертными — не покупка услуги, поэтому без НДС.
   // Возят всегда полным кузовом, поэтому грузоподъёмность берётся с карточки техники, без переопределения.
+  // Амортизация тоже всегда считается с карточки техники (баланс/остаток/пробег) — не хранится отдельно,
+  // чтобы не разъезжалась с реальной карточкой при её изменении.
   function aggregateDeliveryPerTrip(delivery, truck) {
     if (!delivery || !truck) return { fuel: 0, amort: 0, surcharge: 0, total: 0 };
     var roundTrip = (delivery.distanceKm || 0) * 2;
     var fuel = roundTrip * ((truck.fuelRate || 0) / 100) * (delivery.fuelPricePerLiter || 0);
-    var amort = roundTrip * (delivery.amortRatePerKm || 0);
+    var amort = roundTrip * amortPerKm(truck);
     var surcharge = delivery.driverSurcharge || 0;
     return { fuel: fuel, amort: amort, surcharge: surcharge, total: fuel + amort + surcharge };
   }

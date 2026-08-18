@@ -20,7 +20,6 @@
   var matDeliveryDistanceInput = document.getElementById('material-delivery-distance');
   var matDeliveryFuelPriceInput = document.getElementById('material-delivery-fuel-price');
   var matDeliverySurchargeInput = document.getElementById('material-delivery-surcharge');
-  var matDeliveryAmortRateInput = document.getElementById('material-delivery-amort-rate');
 
   function buildTruckOptions(selectedId) {
     matDeliveryTruckSelect.innerHTML = '';
@@ -41,7 +40,6 @@
     matDeliveryDistanceInput.value = '';
     matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
     matDeliverySurchargeInput.value = '';
-    matDeliveryAmortRateInput.value = '';
   }
 
   function applyDeliveryModeVisibility() {
@@ -61,11 +59,8 @@
 
   function handleDeliveryTruckChange() {
     var truck = State.data.aggregateTrucks.find(function (t) { return t.id === matDeliveryTruckSelect.value; });
-    if (truck) {
-      matDeliveryAmortRateInput.value = Calc.amortPerKm(truck).toFixed(2);
-      if (!matDeliveryFuelPriceInput.value) {
-        matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
-      }
+    if (truck && !matDeliveryFuelPriceInput.value) {
+      matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
     }
     updateMaterialDialogPricing();
   }
@@ -79,7 +74,6 @@
         distanceKm: 0,
         fuelPricePerLiter: 0,
         driverSurcharge: 0,
-        amortRatePerKm: 0,
         manualCostPerUnit: parseFloat(matDeliveryManualCostInput.value) || 0
       };
     }
@@ -89,7 +83,6 @@
       distanceKm: parseFloat(matDeliveryDistanceInput.value) || 0,
       fuelPricePerLiter: parseFloat(matDeliveryFuelPriceInput.value) || 0,
       driverSurcharge: parseFloat(matDeliverySurchargeInput.value) || 0,
-      amortRatePerKm: parseFloat(matDeliveryAmortRateInput.value) || 0,
       manualCostPerUnit: 0
     };
   }
@@ -153,7 +146,6 @@
       matDeliveryDistanceInput.value = delivery.distanceKm;
       matDeliveryFuelPriceInput.value = delivery.fuelPricePerLiter;
       matDeliverySurchargeInput.value = delivery.driverSurcharge;
-      matDeliveryAmortRateInput.value = delivery.amortRatePerKm;
       matDeliveryManualCostInput.value = '0';
     } else {
       clearDeliveryFields();
@@ -414,7 +406,7 @@
     matDeliveryOwnTransportCheckbox.addEventListener('change', handleOwnTransportToggle);
     matDeliveryTruckSelect.addEventListener('change', handleDeliveryTruckChange);
     matDeliveryManualCostInput.addEventListener('input', updateMaterialDialogPricing);
-    [matDeliveryDistanceInput, matDeliveryFuelPriceInput, matDeliverySurchargeInput, matDeliveryAmortRateInput].forEach(function (input) {
+    [matDeliveryDistanceInput, matDeliveryFuelPriceInput, matDeliverySurchargeInput].forEach(function (input) {
       input.addEventListener('input', updateMaterialDialogPricing);
     });
 

@@ -12,7 +12,6 @@ function sanitizeDelivery(delivery, trucks) {
       distanceKm: 0,
       fuelPricePerLiter: 0,
       driverSurcharge: 0,
-      amortRatePerKm: 0,
       manualCostPerUnit: num(d.manualCostPerUnit, 'delivery.manualCostPerUnit')
     };
   }
@@ -25,7 +24,6 @@ function sanitizeDelivery(delivery, trucks) {
     distanceKm: num(d.distanceKm, 'delivery.distanceKm'),
     fuelPricePerLiter: num(d.fuelPricePerLiter, 'delivery.fuelPricePerLiter'),
     driverSurcharge: num(d.driverSurcharge, 'delivery.driverSurcharge'),
-    amortRatePerKm: num(d.amortRatePerKm, 'delivery.amortRatePerKm'),
     manualCostPerUnit: 0
   };
 }
