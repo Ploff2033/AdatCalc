@@ -399,6 +399,17 @@ section.card.compact{
 }
 .split-col.expense .split-col-label{ color:var(--negative); }
 .split-col.income .split-col-label{ color:var(--positive); }
+
+.dialog-section-label{
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--accent);
+  border-top:1px solid var(--border);
+  padding-top:14px;
+  margin-top:2px;
+}
 .split-total{
   display:flex;
   justify-content:space-between;

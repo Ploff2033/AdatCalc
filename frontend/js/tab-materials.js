@@ -10,6 +10,114 @@
   var matPriceInput = document.getElementById('material-price');
   var matLossInput = document.getElementById('material-loss');
 
+  // ---- Доставка инертных на завод ----
+  var matDeliveryOwnTransportCheckbox = document.getElementById('material-delivery-own-transport');
+  var matDeliveryManualField = document.getElementById('material-delivery-manual-field');
+  var matDeliveryManualCostInput = document.getElementById('material-delivery-manual-cost');
+  var matDeliveryManualUnitEl = document.getElementById('material-delivery-manual-unit');
+  var matDeliveryTruckSelect = document.getElementById('material-delivery-truck');
+  var matDeliveryFields = document.getElementById('material-delivery-fields');
+  var matDeliveryDistanceInput = document.getElementById('material-delivery-distance');
+  var matDeliveryFuelPriceInput = document.getElementById('material-delivery-fuel-price');
+  var matDeliverySurchargeInput = document.getElementById('material-delivery-surcharge');
+  var matDeliveryAmortRateInput = document.getElementById('material-delivery-amort-rate');
+
+  function buildTruckOptions(selectedId) {
+    matDeliveryTruckSelect.innerHTML = '';
+    State.data.aggregateTrucks.forEach(function (truck) {
+      var opt = document.createElement('option');
+      opt.value = truck.id;
+      opt.textContent = truck.name + ' (' + Format.fmtNum(truck.capacity, 1, 'т') + ')';
+      matDeliveryTruckSelect.appendChild(opt);
+    });
+    var validId = State.data.aggregateTrucks.some(function (t) { return t.id === selectedId; })
+      ? selectedId
+      : (State.data.aggregateTrucks[0] && State.data.aggregateTrucks[0].id) || '';
+    matDeliveryTruckSelect.value = validId;
+    return validId;
+  }
+
+  function clearDeliveryFields() {
+    matDeliveryDistanceInput.value = '';
+    matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
+    matDeliverySurchargeInput.value = '';
+    matDeliveryAmortRateInput.value = '';
+  }
+
+  function applyDeliveryModeVisibility() {
+    var ownTransport = matDeliveryOwnTransportCheckbox.checked;
+    matDeliveryManualField.hidden = ownTransport;
+    matDeliveryFields.hidden = !ownTransport;
+  }
+
+  function handleOwnTransportToggle() {
+    applyDeliveryModeVisibility();
+    if (matDeliveryOwnTransportCheckbox.checked) {
+      handleDeliveryTruckChange();
+    } else {
+      updateMaterialDialogPricing();
+    }
+  }
+
+  function handleDeliveryTruckChange() {
+    var truck = State.data.aggregateTrucks.find(function (t) { return t.id === matDeliveryTruckSelect.value; });
+    if (truck) {
+      matDeliveryAmortRateInput.value = Calc.amortPerKm(truck).toFixed(2);
+      if (!matDeliveryFuelPriceInput.value) {
+        matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
+      }
+    }
+    updateMaterialDialogPricing();
+  }
+
+  function readDeliveryDraftFromForm() {
+    var ownTransport = matDeliveryOwnTransportCheckbox.checked;
+    if (!ownTransport) {
+      return {
+        ownTransport: false,
+        truckId: null,
+        distanceKm: 0,
+        fuelPricePerLiter: 0,
+        driverSurcharge: 0,
+        amortRatePerKm: 0,
+        manualCostPerUnit: parseFloat(matDeliveryManualCostInput.value) || 0
+      };
+    }
+    return {
+      ownTransport: true,
+      truckId: matDeliveryTruckSelect.value,
+      distanceKm: parseFloat(matDeliveryDistanceInput.value) || 0,
+      fuelPricePerLiter: parseFloat(matDeliveryFuelPriceInput.value) || 0,
+      driverSurcharge: parseFloat(matDeliverySurchargeInput.value) || 0,
+      amortRatePerKm: parseFloat(matDeliveryAmortRateInput.value) || 0,
+      manualCostPerUnit: 0
+    };
+  }
+
+  function updateMaterialDialogPricing() {
+    var delivery = readDeliveryDraftFromForm();
+    var truck = delivery.ownTransport ? State.data.aggregateTrucks.find(function (t) { return t.id === delivery.truckId; }) : null;
+    var perUnit;
+
+    if (delivery.ownTransport) {
+      var perTrip = Calc.aggregateDeliveryPerTrip(delivery, truck);
+      perUnit = truck && truck.capacity > 0 ? perTrip.total / truck.capacity : 0;
+      document.getElementById('material-delivery-fuel-cost').textContent = Format.fmt(perTrip.fuel, 2);
+      document.getElementById('material-delivery-amort-cost').textContent = Format.fmt(perTrip.amort, 2);
+      document.getElementById('material-delivery-surcharge-cost').textContent = Format.fmt(perTrip.surcharge, 2);
+      document.getElementById('material-delivery-trip-total').textContent = Format.fmt(perTrip.total, 2);
+      document.getElementById('material-delivery-per-ton').textContent = Format.fmt(perUnit, 2);
+    } else {
+      perUnit = delivery.manualCostPerUnit;
+    }
+
+    var warehousePrice = NumericInput.parseNumber(matPriceInput.value) || 0;
+    var landed = warehousePrice + perUnit;
+    document.getElementById('material-price-warehouse').textContent = Format.fmt(warehousePrice, 2);
+    document.getElementById('material-price-delivery-addition').textContent = Format.fmt(perUnit, 2);
+    document.getElementById('material-price-landed').textContent = Format.fmt(landed, 2);
+  }
+
   function openMaterialForCreate() {
     matTitleEl.textContent = 'Новый материал';
     matIdInput.value = '';
@@ -18,6 +126,13 @@
     matPriceInput.value = '';
     matLossInput.value = '0';
     matErrorEl.hidden = true;
+    matDeliveryOwnTransportCheckbox.checked = false;
+    buildTruckOptions('');
+    clearDeliveryFields();
+    matDeliveryManualCostInput.value = '0';
+    matDeliveryManualUnitEl.textContent = '₽/т';
+    applyDeliveryModeVisibility();
+    updateMaterialDialogPricing();
     matDialog.showModal();
   }
 
@@ -29,6 +144,24 @@
     NumericInput.setFormattedValue(matPriceInput, mat.price);
     matLossInput.value = mat.lossPercent || 0;
     matErrorEl.hidden = true;
+
+    var delivery = mat.delivery;
+    var ownTransport = !!(delivery && delivery.ownTransport);
+    matDeliveryOwnTransportCheckbox.checked = ownTransport;
+    buildTruckOptions(delivery ? delivery.truckId : '');
+    if (ownTransport) {
+      matDeliveryDistanceInput.value = delivery.distanceKm;
+      matDeliveryFuelPriceInput.value = delivery.fuelPricePerLiter;
+      matDeliverySurchargeInput.value = delivery.driverSurcharge;
+      matDeliveryAmortRateInput.value = delivery.amortRatePerKm;
+      matDeliveryManualCostInput.value = '0';
+    } else {
+      clearDeliveryFields();
+      matDeliveryManualCostInput.value = (delivery && delivery.manualCostPerUnit) || 0;
+    }
+    matDeliveryManualUnitEl.textContent = '₽/' + (mat.unit || 'т');
+    applyDeliveryModeVisibility();
+    updateMaterialDialogPricing();
     matDialog.showModal();
   }
 
@@ -39,7 +172,8 @@
       name: matNameInput.value,
       unit: matUnitInput.value,
       price: NumericInput.parseNumber(matPriceInput.value),
-      lossPercent: parseFloat(matLossInput.value) || 0
+      lossPercent: parseFloat(matLossInput.value) || 0,
+      delivery: readDeliveryDraftFromForm()
     };
     try {
       if (matIdInput.value) {
@@ -78,7 +212,7 @@
     header.innerHTML =
       '<div class="col-label">Материал</div><div class="col-label">Ед.</div>' +
       '<div class="col-label">Закупочная цена</div><div class="col-label">Потери</div>' +
-      '<div class="col-label">Цена с учётом потерь</div><div></div>';
+      '<div class="col-label">Реальная цена</div><div></div>';
     container.appendChild(header);
 
     State.data.materials.forEach(function (mat) {
@@ -91,7 +225,7 @@
         '<div class="mat-loss"></div>' +
         '<div class="mat-real-price"></div>' +
         '<div class="tile-actions"></div>';
-      var effectivePrice = Calc.materialEffectivePrice(mat);
+      var effectivePrice = Calc.materialEffectivePrice(mat, State.data.aggregateTrucks);
       row.querySelector('.mat-name').textContent = mat.name;
       row.querySelector('.mat-unit').textContent = mat.unit;
       row.querySelector('.mat-price').textContent = Format.fmt(mat.price, 2) + ' / ' + mat.unit;
@@ -172,7 +306,7 @@
       var materialId = row.querySelector('.recipe-item-material').value;
       var qty = parseFloat(row.querySelector('.recipe-item-qty').value) || 0;
       var mat = byId[materialId];
-      var cost = mat ? qty * Calc.materialEffectivePrice(mat) : 0;
+      var cost = mat ? qty * Calc.materialEffectivePrice(mat, State.data.aggregateTrucks) : 0;
       row.querySelector('.recipe-item-cost').textContent = Format.fmt(cost, 2);
       total += cost;
     });
@@ -243,7 +377,7 @@
     var container = document.getElementById('recipe-tiles');
     container.innerHTML = '';
     State.data.recipes.forEach(function (recipe) {
-      var cost = Calc.materialsCostPerM3(recipe, State.data.materials);
+      var cost = Calc.materialsCostPerM3(recipe, State.data.materials, State.data.aggregateTrucks);
       var tile = document.createElement('div');
       tile.className = 'tile';
       tile.innerHTML =
@@ -275,6 +409,14 @@
     matForm.addEventListener('submit', handleMaterialSubmit);
     closeOnBackdropButtons(matDialog);
     NumericInput.attach(matPriceInput);
+    matPriceInput.addEventListener('input', updateMaterialDialogPricing);
+
+    matDeliveryOwnTransportCheckbox.addEventListener('change', handleOwnTransportToggle);
+    matDeliveryTruckSelect.addEventListener('change', handleDeliveryTruckChange);
+    matDeliveryManualCostInput.addEventListener('input', updateMaterialDialogPricing);
+    [matDeliveryDistanceInput, matDeliveryFuelPriceInput, matDeliverySurchargeInput, matDeliveryAmortRateInput].forEach(function (input) {
+      input.addEventListener('input', updateMaterialDialogPricing);
+    });
 
     document.getElementById('add-recipe-btn').addEventListener('click', openRecipeForCreate);
     document.getElementById('recipe-add-item-btn').addEventListener('click', function () {

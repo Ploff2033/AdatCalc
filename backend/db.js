@@ -15,13 +15,14 @@ function seedData() {
       targetOutput: 500,
       plantDepr: { balance: 1200000, residual: 100000, lifespanMonths: 96 },
       utilitiesMonthly: 40000,
-      plantLocation: null
+      plantLocation: null,
+      fuelPriceDefault: 62
     },
     materials: [
-      { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000, lossPercent: 0 },
-      { id: 'mat_sand', name: 'Песок', unit: 'т', price: 1100, lossPercent: 0 },
-      { id: 'mat_gravel', name: 'Щебень', unit: 'т', price: 1600, lossPercent: 0 },
-      { id: 'mat_water', name: 'Вода', unit: 'м³', price: 50, lossPercent: 0 }
+      { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000, lossPercent: 0, delivery: null },
+      { id: 'mat_sand', name: 'Песок', unit: 'т', price: 1100, lossPercent: 0, delivery: null },
+      { id: 'mat_gravel', name: 'Щебень', unit: 'т', price: 1600, lossPercent: 0, delivery: null },
+      { id: 'mat_water', name: 'Вода', unit: 'м³', price: 50, lossPercent: 0, delivery: null }
     ],
     recipes: [
       {
@@ -38,6 +39,9 @@ function seedData() {
     ],
     mixers: [
       { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35 }
+    ],
+    aggregateTrucks: [
+      { id: 'atr_1', name: 'КамАЗ-самосвал №1', capacity: 15, balance: 1800000, residual: 200000, mileage: 300000, fuelRate: 32 }
     ]
   };
 }

@@ -1,10 +1,11 @@
 (function () {
   var data = {
     employees: [],
-    config: { targetOutput: 0, plantDepr: { balance: 0, residual: 0, lifespanMonths: 0 }, utilitiesMonthly: 0, plantLocation: null },
+    config: { targetOutput: 0, plantDepr: { balance: 0, residual: 0, lifespanMonths: 0 }, utilitiesMonthly: 0, plantLocation: null, fuelPriceDefault: 0 },
     materials: [],
     recipes: [],
-    mixers: []
+    mixers: [],
+    aggregateTrucks: []
   };
 
   var listeners = [];
@@ -17,13 +18,15 @@
       Api.get('/config'),
       Api.get('/materials'),
       Api.get('/recipes'),
-      Api.get('/mixers')
+      Api.get('/mixers'),
+      Api.get('/aggregate-trucks')
     ]);
     data.employees = results[0];
     data.config = results[1];
     data.materials = results[2];
     data.recipes = results[3];
     data.mixers = results[4];
+    data.aggregateTrucks = results[5];
     notify();
   }
 

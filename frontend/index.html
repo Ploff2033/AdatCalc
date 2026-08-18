@@ -100,11 +100,27 @@
   <!-- ============ ТЕХНИКА ============ -->
   <section class="tab-panel" id="tab-equipment" data-tab="equipment" hidden>
 
+    <section class="card compact">
+      <div class="card-head"><span class="num">01</span><h2>Общие настройки</h2></div>
+      <div class="field-group">
+        <label for="fuel-price-default">Цена топлива по умолчанию</label>
+        <div class="field" style="max-width:220px;"><input type="number" id="fuel-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
+      </div>
+      <p class="hint">Стартовое значение для расчётов доставки бетона и доставки инертных — в каждом расчёте его можно поменять отдельно.</p>
+    </section>
+
     <section class="card">
-      <div class="card-head"><span class="num">01</span><h2>Миксеры</h2></div>
-      <p class="hint">Амортизация на 1 км = (балансовая − остаточная стоимость) ÷ нормативный пробег. Используется в расчёте доставки на главной вкладке.</p>
+      <div class="card-head"><span class="num">02</span><h2>Миксеры</h2></div>
+      <p class="hint">Амортизация на 1 км = (балансовая − остаточная стоимость) ÷ нормативный пробег. Используется в расчёте доставки бетона клиенту на главной вкладке.</p>
       <div class="tile-grid" id="mixer-tiles"></div>
       <button class="add-btn" id="add-mixer-btn" type="button">+ Добавить миксер</button>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="num">03</span><h2>Техника для доставки инертных</h2></div>
+      <p class="hint">Самосвалы и другая техника для завоза щебня, песка и т.п. на завод. Используется в блоке доставки на вкладке «Смеси».</p>
+      <div class="tile-grid" id="aggregate-truck-tiles"></div>
+      <button class="add-btn" id="add-aggregate-truck-btn" type="button">+ Добавить технику</button>
     </section>
 
   </section>
@@ -303,26 +319,86 @@
   </form>
 </dialog>
 
-<dialog class="app-dialog" id="material-dialog">
+<dialog class="app-dialog wide" id="material-dialog">
   <form method="dialog" id="material-form">
     <h3 id="material-dialog-title">Материал</h3>
     <input type="hidden" id="material-id">
-    <div class="field-group">
-      <label for="material-name">Название</label>
-      <div class="field"><input type="text" id="material-name" required></div>
+    <div class="two-col">
+      <div class="field-group">
+        <label for="material-name">Название</label>
+        <div class="field"><input type="text" id="material-name" required></div>
+      </div>
+      <div class="field-group">
+        <label for="material-unit">Единица измерения</label>
+        <div class="field"><input type="text" id="material-unit" placeholder="т, м³, шт" required></div>
+      </div>
     </div>
-    <div class="field-group">
-      <label for="material-unit">Единица измерения</label>
-      <div class="field"><input type="text" id="material-unit" placeholder="т, м³, шт" required></div>
+    <div class="two-col">
+      <div class="field-group">
+        <label for="material-price">Цена за единицу (склад поставщика)</label>
+        <div class="field"><input type="text" id="material-price" inputmode="decimal" required><span class="unit">₽</span></div>
+      </div>
+      <div class="field-group">
+        <label for="material-loss">Потери при хранении/дозировке</label>
+        <div class="field"><input type="number" id="material-loss" min="0" step="any" value="0"><span class="unit">%</span></div>
+      </div>
     </div>
-    <div class="field-group">
-      <label for="material-price">Цена за единицу</label>
-      <div class="field"><input type="text" id="material-price" inputmode="decimal" required><span class="unit">₽</span></div>
+
+    <div class="dialog-section-label">Доставка инертных на завод</div>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="material-delivery-own-transport">
+      <label for="material-delivery-own-transport">Доставляем своей техникой</label>
     </div>
-    <div class="field-group">
-      <label for="material-loss">Потери при хранении/дозировке</label>
-      <div class="field"><input type="number" id="material-loss" min="0" step="any" value="0"><span class="unit">%</span></div>
+
+    <div id="material-delivery-manual-field">
+      <div class="field-group">
+        <label for="material-delivery-manual-cost">Стоимость доставки за единицу</label>
+        <div class="field"><input type="number" id="material-delivery-manual-cost" min="0" step="any" value="0"><span class="unit" id="material-delivery-manual-unit">₽/т</span></div>
+      </div>
     </div>
+
+    <div id="material-delivery-fields" hidden>
+      <div class="field-group">
+        <label for="material-delivery-truck">Техника (возит всегда полным кузовом)</label>
+        <select class="select" id="material-delivery-truck"></select>
+      </div>
+      <div class="two-col">
+        <div class="field-group">
+          <label for="material-delivery-distance">Расстояние до карьера/поставщика (в одну сторону)</label>
+          <div class="field"><input type="number" id="material-delivery-distance" min="0" step="any"><span class="unit">км</span></div>
+        </div>
+        <div class="field-group">
+          <label for="material-delivery-fuel-price">Цена топлива</label>
+          <div class="field"><input type="number" id="material-delivery-fuel-price" min="0" step="any"><span class="unit">₽/л</span></div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="field-group">
+          <label for="material-delivery-surcharge">Доплата водителю за рейс</label>
+          <div class="field"><input type="number" id="material-delivery-surcharge" min="0" step="any"><span class="unit">₽</span></div>
+        </div>
+        <div class="field-group">
+          <label for="material-delivery-amort-rate">Амортизация техники за рейс</label>
+          <div class="field"><input type="number" id="material-delivery-amort-rate" min="0" step="any"><span class="unit">₽/км</span></div>
+        </div>
+      </div>
+
+      <div class="breakdown compact">
+        <div class="line"><span class="l">Топливо за рейс</span><span class="v" id="material-delivery-fuel-cost">—</span></div>
+        <div class="line"><span class="l">Амортизация за рейс</span><span class="v" id="material-delivery-amort-cost">—</span></div>
+        <div class="line"><span class="l">Доплата водителю</span><span class="v" id="material-delivery-surcharge-cost">—</span></div>
+        <div class="line total"><span class="l">Итого за рейс</span><span class="v" id="material-delivery-trip-total">—</span></div>
+        <div class="line"><span class="l">Добавка на единицу</span><span class="v" id="material-delivery-per-ton">—</span></div>
+      </div>
+    </div>
+
+    <div class="breakdown compact">
+      <div class="line"><span class="l">Цена материала (склад поставщика)</span><span class="v" id="material-price-warehouse">—</span></div>
+      <div class="line"><span class="l">Доставка на завод (за единицу)</span><span class="v" id="material-price-delivery-addition">—</span></div>
+      <div class="line total"><span class="l">Цена материала (на заводе, итого)</span><span class="v" id="material-price-landed">—</span></div>
+    </div>
+
     <p class="dialog-error" id="material-dialog-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
@@ -391,6 +467,42 @@
       <div class="field"><input type="number" id="mixer-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
     </div>
     <p class="dialog-error" id="mixer-dialog-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
+      <button type="submit" class="primary-btn">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="app-dialog" id="aggregate-truck-dialog">
+  <form method="dialog" id="aggregate-truck-form">
+    <h3 id="aggregate-truck-dialog-title">Техника</h3>
+    <input type="hidden" id="aggregate-truck-id">
+    <div class="field-group">
+      <label for="aggregate-truck-name">Название</label>
+      <div class="field"><input type="text" id="aggregate-truck-name" required></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-capacity">Грузоподъёмность</label>
+      <div class="field"><input type="number" id="aggregate-truck-capacity" min="0" step="any" required><span class="unit">т</span></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-balance">Балансовая стоимость</label>
+      <div class="field"><input type="text" id="aggregate-truck-balance" inputmode="decimal" required><span class="unit">₽</span></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-residual">Остаточная стоимость</label>
+      <div class="field"><input type="text" id="aggregate-truck-residual" inputmode="decimal" required><span class="unit">₽</span></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-mileage">Нормативный пробег до списания</label>
+      <div class="field"><input type="number" id="aggregate-truck-mileage" min="0" step="any" required><span class="unit">км</span></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-fuel-rate">Расход топлива</label>
+      <div class="field"><input type="number" id="aggregate-truck-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
+    </div>
+    <p class="dialog-error" id="aggregate-truck-dialog-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
       <button type="submit" class="primary-btn">Сохранить</button>

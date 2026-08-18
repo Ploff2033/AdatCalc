@@ -15,25 +15,52 @@
     return config.targetOutput > 0 ? config.utilitiesMonthly / config.targetOutput : 0;
   }
 
-  function materialEffectivePrice(material) {
-    if (!material) return 0;
-    return material.price * (1 + (material.lossPercent || 0) / 100);
+  function amortPerKm(vehicle) {
+    if (!vehicle || !(vehicle.mileage > 0)) return 0;
+    return (vehicle.balance - vehicle.residual) / vehicle.mileage;
   }
 
-  function materialsCostPerM3(recipe, materials) {
+  // Внутренние рейсы за инертными — не покупка услуги, поэтому без НДС.
+  // Возят всегда полным кузовом, поэтому грузоподъёмность берётся с карточки техники, без переопределения.
+  function aggregateDeliveryPerTrip(delivery, truck) {
+    if (!delivery || !truck) return { fuel: 0, amort: 0, surcharge: 0, total: 0 };
+    var roundTrip = (delivery.distanceKm || 0) * 2;
+    var fuel = roundTrip * ((truck.fuelRate || 0) / 100) * (delivery.fuelPricePerLiter || 0);
+    var amort = roundTrip * (delivery.amortRatePerKm || 0);
+    var surcharge = delivery.driverSurcharge || 0;
+    return { fuel: fuel, amort: amort, surcharge: surcharge, total: fuel + amort + surcharge };
+  }
+
+  function materialDeliveryAdditionPerTon(material, trucks) {
+    if (!material || !material.delivery) return 0;
+    var delivery = material.delivery;
+    if (!delivery.ownTransport) return delivery.manualCostPerUnit || 0;
+    var truck = (trucks || []).find(function (t) { return t.id === delivery.truckId; });
+    if (!truck || !(truck.capacity > 0)) return 0;
+    var perTrip = aggregateDeliveryPerTrip(delivery, truck);
+    return perTrip.total / truck.capacity;
+  }
+
+  // "На заводе": закупочная цена + доставка (без НДС), до вычета потерь при хранении/дозировке.
+  function materialLandedPrice(material, trucks) {
+    if (!material) return 0;
+    return material.price + materialDeliveryAdditionPerTon(material, trucks);
+  }
+
+  function materialEffectivePrice(material, trucks) {
+    if (!material) return 0;
+    return materialLandedPrice(material, trucks) * (1 + (material.lossPercent || 0) / 100);
+  }
+
+  function materialsCostPerM3(recipe, materials, trucks) {
     if (!recipe) return 0;
     var byId = {};
     materials.forEach(function (m) { byId[m.id] = m; });
     return recipe.items.reduce(function (sum, item) {
       var mat = byId[item.materialId];
       if (!mat) return sum;
-      return sum + item.qty * materialEffectivePrice(mat);
+      return sum + item.qty * materialEffectivePrice(mat, trucks);
     }, 0);
-  }
-
-  function amortPerKm(mixer) {
-    if (!mixer || !(mixer.mileage > 0)) return 0;
-    return (mixer.balance - mixer.residual) / mixer.mileage;
   }
 
   function tripsForVolume(mixer, volume) {
@@ -50,6 +77,9 @@
     plantDeprPerM3: plantDeprPerM3,
     utilitiesPerM3: utilitiesPerM3,
     materialEffectivePrice: materialEffectivePrice,
+    materialLandedPrice: materialLandedPrice,
+    materialDeliveryAdditionPerTon: materialDeliveryAdditionPerTon,
+    aggregateDeliveryPerTrip: aggregateDeliveryPerTrip,
     materialsCostPerM3: materialsCostPerM3,
     amortPerKm: amortPerKm,
     tripsForVolume: tripsForVolume,

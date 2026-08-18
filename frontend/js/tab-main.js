@@ -41,7 +41,7 @@
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
-    var materialsCost = Calc.materialsCostPerM3(recipe, data.materials);
+    var materialsCost = Calc.materialsCostPerM3(recipe, data.materials, data.aggregateTrucks);
     var payroll = Calc.payrollPerM3(data);
     var depr = Calc.plantDeprPerM3(data.config);
     var utilities = Calc.utilitiesPerM3(data.config);

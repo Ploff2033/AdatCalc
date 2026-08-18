@@ -5,6 +5,7 @@ const employees = require('./handlers/employees');
 const materials = require('./handlers/materials');
 const recipes = require('./handlers/recipes');
 const mixers = require('./handlers/mixers');
+const aggregateTrucks = require('./handlers/aggregate-trucks');
 const config = require('./handlers/config');
 
 function sendJson(res, status, data) {
@@ -91,6 +92,7 @@ const routes = [
   ...crudRoutes('/api/materials', materials),
   ...crudRoutes('/api/recipes', recipes),
   ...crudRoutes('/api/mixers', mixers),
+  ...crudRoutes('/api/aggregate-trucks', aggregateTrucks),
   { method: 'GET', pattern: /^\/api\/config$/, handler: async (req, res) => sendJson(res, 200, await config.get()) },
   {
     method: 'PUT',

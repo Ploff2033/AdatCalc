@@ -24,6 +24,9 @@ function applyPatch(body, current) {
       lng: num(pl.lng, 'plantLocation.lng')
     };
   }
+  if (body.fuelPriceDefault !== undefined) {
+    next.fuelPriceDefault = num(body.fuelPriceDefault, 'fuelPriceDefault');
+  }
   return next;
 }
 
