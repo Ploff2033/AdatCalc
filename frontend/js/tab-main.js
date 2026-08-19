@@ -1,17 +1,32 @@
 (function () {
-  var selectedRecipeId = null;
-  var selectedMixerId = null;
-  var inputIds = ['dist', 'fuel-price', 'delivery-charge', 'sale-volume'];
+  var selectedRecipeId = '';
+  var selectedMixerId = '';
+  var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
+  var mixTestPriceDirty = false;
+  var lastCalc = null;
+
+  var outputIds = [
+    'cost-materials', 'cost-payroll', 'cost-depr', 'cost-utilities', 'cost-per-m3',
+    'recipe-sale-price-display', 'mix-revenue', 'mix-cost', 'mix-profit', 'mix-margin',
+    'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct',
+    'round-trip', 'fuel-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
+    'delivery-revenue', 'delivery-profit', 'delivery-margin',
+    'profit-total', 'profit-per-m3', 'margin-total'
+  ];
 
   function populateSelect(select, items, preferredId) {
     select.innerHTML = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— выберите —';
+    select.appendChild(placeholder);
     items.forEach(function (item) {
       var opt = document.createElement('option');
       opt.value = item.id;
       opt.textContent = item.name;
       select.appendChild(opt);
     });
-    var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : (items[0] && items[0].id) || '';
+    var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
     select.value = validId;
     return validId;
   }
@@ -28,12 +43,25 @@
     el.classList.add(percent >= 0 ? 'positive' : 'negative');
   }
 
-  function recalc() {
-    refreshPlantMarker();
+  function resetOutputsToDash() {
+    outputIds.forEach(function (id) {
+      var el = document.getElementById(id);
+      el.textContent = '—';
+      el.classList.remove('positive', 'negative');
+    });
+    ['profit-total-wrap', 'profit-per-m3-wrap', 'margin-total-wrap'].forEach(function (id) {
+      document.getElementById(id).classList.remove('positive', 'negative');
+    });
+    document.getElementById('cost-materials-label').textContent = 'Материалы';
+  }
 
+  function recalc() {
     var data = State.data;
     var recipeSelect = document.getElementById('main-recipe');
     var mixerSelect = document.getElementById('main-mixer');
+    var distInput = document.getElementById('dist');
+    var errorEl = document.getElementById('main-validation-error');
+    var placeOrderBtn = document.getElementById('place-order-btn');
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
@@ -41,13 +69,42 @@
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
+    var distField = distInput.closest('.field');
+    var distRaw = distInput.value;
+    var dist = parseFloat(distRaw) || 0;
+    var distMissing = distRaw.trim() === '' || !(dist > 0);
+
+    // Цена топлива — единый источник (Техника → Общие настройки), на Главной только отображается.
+    var fuelPrice = data.config.fuelPriceDefault || 0;
+    document.getElementById('fuel-price').value = fuelPrice;
+
+    var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
+    document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
+
+    [recipeSelect, mixerSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
+    var missing = [];
+    if (!recipe) missing.push(recipeSelect);
+    if (!mixer) missing.push(mixerSelect);
+    if (distMissing) missing.push(distField);
+
+    if (missing.length) {
+      missing.forEach(function (el) { el.classList.add('invalid'); });
+      errorEl.textContent = 'Заполните обязательные поля: марка/рецепт, миксер и расстояние — они выделены красным.';
+      errorEl.hidden = false;
+      placeOrderBtn.disabled = true;
+      lastCalc = null;
+      resetOutputsToDash();
+      return;
+    }
+    errorEl.hidden = true;
+
     var materialsCost = Calc.materialsCostPerM3(recipe, data.materials, data.aggregateTrucks);
     var payroll = Calc.payrollPerM3(data);
     var depr = Calc.plantDeprPerM3(data.config);
     var utilities = Calc.utilitiesPerM3(data.config);
     var costPerM3 = materialsCost + payroll + depr + utilities;
 
-    document.getElementById('cost-materials-label').textContent = recipe ? ('Материалы (' + recipe.name + ')') : 'Материалы';
+    document.getElementById('cost-materials-label').textContent = 'Материалы (' + recipe.name + ')';
     document.getElementById('cost-materials').textContent = Format.fmt(materialsCost, 2);
     document.getElementById('cost-payroll').textContent = Format.fmt(payroll, 2);
     document.getElementById('cost-depr').textContent = Format.fmt(depr, 2);
@@ -55,27 +112,37 @@
     document.getElementById('cost-per-m3').textContent = Format.fmt(costPerM3, 2);
 
     var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
-    var salePrice = recipe ? (recipe.salePrice || 0) : 0;
+    var salePrice = recipe.salePrice || 0;
     document.getElementById('recipe-sale-price-display').textContent = Format.fmt(salePrice, 2);
 
-    var mixRevenue = salePrice * saleVolume;
+    var testPriceInput = document.getElementById('mix-test-price');
+    if (!mixTestPriceDirty) {
+      NumericInput.setFormattedValue(testPriceInput, salePrice);
+    }
+    var testPrice = NumericInput.parseNumber(testPriceInput.value) || 0;
+
+    var mixRevenue = testPrice * saleVolume;
     var mixCost = costPerM3 * saleVolume;
     var mixProfit = mixRevenue - mixCost;
     document.getElementById('mix-revenue').textContent = Format.fmt(mixRevenue, 2);
     document.getElementById('mix-cost').textContent = Format.fmt(mixCost, 2);
     setProfitLine(document.getElementById('mix-profit'), mixProfit);
-    setMarginBadge(document.getElementById('mix-margin'), Calc.marginPercent(mixProfit, mixRevenue));
+    var mixMarginPercent = Calc.marginPercent(mixProfit, mixRevenue);
+    setMarginBadge(document.getElementById('mix-margin'), mixMarginPercent);
+
+    var safetyMargin = testPrice - costPerM3;
+    document.getElementById('mix-breakeven-price').textContent = Format.fmt(costPerM3, 2);
+    setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
+    setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPrice > 0 ? (safetyMargin / testPrice) * 100 : 0);
 
     var trips = Calc.tripsForVolume(mixer, saleVolume);
-    var dist = parseFloat(document.getElementById('dist').value) || 0;
     var roundTrip = dist * 2;
-    var fuelPrice = parseFloat(document.getElementById('fuel-price').value) || 0;
-    var fuelRate = mixer ? mixer.fuelRate : 0;
+    var fuelRate = mixer.fuelRate;
     var amortPerKm = Calc.amortPerKm(mixer);
     var fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
     var amortCostPerTrip = roundTrip * amortPerKm;
     var neighborCity = document.getElementById('nb-city').checked;
-    var surchargePerTrip = neighborCity ? 1000 : 0;
+    var surchargePerTrip = neighborCity ? neighborCitySurcharge : 0;
     var deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
 
     document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
@@ -88,9 +155,10 @@
     var deliveryChargePerM3 = NumericInput.parseNumber(document.getElementById('delivery-charge').value) || 0;
     var deliveryRevenue = deliveryChargePerM3 * saleVolume;
     var deliveryProfit = deliveryRevenue - deliveryCostTotal;
+    var deliveryMarginPercent = Calc.marginPercent(deliveryProfit, deliveryRevenue);
     document.getElementById('delivery-revenue').textContent = Format.fmt(deliveryRevenue, 2);
     setProfitLine(document.getElementById('delivery-profit'), deliveryProfit);
-    setMarginBadge(document.getElementById('delivery-margin'), Calc.marginPercent(deliveryProfit, deliveryRevenue));
+    setMarginBadge(document.getElementById('delivery-margin'), deliveryMarginPercent);
 
     var totalRevenue = mixRevenue + deliveryRevenue;
     var totalProfit = mixProfit + deliveryProfit;
@@ -114,130 +182,57 @@
     profitPerM3Wrap.classList.add(profitPerM3Total >= 0 ? 'positive' : 'negative');
     marginTotalWrap.classList.remove('positive', 'negative');
     marginTotalWrap.classList.add(marginTotal >= 0 ? 'positive' : 'negative');
-  }
 
-  // ---- Delivery destination map (inline on Главная) ----
-  var deliveryMap = null;
-  var deliveryMapInitStarted = false;
-  var deliveryPlantPlacemark = null;
-  var deliveryDestPlacemark = null;
-  var deliveryRouteRequestId = 0;
-
-  function showDeliveryMapUnavailable() {
-    document.getElementById('delivery-map').innerHTML =
-      '<div class="map-placeholder">Карта недоступна: не задан API-ключ Яндекс.Карт.<br>Добавьте его в frontend/js/yandex-config.js.</div>';
-  }
-
-  function currentPlantCoords() {
-    var loc = State.data.config.plantLocation;
-    return loc && loc.lat != null ? [loc.lat, loc.lng] : MapUtil.DEFAULT_CENTER;
-  }
-
-  function refreshPlantMarker() {
-    if (!deliveryMap) return;
-    var loc = State.data.config.plantLocation;
-    if (!loc || loc.lat == null) {
-      if (deliveryPlantPlacemark) {
-        deliveryMap.geoObjects.remove(deliveryPlantPlacemark);
-        deliveryPlantPlacemark = null;
-      }
-      return;
-    }
-    var coords = [loc.lat, loc.lng];
-    if (deliveryPlantPlacemark) {
-      deliveryPlantPlacemark.geometry.setCoordinates(coords);
-    } else {
-      deliveryPlantPlacemark = new ymaps.Placemark(coords, { hintContent: 'Завод' }, { preset: 'islands#blueFactoryIcon' });
-      deliveryMap.geoObjects.add(deliveryPlantPlacemark);
-    }
-  }
-
-  function applyDistance(km, unitLabel) {
-    document.getElementById('delivery-map-distance').textContent = Format.fmtNum(km, 1, unitLabel);
-    document.getElementById('dist').value = km.toFixed(1);
-    recalc();
-  }
-
-  function updateDeliveryDistance(destCoords) {
-    var distEl = document.getElementById('delivery-map-distance');
-    var plantCoords = currentPlantCoords();
-    distEl.textContent = 'Считаем маршрут…';
-    var requestId = ++deliveryRouteRequestId;
-    var fallback = function () {
-      if (requestId !== deliveryRouteRequestId) return;
-      var km = MapUtil.haversineKm({ lat: plantCoords[0], lng: plantCoords[1] }, { lat: destCoords[0], lng: destCoords[1] });
-      applyDistance(km, 'км по прямой (маршрут недоступен)');
+    placeOrderBtn.disabled = false;
+    lastCalc = {
+      recipeName: recipe.name,
+      mixerName: mixer.name,
+      saleVolume: saleVolume,
+      distanceKm: dist,
+      fuelPricePerLiter: fuelPrice,
+      neighborCity: neighborCity,
+      surchargePerTrip: surchargePerTrip,
+      tripCount: trips,
+      roundTripKm: roundTrip,
+      fuelCostPerTrip: fuelCostPerTrip,
+      amortCostPerTrip: amortCostPerTrip,
+      deliveryCostTotal: deliveryCostTotal,
+      deliveryChargePerM3: deliveryChargePerM3,
+      deliveryRevenue: deliveryRevenue,
+      deliveryProfit: deliveryProfit,
+      deliveryMarginPercent: deliveryMarginPercent,
+      materialsCost: materialsCost,
+      payrollCost: payroll,
+      deprCost: depr,
+      utilitiesCost: utilities,
+      costPerM3: costPerM3,
+      salePrice: testPrice,
+      mixRevenue: mixRevenue,
+      mixCost: mixCost,
+      mixProfit: mixProfit,
+      mixMarginPercent: mixMarginPercent,
+      totalRevenue: totalRevenue,
+      totalProfit: totalProfit,
+      profitPerM3: profitPerM3Total,
+      totalMarginPercent: marginTotal
     };
+  }
+
+  async function handlePlaceOrder() {
+    if (!lastCalc) return;
+    var placeOrderBtn = document.getElementById('place-order-btn');
+    var hintEl = document.getElementById('order-placed-hint');
+    placeOrderBtn.disabled = true;
     try {
-      ymaps.route([plantCoords, destCoords], { multiRoute: false }).then(function (route) {
-        if (requestId !== deliveryRouteRequestId) return;
-        applyDistance(route.getLength() / 1000, 'км по дороге');
-      }, fallback);
+      var payload = Object.assign({}, lastCalc, { createdAt: new Date().toISOString() });
+      await Api.post('/orders', payload);
+      await State.loadAll();
+      hintEl.hidden = false;
+      setTimeout(function () { hintEl.hidden = true; }, 4000);
     } catch (err) {
-      fallback();
-    }
-  }
-
-  function setDestination(coords) {
-    if (deliveryDestPlacemark) {
-      deliveryDestPlacemark.geometry.setCoordinates(coords);
-    } else {
-      deliveryDestPlacemark = new ymaps.Placemark(coords, { hintContent: 'Точка доставки', draggable: true }, { preset: 'islands#redGeolocationIcon' });
-      deliveryMap.geoObjects.add(deliveryDestPlacemark);
-      deliveryDestPlacemark.events.add('dragend', function () {
-        setDestination(deliveryDestPlacemark.geometry.getCoordinates());
-      });
-    }
-    updateDeliveryDistance(coords);
-  }
-
-  function handleDeliveryAddressSearch() {
-    var input = document.getElementById('delivery-address-search');
-    var query = input.value.trim();
-    if (!query || !deliveryMap) return;
-    MapUtil.geocode(query).then(
-      function (result) {
-        if (!result) {
-          alert('Адрес не найден.');
-          return;
-        }
-        deliveryMap.setCenter([result.lat, result.lng], 15);
-        setDestination([result.lat, result.lng]);
-      },
-      function () { alert('Не удалось найти адрес.'); }
-    );
-  }
-
-  function ensureDeliveryMap() {
-    if (deliveryMapInitStarted) return;
-    deliveryMapInitStarted = true;
-    YandexLoader.whenReady(function () {
-      if (window.YandexMapsUnavailable) {
-        showDeliveryMapUnavailable();
-        return;
-      }
-      deliveryMap = new ymaps.Map('delivery-map', { center: currentPlantCoords(), zoom: 12, controls: ['zoomControl'] });
-      refreshPlantMarker();
-      deliveryMap.events.add('click', function (e) {
-        setDestination(e.get('coords'));
-      });
-
-      var searchBtn = document.getElementById('delivery-address-search-btn');
-      var searchInput = document.getElementById('delivery-address-search');
-      searchBtn.addEventListener('click', handleDeliveryAddressSearch);
-      searchInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleDeliveryAddressSearch();
-        }
-      });
-    });
-  }
-
-  function onShowMain() {
-    ensureDeliveryMap();
-    if (deliveryMap) {
-      setTimeout(function () { deliveryMap.container.fitToViewport(); }, 30);
+      alert('Не удалось оформить заказ: ' + err.message);
+    } finally {
+      placeOrderBtn.disabled = !lastCalc;
     }
   }
 
@@ -247,15 +242,29 @@
       document.getElementById(id).addEventListener('input', recalc);
     });
     document.getElementById('nb-city').addEventListener('change', recalc);
+
+    NumericInput.attach(document.getElementById('mix-test-price'));
+    document.getElementById('mix-test-price').addEventListener('input', function () {
+      mixTestPriceDirty = true;
+      recalc();
+    });
+    document.getElementById('mix-test-price-reset').addEventListener('click', function () {
+      mixTestPriceDirty = false;
+      recalc();
+    });
+
     document.getElementById('main-recipe').addEventListener('change', function () {
       selectedRecipeId = this.value;
+      mixTestPriceDirty = false;
       recalc();
     });
     document.getElementById('main-mixer').addEventListener('change', function () {
       selectedMixerId = this.value;
       recalc();
     });
+
+    document.getElementById('place-order-btn').addEventListener('click', handlePlaceOrder);
   }
 
-  window.MainTab = { init: init, render: recalc, onShow: onShowMain };
+  window.MainTab = { init: init, render: recalc };
 })();

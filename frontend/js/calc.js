@@ -1,6 +1,6 @@
 (function () {
   function payrollPerM3(data) {
-    var total = data.employees.reduce(function (sum, e) { return sum + (e.salary || 0); }, 0);
+    var total = data.payrollMonthlyTotal || 0;
     return data.config.targetOutput > 0 ? total / data.config.targetOutput : 0;
   }
 

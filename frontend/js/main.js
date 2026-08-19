@@ -27,11 +27,12 @@
     EquipmentTab.render();
     LocationTab.render();
     MainTab.render();
+    OrdersTab.render();
   }
 
   async function boot() {
     initTheme();
-    Tabs.init();
+    Auth.init();
 
     try {
       await State.loadAll();
@@ -39,12 +40,15 @@
       showLoadError(err);
       return;
     }
+    await Auth.refreshMe();
+    Tabs.init();
 
     PersonnelTab.init();
     MaterialsTab.init();
     EquipmentTab.init();
     LocationTab.init();
     MainTab.init();
+    OrdersTab.init();
 
     renderAll();
     State.onChange(renderAll);

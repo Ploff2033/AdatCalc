@@ -23,13 +23,19 @@
 
   window.addEventListener('hashchange', function () {
     var tab = location.hash.slice(1);
-    if (buttons.some(function (b) { return b.dataset.tab === tab; })) activate(tab);
+    var btn = buttons.find(function (b) { return b.dataset.tab === tab; });
+    if (btn && !btn.hidden) activate(tab);
   });
 
   function init() {
     var initial = location.hash.slice(1);
-    var valid = buttons.some(function (b) { return b.dataset.tab === initial; });
-    activate(valid ? initial : 'personnel');
+    var initialBtn = buttons.find(function (b) { return b.dataset.tab === initial && !b.hidden; });
+    if (initialBtn) {
+      activate(initial);
+      return;
+    }
+    var firstVisible = buttons.find(function (b) { return !b.hidden; });
+    activate(firstVisible ? firstVisible.dataset.tab : 'main');
   }
 
   window.Tabs = { init: init, activate: activate };

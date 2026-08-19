@@ -129,10 +129,10 @@
     matDialog.showModal();
   }
 
-  function openMaterialForEdit(mat) {
-    matTitleEl.textContent = 'Изменить материал';
-    matIdInput.value = mat.id;
-    matNameInput.value = mat.name;
+  function fillMaterialForm(mat, duplicate) {
+    matTitleEl.textContent = duplicate ? 'Копия материала' : 'Изменить материал';
+    matIdInput.value = duplicate ? '' : mat.id;
+    matNameInput.value = duplicate ? (mat.name + ' (копия)') : mat.name;
     matUnitInput.value = mat.unit;
     NumericInput.setFormattedValue(matPriceInput, mat.price);
     matLossInput.value = mat.lossPercent || 0;
@@ -156,6 +156,9 @@
     updateMaterialDialogPricing();
     matDialog.showModal();
   }
+
+  function openMaterialForEdit(mat) { fillMaterialForm(mat, false); }
+  function openMaterialForDuplicate(mat) { fillMaterialForm(mat, true); }
 
   async function handleMaterialSubmit(e) {
     e.preventDefault();
@@ -231,6 +234,11 @@
       editBtn.textContent = 'Изменить';
       editBtn.addEventListener('click', function () { openMaterialForEdit(mat); });
 
+      var copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.textContent = 'Копировать';
+      copyBtn.addEventListener('click', function () { openMaterialForDuplicate(mat); });
+
       var delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'danger';
@@ -238,6 +246,7 @@
       delBtn.addEventListener('click', function () { handleMaterialDelete(mat); });
 
       actions.appendChild(editBtn);
+      actions.appendChild(copyBtn);
       actions.appendChild(delBtn);
       container.appendChild(row);
     });
@@ -321,10 +330,10 @@
     recDialog.showModal();
   }
 
-  function openRecipeForEdit(recipe) {
-    recTitleEl.textContent = 'Изменить смесь';
-    recIdInput.value = recipe.id;
-    recNameInput.value = recipe.name;
+  function fillRecipeForm(recipe, duplicate) {
+    recTitleEl.textContent = duplicate ? 'Копия смеси' : 'Изменить смесь';
+    recIdInput.value = duplicate ? '' : recipe.id;
+    recNameInput.value = duplicate ? (recipe.name + ' (копия)') : recipe.name;
     NumericInput.setFormattedValue(recSalePriceInput, recipe.salePrice);
     recItemsContainer.innerHTML = '';
     recErrorEl.hidden = true;
@@ -332,6 +341,9 @@
     updateRecipeDialogCost();
     recDialog.showModal();
   }
+
+  function openRecipeForEdit(recipe) { fillRecipeForm(recipe, false); }
+  function openRecipeForDuplicate(recipe) { fillRecipeForm(recipe, true); }
 
   async function handleRecipeSubmit(e) {
     e.preventDefault();
@@ -379,12 +391,13 @@
           '<div class="line"><span class="l">Себестоимость</span><span class="v cost"></span></div>' +
           '<div class="line"><span class="l">Цена отпуска</span><span class="v price"></span></div>' +
         '</div>' +
-        '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="danger del-btn">Удалить</button></div>';
+        '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="copy-btn">Копировать</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = recipe.name;
       tile.querySelector('.tile-meta').textContent = recipe.items.length + ' компонент(ов)';
       tile.querySelector('.cost').textContent = Format.fmt(cost, 2);
       tile.querySelector('.price').textContent = Format.fmt(recipe.salePrice || 0, 2);
       tile.querySelector('.edit-btn').addEventListener('click', function () { openRecipeForEdit(recipe); });
+      tile.querySelector('.copy-btn').addEventListener('click', function () { openRecipeForDuplicate(recipe); });
       tile.querySelector('.del-btn').addEventListener('click', function () { handleRecipeDelete(recipe); });
       container.appendChild(tile);
     });

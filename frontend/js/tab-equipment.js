@@ -25,10 +25,10 @@
     dialog.showModal();
   }
 
-  function openForEdit(mixer) {
-    titleEl.textContent = 'Изменить миксер';
-    idInput.value = mixer.id;
-    nameInput.value = mixer.name;
+  function fillMixerForm(mixer, duplicate) {
+    titleEl.textContent = duplicate ? 'Копия миксера' : 'Изменить миксер';
+    idInput.value = duplicate ? '' : mixer.id;
+    nameInput.value = duplicate ? (mixer.name + ' (копия)') : mixer.name;
     capacityInput.value = mixer.capacity;
     NumericInput.setFormattedValue(balanceInput, mixer.balance);
     NumericInput.setFormattedValue(residualInput, mixer.residual);
@@ -37,6 +37,9 @@
     errorEl.hidden = true;
     dialog.showModal();
   }
+
+  function openForEdit(mixer) { fillMixerForm(mixer, false); }
+  function openForDuplicate(mixer) { fillMixerForm(mixer, true); }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -84,11 +87,12 @@
         '<div class="tile-title"></div>' +
         '<div class="tile-meta"></div>' +
         '<div class="tile-value"></div>' +
-        '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="danger del-btn">Удалить</button></div>';
+        '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="copy-btn">Копировать</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = mixer.name;
       tile.querySelector('.tile-meta').textContent = Format.fmtNum(mixer.capacity, 1, 'м³') + ' · ' + Format.fmtNum(mixer.fuelRate, 1, 'л/100км');
       tile.querySelector('.tile-value').textContent = Format.fmt(amortPerKm, 2) + '/км';
       tile.querySelector('.edit-btn').addEventListener('click', function () { openForEdit(mixer); });
+      tile.querySelector('.copy-btn').addEventListener('click', function () { openForDuplicate(mixer); });
       tile.querySelector('.del-btn').addEventListener('click', function () { handleDelete(mixer); });
       container.appendChild(tile);
     });
@@ -120,10 +124,10 @@
     atDialog.showModal();
   }
 
-  function openTruckForEdit(truck) {
-    atTitleEl.textContent = 'Изменить технику';
-    atIdInput.value = truck.id;
-    atNameInput.value = truck.name;
+  function fillTruckForm(truck, duplicate) {
+    atTitleEl.textContent = duplicate ? 'Копия техники' : 'Изменить технику';
+    atIdInput.value = duplicate ? '' : truck.id;
+    atNameInput.value = duplicate ? (truck.name + ' (копия)') : truck.name;
     atCapacityInput.value = truck.capacity;
     NumericInput.setFormattedValue(atBalanceInput, truck.balance);
     NumericInput.setFormattedValue(atResidualInput, truck.residual);
@@ -132,6 +136,9 @@
     atErrorEl.hidden = true;
     atDialog.showModal();
   }
+
+  function openTruckForEdit(truck) { fillTruckForm(truck, false); }
+  function openTruckForDuplicate(truck) { fillTruckForm(truck, true); }
 
   async function handleTruckSubmit(e) {
     e.preventDefault();
@@ -183,17 +190,18 @@
         '<div class="tile-title"></div>' +
         '<div class="tile-meta"></div>' +
         '<div class="tile-value"></div>' +
-        '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="danger del-btn">Удалить</button></div>';
+        '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="copy-btn">Копировать</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = truck.name;
       tile.querySelector('.tile-meta').textContent = Format.fmtNum(truck.capacity, 1, 'т') + ' · ' + Format.fmtNum(truck.fuelRate, 1, 'л/100км');
       tile.querySelector('.tile-value').textContent = Format.fmt(amortPerKm, 2) + '/км';
       tile.querySelector('.edit-btn').addEventListener('click', function () { openTruckForEdit(truck); });
+      tile.querySelector('.copy-btn').addEventListener('click', function () { openTruckForDuplicate(truck); });
       tile.querySelector('.del-btn').addEventListener('click', function () { handleTruckDelete(truck); });
       container.appendChild(tile);
     });
   }
 
-  // ---- Общие настройки (цена топлива по умолчанию) ----
+  // ---- Общие настройки (цена топлива, надбавка за рейс в другой город) ----
   var fuelPriceDefaultInput = document.getElementById('fuel-price-default');
   var fuelPriceSaveTimer = null;
 
@@ -207,13 +215,35 @@
       await Api.put('/config', { fuelPriceDefault: parseFloat(fuelPriceDefaultInput.value) || 0 });
       await State.loadAll();
     } catch (err) {
-      alert('Не удалось сохранить цену топлива по умолчанию: ' + err.message);
+      alert('Не удалось сохранить цену топлива: ' + err.message);
     }
   }
 
   function renderFuelPriceDefault() {
     if (document.activeElement === fuelPriceDefaultInput) return;
     fuelPriceDefaultInput.value = State.data.config.fuelPriceDefault || 0;
+  }
+
+  var neighborSurchargeInput = document.getElementById('neighbor-city-surcharge');
+  var neighborSurchargeSaveTimer = null;
+
+  function scheduleNeighborSurchargeSave() {
+    clearTimeout(neighborSurchargeSaveTimer);
+    neighborSurchargeSaveTimer = setTimeout(saveNeighborSurcharge, 500);
+  }
+
+  async function saveNeighborSurcharge() {
+    try {
+      await Api.put('/config', { neighborCitySurcharge: parseFloat(neighborSurchargeInput.value) || 0 });
+      await State.loadAll();
+    } catch (err) {
+      alert('Не удалось сохранить надбавку за рейс в другой город: ' + err.message);
+    }
+  }
+
+  function renderNeighborSurcharge() {
+    if (document.activeElement === neighborSurchargeInput) return;
+    neighborSurchargeInput.value = State.data.config.neighborCitySurcharge || 0;
   }
 
   function init() {
@@ -234,12 +264,21 @@
     NumericInput.attach(atResidualInput);
 
     fuelPriceDefaultInput.addEventListener('input', scheduleFuelPriceSave);
+    neighborSurchargeInput.addEventListener('input', scheduleNeighborSurchargeSave);
+  }
+
+  function renderAdminOnlyCards() {
+    var isAdmin = window.Auth && Auth.isAtLeast('admin');
+    document.getElementById('mixers-card').hidden = !isAdmin;
+    document.getElementById('aggregate-trucks-card').hidden = !isAdmin;
   }
 
   function render() {
     renderTiles();
     renderTruckTiles();
     renderFuelPriceDefault();
+    renderNeighborSurcharge();
+    renderAdminOnlyCards();
   }
 
   window.EquipmentTab = { init: init, render: render };

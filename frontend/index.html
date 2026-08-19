@@ -16,17 +16,20 @@
         <span class="eyebrow">Калькулятор завода ЖБИ</span>
         <h1>Себестоимость и рентабельность бетона</h1>
       </div>
-      <button class="theme-btn" id="theme-btn" type="button" title="Переключить тему">🌓</button>
+      <div class="header-actions">
+        <button class="theme-btn" id="auth-btn" type="button" title="Войти">🔒</button>
+        <button class="theme-btn" id="theme-btn" type="button" title="Переключить тему">🌓</button>
+      </div>
     </div>
-    <p class="sub">Себестоимость 1 м³ → доставка → чистая прибыль.</p>
   </header>
 
   <nav class="tabs" role="tablist">
     <button class="tab-btn" data-tab="personnel" role="tab" type="button">Персонал</button>
     <button class="tab-btn" data-tab="materials" role="tab" type="button">Смеси</button>
     <button class="tab-btn" data-tab="equipment" role="tab" type="button">Техника</button>
-    <button class="tab-btn" data-tab="location" role="tab" type="button">Карта</button>
+    <button class="tab-btn" data-tab="location" role="tab" type="button" hidden>Карта</button>
     <button class="tab-btn" data-tab="main" role="tab" type="button">Главная</button>
+    <button class="tab-btn" data-tab="orders" role="tab" type="button">Заказы</button>
   </nav>
 
   <div id="load-error" class="load-error" hidden></div>
@@ -102,21 +105,27 @@
 
     <section class="card compact">
       <div class="card-head"><span class="num">01</span><h2>Общие настройки</h2></div>
-      <div class="field-group">
-        <label for="fuel-price-default">Цена топлива по умолчанию</label>
-        <div class="field" style="max-width:220px;"><input type="number" id="fuel-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
+      <div class="config-grid">
+        <div class="field-group">
+          <label for="fuel-price-default">Цена топлива</label>
+          <div class="field"><input type="number" id="fuel-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
+        </div>
+        <div class="field-group">
+          <label for="neighbor-city-surcharge">Надбавка за рейс в другой город</label>
+          <div class="field"><input type="number" id="neighbor-city-surcharge" min="0" step="any"><span class="unit">₽/рейс</span></div>
+        </div>
       </div>
-      <p class="hint">Стартовое значение для расчётов доставки бетона и доставки инертных — в каждом расчёте его можно поменять отдельно.</p>
+      <p class="hint">Цена топлива используется во всех расчётах доставки (бетона и инертных). Надбавка — доплата водителю за рейс в соседний город, применяется на Главной по чекбоксу.</p>
     </section>
 
-    <section class="card">
+    <section class="card" id="mixers-card">
       <div class="card-head"><span class="num">02</span><h2>Миксеры</h2></div>
       <p class="hint">Амортизация на 1 км = (балансовая − остаточная стоимость) ÷ нормативный пробег. Используется в расчёте доставки бетона клиенту на главной вкладке.</p>
       <div class="tile-grid" id="mixer-tiles"></div>
       <button class="add-btn" id="add-mixer-btn" type="button">+ Добавить миксер</button>
     </section>
 
-    <section class="card">
+    <section class="card" id="aggregate-trucks-card">
       <div class="card-head"><span class="num">03</span><h2>Техника для доставки инертных</h2></div>
       <p class="hint">Самосвалы и другая техника для завоза щебня, песка и т.п. на завод. Используется в блоке доставки на вкладке «Смеси».</p>
       <div class="tile-grid" id="aggregate-truck-tiles"></div>
@@ -154,6 +163,8 @@
         <section class="card compact">
           <div class="card-head"><span class="num">01</span><h2>Параметры и доставка</h2></div>
 
+          <div class="validation-banner" id="main-validation-error" hidden></div>
+
           <div class="two-col">
             <div class="field-group">
               <label for="main-recipe">Марка / рецепт</label>
@@ -168,36 +179,24 @@
           <div class="two-col">
             <div class="field-group">
               <label for="dist">Расстояние (в одну сторону)</label>
-              <div class="field"><input type="number" id="dist" min="0" step="any" value="15" inputmode="decimal"><span class="unit">км</span></div>
+              <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
             </div>
             <div class="field-group">
               <label for="fuel-price">Цена топлива</label>
-              <div class="field"><input type="number" id="fuel-price" min="0" step="any" value="62" inputmode="decimal"><span class="unit">₽/л</span></div>
+              <div class="field readonly"><input type="text" id="fuel-price" readonly><span class="unit">₽/л</span></div>
             </div>
-          </div>
-
-          <div class="field-group">
-            <label for="delivery-address-search">Адрес доставки</label>
-            <div class="search-row">
-              <div class="field"><input type="text" id="delivery-address-search" placeholder="Город, улица, дом"></div>
-              <button type="button" class="ghost-btn" id="delivery-address-search-btn">Найти</button>
-            </div>
-          </div>
-          <div class="map-container small" id="delivery-map"></div>
-          <div class="breakdown compact">
-            <div class="line"><span class="l">Расстояние по маршруту</span><span class="v" id="delivery-map-distance">—</span></div>
           </div>
 
           <div class="checkbox-row">
             <input type="checkbox" id="nb-city">
             <label for="nb-city">Рейс в соседний город</label>
-            <span class="badge">+1 000 ₽/рейс</span>
+            <span class="badge" id="nb-city-badge">—</span>
           </div>
 
           <div class="two-col">
             <div class="field-group">
               <label for="delivery-charge">Доставка для клиента</label>
-              <div class="field"><input type="text" id="delivery-charge" inputmode="decimal" value="300"><span class="unit">₽/м³</span></div>
+              <div class="field"><input type="text" id="delivery-charge" inputmode="decimal" value="500"><span class="unit">₽/м³</span></div>
             </div>
             <div class="field-group">
               <label for="sale-volume">Объём заказа</label>
@@ -209,80 +208,93 @@
 
       <div class="main-col">
         <section class="card compact">
-          <div class="card-head"><span class="num">02</span><h2>Себестоимость 1 м³</h2></div>
-          <div class="breakdown compact">
-            <div class="line"><span class="l" id="cost-materials-label">Материалы</span><span class="v" id="cost-materials">—</span></div>
-            <div class="line"><span class="l">ФОТ</span><span class="v" id="cost-payroll">—</span></div>
-            <div class="line"><span class="l">Амортизация завода</span><span class="v" id="cost-depr">—</span></div>
-            <div class="line"><span class="l">Коммуналка</span><span class="v" id="cost-utilities">—</span></div>
-            <div class="line total"><span class="l">Итого себестоимость 1 м³</span><span class="v" id="cost-per-m3">—</span></div>
-          </div>
-        </section>
+          <div class="card-head"><span class="num">02</span><h2>Расчёт</h2></div>
 
-        <section class="card compact">
-          <div class="card-head"><span class="num">03</span><h2>Смесь</h2></div>
-          <div class="split-cols">
-            <div class="split-col expense">
-              <div class="split-col-label">Расход</div>
-              <div class="breakdown compact">
-                <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
+          <div class="calc-section">
+            <h3 class="calc-section-title">Смесь</h3>
+            <div class="split-cols">
+              <div class="split-col expense">
+                <div class="split-col-label">Расход</div>
+                <div class="breakdown compact">
+                  <div class="line"><span class="l" id="cost-materials-label">Материалы</span><span class="v" id="cost-materials">—</span></div>
+                  <div class="line"><span class="l">ФОТ</span><span class="v" id="cost-payroll">—</span></div>
+                  <div class="line"><span class="l">Амортизация завода</span><span class="v" id="cost-depr">—</span></div>
+                  <div class="line"><span class="l">Коммуналка</span><span class="v" id="cost-utilities">—</span></div>
+                  <div class="line total"><span class="l">Итого на 1 м³</span><span class="v" id="cost-per-m3">—</span></div>
+                  <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
+                </div>
+              </div>
+              <div class="split-col income">
+                <div class="split-col-label">Доход</div>
+                <div class="breakdown compact">
+                  <div class="line"><span class="l">Цена отпуска (рецепт)</span><span class="v" id="recipe-sale-price-display">—</span></div>
+                  <div class="line">
+                    <span class="l">Проверить цену</span>
+                    <span class="v-wrap">
+                      <div class="field mini"><input type="text" id="mix-test-price" inputmode="decimal"></div>
+                      <button type="button" class="icon-btn" id="mix-test-price-reset" title="Сбросить к цене рецепта">↺</button>
+                    </span>
+                  </div>
+                  <div class="line"><span class="l">Выручка со смеси</span><span class="v" id="mix-revenue">—</span></div>
+                </div>
               </div>
             </div>
-            <div class="split-col income">
-              <div class="split-col-label">Доход</div>
-              <div class="breakdown compact">
-                <div class="line"><span class="l">Цена отпуска (рецепт)</span><span class="v" id="recipe-sale-price-display">—</span></div>
-                <div class="line"><span class="l">Выручка со смеси</span><span class="v" id="mix-revenue">—</span></div>
-              </div>
+            <div class="split-total">
+              <span class="l">Прибыль от смеси</span>
+              <span class="v-wrap"><span class="v" id="mix-profit">—</span><span class="margin" id="mix-margin">—</span></span>
+            </div>
+            <div class="breakdown compact breakeven-block">
+              <div class="line"><span class="l">Цена безубыточности</span><span class="v" id="mix-breakeven-price">—</span></div>
+              <div class="line"><span class="l">Запас прочности</span><span class="v-wrap"><span class="v" id="mix-safety-margin">—</span><span class="margin" id="mix-safety-margin-pct">—</span></span></div>
             </div>
           </div>
-          <div class="split-total">
-            <span class="l">Прибыль от смеси</span>
-            <span class="v-wrap"><span class="v" id="mix-profit">—</span><span class="margin" id="mix-margin">—</span></span>
-          </div>
-        </section>
 
-        <section class="card compact">
-          <div class="card-head"><span class="num">04</span><h2>Доставка</h2></div>
-          <div class="split-cols">
-            <div class="split-col expense">
-              <div class="split-col-label">Расход</div>
-              <div class="breakdown compact">
-                <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
-                <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
-                <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
-                <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
-                <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
-                <div class="line total"><span class="l">Итого расход</span><span class="v" id="delivery-cost-total">—</span></div>
+          <div class="calc-section">
+            <h3 class="calc-section-title">Доставка</h3>
+            <div class="split-cols">
+              <div class="split-col expense">
+                <div class="split-col-label">Расход</div>
+                <div class="breakdown compact">
+                  <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
+                  <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
+                  <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
+                  <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
+                  <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
+                  <div class="line total"><span class="l">Итого расход</span><span class="v" id="delivery-cost-total">—</span></div>
+                </div>
+              </div>
+              <div class="split-col income">
+                <div class="split-col-label">Доход</div>
+                <div class="breakdown compact">
+                  <div class="line"><span class="l">Доход от доставки</span><span class="v" id="delivery-revenue">—</span></div>
+                </div>
               </div>
             </div>
-            <div class="split-col income">
-              <div class="split-col-label">Доход</div>
-              <div class="breakdown compact">
-                <div class="line"><span class="l">Доход от доставки</span><span class="v" id="delivery-revenue">—</span></div>
-              </div>
+            <div class="split-total">
+              <span class="l">Прибыль от доставки</span>
+              <span class="v-wrap"><span class="v" id="delivery-profit">—</span><span class="margin" id="delivery-margin">—</span></span>
             </div>
           </div>
-          <div class="split-total">
-            <span class="l">Прибыль от доставки</span>
-            <span class="v-wrap"><span class="v" id="delivery-profit">—</span><span class="margin" id="delivery-margin">—</span></span>
-          </div>
-        </section>
 
-        <section class="card compact final-card">
-          <div class="card-head"><span class="num">05</span><h2>Итого</h2></div>
-          <div class="final-grid compact three">
-            <div class="final-result" id="profit-total-wrap">
-              <span class="label">Чистая прибыль</span>
-              <span class="value" id="profit-total">—</span>
+          <div class="calc-section">
+            <h3 class="calc-section-title">Итого</h3>
+            <div class="final-grid compact three">
+              <div class="final-result" id="profit-total-wrap">
+                <span class="label">Чистая прибыль</span>
+                <span class="value" id="profit-total">—</span>
+              </div>
+              <div class="final-result" id="profit-per-m3-wrap">
+                <span class="label">Прибыль на 1 м³ (всего)</span>
+                <span class="value" id="profit-per-m3">—</span>
+              </div>
+              <div class="final-result" id="margin-total-wrap">
+                <span class="label">Рентабельность сделки</span>
+                <span class="value" id="margin-total">—</span>
+              </div>
             </div>
-            <div class="final-result" id="profit-per-m3-wrap">
-              <span class="label">Прибыль на 1 м³ (всего)</span>
-              <span class="value" id="profit-per-m3">—</span>
-            </div>
-            <div class="final-result" id="margin-total-wrap">
-              <span class="label">Рентабельность сделки</span>
-              <span class="value" id="margin-total">—</span>
+            <div class="order-actions">
+              <button type="button" class="primary-btn" id="place-order-btn" disabled>Оформить заказ</button>
+              <span class="hint" id="order-placed-hint" hidden>Заказ добавлен во вкладку «Заказы».</span>
             </div>
           </div>
         </section>
@@ -291,9 +303,37 @@
     </div>
   </section>
 
+  <!-- ============ ЗАКАЗЫ ============ -->
+  <section class="tab-panel" id="tab-orders" data-tab="orders" hidden>
+    <section class="card">
+      <div class="card-head">
+        <span class="num">01</span><h2>История заказов</h2>
+        <button type="button" class="ghost-btn" id="export-orders-btn" disabled>Экспорт в Excel</button>
+      </div>
+      <p class="hint">Полный снимок расчёта на момент оформления — цифры не пересчитываются задним числом при изменении цен, рецептов или техники. Клик по заказу разворачивает полную детализацию.</p>
+      <p class="hint" id="orders-empty-hint">Заказов пока нет — оформите первый на вкладке «Главная».</p>
+      <div class="orders-list" id="orders-list"></div>
+    </section>
+  </section>
+
 </div>
 
 <!-- ============ DIALOGS ============ -->
+
+<dialog class="app-dialog" id="auth-dialog">
+  <form method="dialog" id="auth-form">
+    <h3>Вход</h3>
+    <div class="field-group">
+      <label for="auth-password">Пароль</label>
+      <div class="field"><input type="password" id="auth-password" required autocomplete="current-password"></div>
+    </div>
+    <p class="dialog-error" id="auth-dialog-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
+      <button type="submit" class="primary-btn">Войти</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog class="app-dialog" id="employee-dialog">
   <form method="dialog" id="employee-form">
@@ -521,12 +561,14 @@
 <script src="/js/yandex-loader.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/state.js"></script>
+<script src="/js/auth.js"></script>
 <script src="/js/tabs.js"></script>
 <script src="/js/tab-personnel.js"></script>
 <script src="/js/tab-materials.js"></script>
 <script src="/js/tab-equipment.js"></script>
 <script src="/js/tab-location.js"></script>
 <script src="/js/tab-main.js"></script>
+<script src="/js/tab-orders.js"></script>
 <script src="/js/main.js"></script>
 </body>
 </html>

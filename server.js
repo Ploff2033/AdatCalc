@@ -3,7 +3,10 @@ const db = require('./backend/db');
 const { handleRequest } = require('./backend/router');
 
 const PORT = process.env.PORT || 3000;
-const HOST = 'localhost';
+// 0.0.0.0 по умолчанию — в контейнере/на сервере снаружи не достучаться до
+// процесса, слушающего только localhost. Для локальной разработки тоже
+// работает нормально (localhost:PORT остаётся доступен).
+const HOST = process.env.HOST || '0.0.0.0';
 
 async function main() {
   await db.load();
@@ -19,7 +22,7 @@ async function main() {
   });
 
   server.listen(PORT, HOST, () => {
-    console.log(`Сервер запущен: http://${HOST}:${PORT}`);
+    console.log(`Сервер запущен: http://localhost:${PORT} (слушает ${HOST}:${PORT})`);
   });
 }
 

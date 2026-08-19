@@ -1,12 +1,30 @@
 const HttpError = require('./http-error');
 const { serveStatic } = require('./static');
+const { parseCookies, setSessionCookie, clearSessionCookie } = require('./cookies');
+const { getSession } = require('./sessions');
 
 const employees = require('./handlers/employees');
+const personnelSummary = require('./handlers/personnel-summary');
 const materials = require('./handlers/materials');
 const recipes = require('./handlers/recipes');
 const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
+const orders = require('./handlers/orders');
 const config = require('./handlers/config');
+const auth = require('./handlers/auth');
+
+const ROLE_RANK = { manager: 1, admin: 2 };
+
+function hasRole(role, minRole) {
+  if (!minRole) return true;
+  return (ROLE_RANK[role] || 0) >= ROLE_RANK[minRole];
+}
+
+function resolveRole(req) {
+  const cookies = parseCookies(req);
+  const session = getSession(cookies.session);
+  return session ? session.role : null;
+}
 
 function sendJson(res, status, data) {
   if (data === undefined) {
@@ -55,14 +73,18 @@ function readBody(req) {
   });
 }
 
-function crudRoutes(base, mod) {
+// opts: { read: null|'manager'|'admin', write: null|'manager'|'admin' }
+// null/undefined means no login required for that group of methods.
+function crudRoutes(base, mod, opts) {
+  opts = opts || {};
   const single = new RegExp(`^${base}$`);
   const withId = new RegExp(`^${base}/([^/]+)$`);
   return [
-    { method: 'GET', pattern: single, handler: async (req, res) => sendJson(res, 200, await mod.list()) },
+    { method: 'GET', pattern: single, role: opts.read, handler: async (req, res) => sendJson(res, 200, await mod.list()) },
     {
       method: 'POST',
       pattern: single,
+      role: opts.write,
       handler: async (req, res) => {
         const body = await readBody(req);
         sendJson(res, 201, await mod.create(body));
@@ -71,6 +93,7 @@ function crudRoutes(base, mod) {
     {
       method: 'PUT',
       pattern: withId,
+      role: opts.write,
       handler: async (req, res, m) => {
         const body = await readBody(req);
         sendJson(res, 200, await mod.update(decodeURIComponent(m[1]), body));
@@ -79,6 +102,7 @@ function crudRoutes(base, mod) {
     {
       method: 'DELETE',
       pattern: withId,
+      role: opts.write,
       handler: async (req, res, m) => {
         await mod.remove(decodeURIComponent(m[1]));
         sendJson(res, 204);
@@ -88,18 +112,60 @@ function crudRoutes(base, mod) {
 }
 
 const routes = [
-  ...crudRoutes('/api/employees', employees),
-  ...crudRoutes('/api/materials', materials),
-  ...crudRoutes('/api/recipes', recipes),
-  ...crudRoutes('/api/mixers', mixers),
-  ...crudRoutes('/api/aggregate-trucks', aggregateTrucks),
+  // Сотрудники — зарплаты видит только админ.
+  ...crudRoutes('/api/employees', employees, { read: 'admin', write: 'admin' }),
+  { method: 'GET', pattern: /^\/api\/personnel-summary$/, handler: async (req, res) => sendJson(res, 200, await personnelSummary.get()) },
+
+  // Материалы/рецепты — читать может кто угодно (нужно для расчёта на Главной),
+  // менять — только менеджер и выше.
+  ...crudRoutes('/api/materials', materials, { read: null, write: 'manager' }),
+  ...crudRoutes('/api/recipes', recipes, { read: null, write: 'manager' }),
+
+  // Техника — читать может кто угодно (нужно для расчёта доставки на Главной),
+  // менять — только админ.
+  ...crudRoutes('/api/mixers', mixers, { read: null, write: 'admin' }),
+  ...crudRoutes('/api/aggregate-trucks', aggregateTrucks, { read: null, write: 'admin' }),
+
+  // Заказы — открыты всем, включая незалогиненных работников.
+  ...crudRoutes('/api/orders', orders, { read: null, write: null }),
+
   { method: 'GET', pattern: /^\/api\/config$/, handler: async (req, res) => sendJson(res, 200, await config.get()) },
   {
     method: 'PUT',
     pattern: /^\/api\/config$/,
+    role: 'manager',
+    handler: async (req, res, m, role) => {
+      const body = await readBody(req);
+      sendJson(res, 200, await config.update(body, role));
+    }
+  },
+
+  {
+    method: 'POST',
+    pattern: /^\/api\/auth\/login$/,
     handler: async (req, res) => {
       const body = await readBody(req);
-      sendJson(res, 200, await config.update(body));
+      const result = await auth.login(body.password);
+      setSessionCookie(res, result.token);
+      sendJson(res, 200, { role: result.role });
+    }
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/auth\/logout$/,
+    handler: async (req, res) => {
+      const cookies = parseCookies(req);
+      await auth.logout(cookies.session);
+      clearSessionCookie(res);
+      sendJson(res, 204);
+    }
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/auth\/me$/,
+    handler: async (req, res) => {
+      const cookies = parseCookies(req);
+      sendJson(res, 200, auth.me(cookies.session));
     }
   }
 ];
@@ -114,7 +180,12 @@ async function handleRequest(req, res) {
       const match = pathname.match(route.pattern);
       if (match) {
         try {
-          await route.handler(req, res, match);
+          const role = resolveRole(req);
+          if (route.role && !hasRole(role, route.role)) {
+            sendError(res, new HttpError(403, 'Недостаточно прав'));
+            return;
+          }
+          await route.handler(req, res, match, role);
         } catch (err) {
           sendError(res, err);
         }

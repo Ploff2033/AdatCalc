@@ -1,6 +1,7 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
+const { hashPassword } = require('./auth');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'db.json');
 const TMP_PATH = DB_PATH + '.tmp';
@@ -16,7 +17,12 @@ function seedData() {
       plantDepr: { balance: 1200000, residual: 100000, lifespanMonths: 96 },
       utilitiesMonthly: 40000,
       plantLocation: null,
-      fuelPriceDefault: 62
+      fuelPriceDefault: 62,
+      neighborCitySurcharge: 1000,
+      auth: {
+        admin: hashPassword('AdatBetonAdmin'),
+        manager: hashPassword('adatadat')
+      }
     },
     materials: [
       { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000, lossPercent: 0, delivery: null },
@@ -42,7 +48,9 @@ function seedData() {
     ],
     aggregateTrucks: [
       { id: 'atr_1', name: 'КамАЗ-самосвал №1', capacity: 15, balance: 1800000, residual: 200000, mileage: 300000, fuelRate: 32 }
-    ]
+    ],
+    orders: [],
+    sessions: []
   };
 }
 
@@ -81,8 +89,19 @@ async function load() {
 // files (from before a feature existed) don't crash on missing fields.
 function applyMigrations(data) {
   if (!Array.isArray(data.aggregateTrucks)) data.aggregateTrucks = [];
+  if (!Array.isArray(data.orders)) data.orders = [];
+  if (!Array.isArray(data.sessions)) data.sessions = [];
   if (data.config && typeof data.config.fuelPriceDefault !== 'number') {
     data.config.fuelPriceDefault = 62;
+  }
+  if (data.config && typeof data.config.neighborCitySurcharge !== 'number') {
+    data.config.neighborCitySurcharge = 1000;
+  }
+  if (data.config && !data.config.auth) {
+    data.config.auth = {
+      admin: hashPassword('AdatBetonAdmin'),
+      manager: hashPassword('adatadat')
+    };
   }
   return data;
 }
