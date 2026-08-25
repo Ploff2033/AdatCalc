@@ -11,7 +11,7 @@
     'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct',
     'round-trip', 'fuel-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
     'delivery-revenue', 'delivery-profit', 'delivery-margin',
-    'profit-total', 'profit-per-m3', 'margin-total'
+    'revenue-total', 'profit-total', 'profit-per-m3', 'margin-total'
   ];
 
   function populateSelect(select, items, preferredId) {
@@ -57,11 +57,26 @@
 
   function recalc() {
     var data = State.data;
+    var plant = State.currentPlant();
+    document.getElementById('main-plant-badge').textContent = plant ? plant.name : '';
     var recipeSelect = document.getElementById('main-recipe');
     var mixerSelect = document.getElementById('main-mixer');
     var distInput = document.getElementById('dist');
     var errorEl = document.getElementById('main-validation-error');
     var placeOrderBtn = document.getElementById('place-order-btn');
+    var nbCityInput = document.getElementById('nb-city');
+    var deliveryChargeInput = document.getElementById('delivery-charge');
+    var deliverySection = document.getElementById('delivery-section');
+
+    // Самовывоз — клиент забирает сам, миксер/расстояние/доставка не участвуют
+    // в расчёте: соответствующие поля блокируются, а не просто игнорируются,
+    // чтобы не создавать впечатление, что они всё ещё на что-то влияют.
+    var selfPickup = document.getElementById('self-pickup').checked;
+    mixerSelect.disabled = selfPickup;
+    distInput.disabled = selfPickup;
+    nbCityInput.disabled = selfPickup;
+    deliveryChargeInput.disabled = selfPickup;
+    deliverySection.hidden = selfPickup;
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
@@ -72,7 +87,7 @@
     var distField = distInput.closest('.field');
     var distRaw = distInput.value;
     var dist = parseFloat(distRaw) || 0;
-    var distMissing = distRaw.trim() === '' || !(dist > 0);
+    var distMissing = !selfPickup && (distRaw.trim() === '' || !(dist > 0));
 
     // Цена топлива — единый источник (Техника → Общие настройки), на Главной только отображается.
     var fuelPrice = data.config.fuelPriceDefault || 0;
@@ -84,12 +99,14 @@
     [recipeSelect, mixerSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
     var missing = [];
     if (!recipe) missing.push(recipeSelect);
-    if (!mixer) missing.push(mixerSelect);
+    if (!selfPickup && !mixer) missing.push(mixerSelect);
     if (distMissing) missing.push(distField);
 
     if (missing.length) {
       missing.forEach(function (el) { el.classList.add('invalid'); });
-      errorEl.textContent = 'Заполните обязательные поля: марка/рецепт, миксер и расстояние — они выделены красным.';
+      errorEl.textContent = selfPickup
+        ? 'Заполните обязательное поле: марка/рецепт — оно выделено красным.'
+        : 'Заполните обязательные поля: марка/рецепт, миксер и расстояние — они выделены красным.';
       errorEl.hidden = false;
       placeOrderBtn.disabled = true;
       lastCalc = null;
@@ -99,9 +116,9 @@
     errorEl.hidden = true;
 
     var materialsCost = Calc.materialsCostPerM3(recipe, data.materials, data.aggregateTrucks);
-    var payroll = Calc.payrollPerM3(data);
-    var depr = Calc.plantDeprPerM3(data.config);
-    var utilities = Calc.utilitiesPerM3(data.config);
+    var payroll = Calc.payrollPerM3(plant, data.plants, data.personnelSummary);
+    var depr = Calc.plantDeprPerM3(plant);
+    var utilities = Calc.utilitiesPerM3(plant);
     var costPerM3 = materialsCost + payroll + depr + utilities;
 
     document.getElementById('cost-materials-label').textContent = 'Материалы (' + recipe.name + ')';
@@ -112,6 +129,20 @@
     document.getElementById('cost-per-m3').textContent = Format.fmt(costPerM3, 2);
 
     var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
+
+    // Расход материалов на заказ (для истории/учёта инертов) — снимок:
+    // название/ед. на момент заказа, не ссылка на mat_id.
+    var materialsById = {};
+    data.materials.forEach(function (m) { materialsById[m.id] = m; });
+    var materialsBreakdown = recipe.items.map(function (item) {
+      var mat = materialsById[item.materialId];
+      return {
+        name: mat ? mat.name : 'Неизвестный материал',
+        unit: mat ? mat.unit : '',
+        qty: item.qty * saleVolume
+      };
+    });
+
     var salePrice = recipe.salePrice || 0;
     document.getElementById('recipe-sale-price-display').textContent = Format.fmt(salePrice, 2);
 
@@ -135,35 +166,43 @@
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPrice > 0 ? (safetyMargin / testPrice) * 100 : 0);
 
-    var trips = Calc.tripsForVolume(mixer, saleVolume);
-    var roundTrip = dist * 2;
-    var fuelRate = mixer.fuelRate;
-    var amortPerKm = Calc.amortPerKm(mixer);
-    var fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
-    var amortCostPerTrip = roundTrip * amortPerKm;
-    var neighborCity = document.getElementById('nb-city').checked;
-    var surchargePerTrip = neighborCity ? neighborCitySurcharge : 0;
-    var deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
+    var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
+      surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0,
+      deliveryProfit = 0, deliveryMarginPercent = 0;
 
-    document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
-    document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
-    document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
-    document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
-    document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
-    document.getElementById('delivery-cost-total').textContent = Format.fmt(deliveryCostTotal, 2);
+    if (!selfPickup) {
+      trips = Calc.tripsForVolume(mixer, saleVolume);
+      roundTrip = dist * 2;
+      var fuelRate = mixer.fuelRate;
+      var amortPerKm = Calc.amortPerKm(mixer);
+      fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
+      amortCostPerTrip = roundTrip * amortPerKm;
+      neighborCity = nbCityInput.checked;
+      surchargePerTrip = neighborCity ? neighborCitySurcharge : 0;
+      deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
 
-    var deliveryChargePerM3 = NumericInput.parseNumber(document.getElementById('delivery-charge').value) || 0;
-    var deliveryRevenue = deliveryChargePerM3 * saleVolume;
-    var deliveryProfit = deliveryRevenue - deliveryCostTotal;
-    var deliveryMarginPercent = Calc.marginPercent(deliveryProfit, deliveryRevenue);
-    document.getElementById('delivery-revenue').textContent = Format.fmt(deliveryRevenue, 2);
-    setProfitLine(document.getElementById('delivery-profit'), deliveryProfit);
-    setMarginBadge(document.getElementById('delivery-margin'), deliveryMarginPercent);
+      document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
+      document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
+      document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
+      document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
+      document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
+      document.getElementById('delivery-cost-total').textContent = Format.fmt(deliveryCostTotal, 2);
+
+      deliveryChargePerM3 = NumericInput.parseNumber(deliveryChargeInput.value) || 0;
+      deliveryRevenue = deliveryChargePerM3 * saleVolume;
+      deliveryProfit = deliveryRevenue - deliveryCostTotal;
+      deliveryMarginPercent = Calc.marginPercent(deliveryProfit, deliveryRevenue);
+      document.getElementById('delivery-revenue').textContent = Format.fmt(deliveryRevenue, 2);
+      setProfitLine(document.getElementById('delivery-profit'), deliveryProfit);
+      setMarginBadge(document.getElementById('delivery-margin'), deliveryMarginPercent);
+    }
 
     var totalRevenue = mixRevenue + deliveryRevenue;
     var totalProfit = mixProfit + deliveryProfit;
     var profitPerM3Total = saleVolume > 0 ? totalProfit / saleVolume : 0;
     var marginTotal = Calc.marginPercent(totalProfit, totalRevenue);
+
+    document.getElementById('revenue-total').textContent = Format.fmt(totalRevenue, 2);
 
     var profitTotalEl = document.getElementById('profit-total');
     var profitTotalWrap = document.getElementById('profit-total-wrap');
@@ -185,10 +224,13 @@
 
     placeOrderBtn.disabled = false;
     lastCalc = {
+      plantId: plant.id,
+      plantName: plant.name,
       recipeName: recipe.name,
-      mixerName: mixer.name,
+      materials: materialsBreakdown,
+      mixerName: selfPickup ? 'Самовывоз' : mixer.name,
       saleVolume: saleVolume,
-      distanceKm: dist,
+      distanceKm: selfPickup ? 0 : dist,
       fuelPricePerLiter: fuelPrice,
       neighborCity: neighborCity,
       surchargePerTrip: surchargePerTrip,
@@ -218,6 +260,17 @@
     };
   }
 
+  // Марку/миксер оставляем выбранными (обычно следующий заказ — та же смесь),
+  // а расстояние/объём/доплату за рейс/цену-испытание/чекбокс соседнего города
+  // очищаем — это разовые параметры конкретного заказа.
+  function resetOrderForm() {
+    inputIds.forEach(function (id) { document.getElementById(id).value = ''; });
+    document.getElementById('nb-city').checked = false;
+    document.getElementById('self-pickup').checked = false;
+    document.getElementById('mix-test-price').value = '';
+    mixTestPriceDirty = false;
+  }
+
   async function handlePlaceOrder() {
     if (!lastCalc) return;
     var placeOrderBtn = document.getElementById('place-order-btn');
@@ -227,6 +280,8 @@
       var payload = Object.assign({}, lastCalc, { createdAt: new Date().toISOString() });
       await Api.post('/orders', payload);
       await State.loadAll();
+      resetOrderForm();
+      recalc();
       hintEl.hidden = false;
       setTimeout(function () { hintEl.hidden = true; }, 4000);
     } catch (err) {
@@ -242,6 +297,7 @@
       document.getElementById(id).addEventListener('input', recalc);
     });
     document.getElementById('nb-city').addEventListener('change', recalc);
+    document.getElementById('self-pickup').addEventListener('change', recalc);
 
     NumericInput.attach(document.getElementById('mix-test-price'));
     document.getElementById('mix-test-price').addEventListener('input', function () {

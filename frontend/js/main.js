@@ -15,10 +15,10 @@
     });
   }
 
-  function showLoadError(err) {
+  function showLoadError(message) {
     var el = document.getElementById('load-error');
     el.hidden = false;
-    el.textContent = 'Не удалось загрузить данные с сервера: ' + err.message + '. Проверьте, что сервер запущен (node server.js).';
+    el.textContent = message;
   }
 
   function renderAll() {
@@ -28,19 +28,34 @@
     LocationTab.render();
     MainTab.render();
     OrdersTab.render();
+    DashboardTab.render();
+    PlantSwitcher.render();
   }
 
   async function boot() {
     initTheme();
     Auth.init();
+    await Auth.refreshMe();
+
+    var plants;
+    try {
+      plants = await Api.get('/plants');
+    } catch (err) {
+      showLoadError('Не удалось загрузить данные с сервера: ' + err.message + '. Проверьте, что сервер запущен (node server.js).');
+      return;
+    }
+    await Plant.resolve(plants, Auth.getRole());
+    if (!Plant.currentPlantId()) {
+      showLoadError(Plant.error());
+      return;
+    }
 
     try {
       await State.loadAll();
     } catch (err) {
-      showLoadError(err);
+      showLoadError('Не удалось загрузить данные с сервера: ' + err.message + '. Проверьте, что сервер запущен (node server.js).');
       return;
     }
-    await Auth.refreshMe();
     Tabs.init();
 
     PersonnelTab.init();
@@ -49,6 +64,8 @@
     LocationTab.init();
     MainTab.init();
     OrdersTab.init();
+    DashboardTab.init();
+    PlantSwitcher.init();
 
     renderAll();
     State.onChange(renderAll);

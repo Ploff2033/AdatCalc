@@ -1,18 +1,29 @@
 (function () {
-  function payrollPerM3(data) {
-    var total = data.payrollMonthlyTotal || 0;
-    return data.config.targetOutput > 0 ? total / data.config.targetOutput : 0;
+  // ФОТ на 1 м³ для завода = (ФОТ своих сотрудников / выработка этого завода)
+  // + (ФОТ общих сотрудников / суммарная выработка ВСЕХ заводов) — общие
+  // сотрудники (бухгалтер и т.п.) обслуживают все заводы сразу, поэтому их
+  // ФОТ размазывается по общей выработке, а не по одному заводу.
+  function payrollPerM3(plant, allPlants, personnelSummary) {
+    if (!plant) return 0;
+    var totalOutput = (allPlants || []).reduce(function (sum, p) { return sum + (p.targetOutput || 0); }, 0);
+    var ownTotal = (personnelSummary && personnelSummary.byPlant && personnelSummary.byPlant[plant.id]) || 0;
+    var sharedTotal = (personnelSummary && personnelSummary.sharedTotal) || 0;
+    var ownPart = plant.targetOutput > 0 ? ownTotal / plant.targetOutput : 0;
+    var sharedPart = totalOutput > 0 ? sharedTotal / totalOutput : 0;
+    return ownPart + sharedPart;
   }
 
-  function plantDeprPerM3(config) {
-    var pd = config.plantDepr;
-    if (!(pd.lifespanMonths > 0) || !(config.targetOutput > 0)) return 0;
+  function plantDeprPerM3(plant) {
+    if (!plant) return 0;
+    var pd = plant.plantDepr;
+    if (!pd || !(pd.lifespanMonths > 0) || !(plant.targetOutput > 0)) return 0;
     var monthly = (pd.balance - pd.residual) / pd.lifespanMonths;
-    return monthly / config.targetOutput;
+    return monthly / plant.targetOutput;
   }
 
-  function utilitiesPerM3(config) {
-    return config.targetOutput > 0 ? config.utilitiesMonthly / config.targetOutput : 0;
+  function utilitiesPerM3(plant) {
+    if (!plant) return 0;
+    return plant.targetOutput > 0 ? (plant.utilitiesMonthly || 0) / plant.targetOutput : 0;
   }
 
   function amortPerKm(vehicle) {

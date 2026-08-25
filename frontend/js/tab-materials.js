@@ -164,6 +164,7 @@
     e.preventDefault();
     matErrorEl.hidden = true;
     var payload = {
+      plantId: Plant.currentPlantId(),
       name: matNameInput.value,
       unit: matUnitInput.value,
       price: NumericInput.parseNumber(matPriceInput.value),
@@ -349,6 +350,7 @@
     e.preventDefault();
     recErrorEl.hidden = true;
     var payload = {
+      plantId: Plant.currentPlantId(),
       name: recNameInput.value,
       salePrice: NumericInput.parseNumber(recSalePriceInput.value),
       items: readRecipeItemsFromForm()

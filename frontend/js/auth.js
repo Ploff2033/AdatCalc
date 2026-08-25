@@ -14,6 +14,7 @@
     tabButton('personnel').hidden = !isAtLeast('admin');
     tabButton('equipment').hidden = !isAtLeast('manager');
     tabButton('materials').hidden = !isAtLeast('manager');
+    tabButton('dashboard').hidden = !isAtLeast('admin');
 
     var activeBtn = document.querySelector('.tab-btn[aria-selected="true"]');
     if (activeBtn && activeBtn.hidden && window.Tabs) {
@@ -46,20 +47,21 @@
     applyRoleVisibility();
   }
 
+  // После входа/выхода просто перезагружаем страницу — иначе если самая первая
+  // загрузка (ещё до входа) не смогла определить завод, boot() уже завершился
+  // досрочно и остаток приложения (вкладки, переключатель завода и т.д.)
+  // никогда не инициализируется, даже после успешного логина. Перезагрузка
+  // гарантированно прогоняет boot() заново уже с валидной сессией.
   async function login(password) {
-    var res = await Api.post('/auth/login', { password: password });
-    role = res.role;
-    applyRoleVisibility();
-    await State.loadAll();
+    await Api.post('/auth/login', { password: password });
+    location.reload();
   }
 
   async function logout() {
     try {
       await Api.post('/auth/logout', {});
     } catch (err) { /* cookie may already be gone — ignore */ }
-    role = null;
-    applyRoleVisibility();
-    await State.loadAll();
+    location.reload();
   }
 
   function openLoginDialog() {
@@ -97,5 +99,9 @@
     });
   }
 
-  window.Auth = { init: init, refreshMe: refreshMe, isAtLeast: isAtLeast };
+  function getRole() {
+    return role;
+  }
+
+  window.Auth = { init: init, refreshMe: refreshMe, isAtLeast: isAtLeast, getRole: getRole };
 })();

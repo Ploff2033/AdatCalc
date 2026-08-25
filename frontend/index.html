@@ -17,6 +17,7 @@
         <h1>Себестоимость и рентабельность бетона</h1>
       </div>
       <div class="header-actions">
+        <select class="select plant-switcher" id="plant-switcher" title="Завод" hidden></select>
         <button class="theme-btn" id="auth-btn" type="button" title="Войти">🔒</button>
         <button class="theme-btn" id="theme-btn" type="button" title="Переключить тему">🌓</button>
       </div>
@@ -30,6 +31,7 @@
     <button class="tab-btn" data-tab="location" role="tab" type="button" hidden>Карта</button>
     <button class="tab-btn" data-tab="main" role="tab" type="button">Главная</button>
     <button class="tab-btn" data-tab="orders" role="tab" type="button">Заказы</button>
+    <button class="tab-btn" data-tab="dashboard" role="tab" type="button" hidden>Дашборд</button>
   </nav>
 
   <div id="load-error" class="load-error" hidden></div>
@@ -38,14 +40,21 @@
   <section class="tab-panel" id="tab-personnel" data-tab="personnel" hidden>
 
     <section class="card">
-      <div class="card-head"><span class="num">01</span><h2>Сотрудники</h2></div>
-      <p class="hint">Оклады сотрудников формируют месячный ФОТ, который делится на целевую выработку.</p>
+      <div class="card-head"><span class="num">01</span><h2>Сотрудники завода</h2></div>
+      <p class="hint">Оклады сотрудников этого завода делятся на его собственную выработку.</p>
       <div class="tile-grid" id="employee-tiles"></div>
       <button class="add-btn" id="add-employee-btn" type="button">+ Добавить сотрудника</button>
     </section>
 
     <section class="card">
-      <div class="card-head"><span class="num">02</span><h2>Целевая выработка и накладные расходы завода</h2></div>
+      <div class="card-head"><span class="num">02</span><h2>Общие сотрудники (все заводы)</h2></div>
+      <p class="hint">Оклады этих сотрудников делятся на суммарную выработку всех заводов сразу — они не привязаны к одному месту.</p>
+      <div class="tile-grid" id="shared-employee-tiles"></div>
+      <button class="add-btn" id="add-shared-employee-btn" type="button">+ Добавить общего сотрудника</button>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="num">03</span><h2>Целевая выработка и накладные расходы завода</h2></div>
       <p class="hint">Амортизация завода и коммунальные платежи считаются так же, как ФОТ: фиксированная сумма в месяц делится на целевую выработку.</p>
 
       <div class="config-grid">
@@ -161,9 +170,14 @@
 
       <div class="main-col">
         <section class="card compact">
-          <div class="card-head"><span class="num">01</span><h2>Параметры и доставка</h2></div>
+          <div class="card-head"><span class="num">01</span><h2>Параметры и доставка</h2><span class="plant-badge" id="main-plant-badge"></span></div>
 
           <div class="validation-banner" id="main-validation-error" hidden></div>
+
+          <div class="checkbox-row">
+            <input type="checkbox" id="self-pickup">
+            <label for="self-pickup">Самовывоз (клиент забирает сам)</label>
+          </div>
 
           <div class="two-col">
             <div class="field-group">
@@ -249,7 +263,7 @@
             </div>
           </div>
 
-          <div class="calc-section">
+          <div class="calc-section" id="delivery-section">
             <h3 class="calc-section-title">Доставка</h3>
             <div class="split-cols">
               <div class="split-col expense">
@@ -278,7 +292,11 @@
 
           <div class="calc-section">
             <h3 class="calc-section-title">Итого</h3>
-            <div class="final-grid compact three">
+            <div class="final-grid compact">
+              <div class="final-result" id="revenue-total-wrap">
+                <span class="label">Итого выручка (к оплате клиентом)</span>
+                <span class="value" id="revenue-total">—</span>
+              </div>
               <div class="final-result" id="profit-total-wrap">
                 <span class="label">Чистая прибыль</span>
                 <span class="value" id="profit-total">—</span>
@@ -305,15 +323,101 @@
 
   <!-- ============ ЗАКАЗЫ ============ -->
   <section class="tab-panel" id="tab-orders" data-tab="orders" hidden>
+
+    <section class="card compact">
+      <div class="card-head"><span class="num">01</span><h2>Расход материалов за период</h2></div>
+      <p class="hint" id="orders-materials-empty-hint">Нет заказов за выбранный период.</p>
+      <div class="breakdown compact" id="orders-materials-summary"></div>
+    </section>
+
     <section class="card">
       <div class="card-head">
-        <span class="num">01</span><h2>История заказов</h2>
+        <span class="num">02</span><h2>История заказов</h2>
         <button type="button" class="ghost-btn" id="export-orders-btn" disabled>Экспорт в Excel</button>
+      </div>
+      <div class="orders-filters">
+        <select class="select orders-plant-filter" id="orders-plant-filter" hidden></select>
+        <select class="select" id="orders-period-filter">
+          <option value="all">Всё время</option>
+          <option value="today">Сегодня</option>
+          <option value="7d">Последние 7 дней</option>
+          <option value="30d">Последние 30 дней</option>
+          <option value="month">Этот месяц</option>
+          <option value="custom">Свой период</option>
+        </select>
+        <div class="orders-custom-range" id="orders-custom-range" hidden>
+          <input type="date" id="orders-date-from">
+          <span>—</span>
+          <input type="date" id="orders-date-to">
+        </div>
       </div>
       <p class="hint">Полный снимок расчёта на момент оформления — цифры не пересчитываются задним числом при изменении цен, рецептов или техники. Клик по заказу разворачивает полную детализацию.</p>
       <p class="hint" id="orders-empty-hint">Заказов пока нет — оформите первый на вкладке «Главная».</p>
       <div class="orders-list" id="orders-list"></div>
     </section>
+  </section>
+
+  <!-- ============ ДАШБОРД ============ -->
+  <section class="tab-panel" id="tab-dashboard" data-tab="dashboard" hidden>
+
+    <section class="card">
+      <div class="card-head"><span class="num">01</span><h2>Заводы</h2></div>
+      <p class="hint">Основные параметры заводов заполняются на вкладке «Персонал» после переключения на нужный завод сверху.</p>
+      <div class="tile-grid" id="dashboard-plant-tiles"></div>
+      <button class="add-btn" id="add-plant-btn" type="button">+ Добавить завод</button>
+    </section>
+
+    <section class="card compact">
+      <div class="card-head"><span class="num">02</span><h2>Сводка по всем заводам</h2></div>
+      <div class="final-grid compact three">
+        <div class="final-result">
+          <span class="label">Амортизация в месяц</span>
+          <span class="value" id="dash-total-depr">—</span>
+        </div>
+        <div class="final-result">
+          <span class="label">ФОТ в месяц</span>
+          <span class="value" id="dash-total-payroll">—</span>
+        </div>
+        <div class="final-result">
+          <span class="label">Суммарная выработка</span>
+          <span class="value" id="dash-total-output">—</span>
+        </div>
+      </div>
+      <div class="final-grid compact three">
+        <div class="final-result" id="dash-orders-count-wrap">
+          <span class="label">Заказов всего</span>
+          <span class="value" id="dash-orders-count">—</span>
+        </div>
+        <div class="final-result" id="dash-total-profit-wrap">
+          <span class="label">Чистая прибыль всего</span>
+          <span class="value" id="dash-total-profit">—</span>
+        </div>
+        <div class="final-result" id="dash-total-revenue-wrap">
+          <span class="label">Выручка всего</span>
+          <span class="value" id="dash-total-revenue">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="num">03</span><h2>Выработка и прибыль по заводам</h2></div>
+      <div class="dash-table-wrap">
+        <table class="dash-table" id="dash-plant-table">
+          <thead>
+            <tr>
+              <th>Завод</th>
+              <th>Выработка</th>
+              <th>Амортизация/мес</th>
+              <th>Коммуналка/мес</th>
+              <th>Заказов</th>
+              <th>Прибыль</th>
+            </tr>
+          </thead>
+          <tbody id="dash-plant-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
   </section>
 
 </div>
@@ -544,6 +648,23 @@
   </form>
 </dialog>
 
+<dialog class="app-dialog" id="plant-dialog">
+  <form method="dialog" id="plant-form">
+    <h3 id="plant-dialog-title">Новый завод</h3>
+    <input type="hidden" id="plant-id">
+    <div class="field-group">
+      <label for="plant-name">Название</label>
+      <div class="field"><input type="text" id="plant-name" required></div>
+    </div>
+    <p class="hint">Выработку, амортизацию и коммуналку заполните на вкладке «Персонал» после переключения на этот завод сверху.</p>
+    <p class="dialog-error" id="plant-dialog-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
+      <button type="submit" class="primary-btn" id="plant-form-submit">Создать</button>
+    </div>
+  </form>
+</dialog>
+
 <template id="recipe-item-row-template">
   <div class="recipe-item-row">
     <select class="select recipe-item-material"></select>
@@ -560,8 +681,10 @@
 <script src="/js/yandex-config.js"></script>
 <script src="/js/yandex-loader.js"></script>
 <script src="/js/api.js"></script>
+<script src="/js/plant.js"></script>
 <script src="/js/state.js"></script>
 <script src="/js/auth.js"></script>
+<script src="/js/plant-switcher.js"></script>
 <script src="/js/tabs.js"></script>
 <script src="/js/tab-personnel.js"></script>
 <script src="/js/tab-materials.js"></script>
@@ -569,6 +692,7 @@
 <script src="/js/tab-location.js"></script>
 <script src="/js/tab-main.js"></script>
 <script src="/js/tab-orders.js"></script>
+<script src="/js/tab-dashboard.js"></script>
 <script src="/js/main.js"></script>
 </body>
 </html>

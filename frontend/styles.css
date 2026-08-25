@@ -211,6 +211,80 @@ section.card.compact{
 .card-head .ghost-btn{
   margin-left:auto;
 }
+.orders-filters{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.orders-filters .select{
+  width:auto;
+  max-width:220px;
+}
+.orders-custom-range{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:var(--text-muted);
+  font-size:13px;
+}
+.orders-custom-range input[type=date]{
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:8px 10px;
+  color:var(--text);
+  font-size:13px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+#orders-materials-summary .line .l{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.dash-table-wrap{
+  overflow-x:auto;
+}
+.dash-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+.dash-table th{
+  text-align:left;
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--text-muted);
+  padding:0 10px 8px;
+  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.dash-table td{
+  padding:9px 10px;
+  border-bottom:1px solid var(--border);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.dash-table td:first-child, .dash-table th:first-child{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-weight:600;
+}
+.dash-table td.positive{ color:var(--positive); }
+.dash-table td.negative{ color:var(--negative); }
+.dash-table tr:last-child td{ border-bottom:none; }
+
+.plant-badge{
+  margin-left:auto;
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  color:var(--accent);
+  background:var(--accent-soft);
+  padding:3px 9px;
+  border-radius:999px;
+}
 .hint{
   margin:-8px 0 0;
   color:var(--text-muted);
