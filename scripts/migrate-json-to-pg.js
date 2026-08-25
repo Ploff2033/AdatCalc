@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // Одноразовая миграция data/db.json -> Postgres.
-// Запуск: DATABASE_URL=postgres://... node scripts/migrate-json-to-pg.js [путь-к-db.json] [--force]
+// Запуск: DATABASE_URL=postgres://... node scripts/migrate-json-to-pg.js [путь-к-db.json] [--force] [--skip-materials-recipes]
 //
 // По умолчанию отказывается писать в базу, где уже есть данные (таблица
 // plants не пуста), чтобы не задвоить записи при случайном повторном
 // запуске. --force снимает эту проверку, но существующие строки не
 // удаляются — при совпадении id используется ON CONFLICT DO NOTHING,
 // т.е. просто ничего не перезапишет и молча пропустит дубликаты.
+//
+// --skip-materials-recipes — не грузить materials/recipes/recipe_items из
+// JSON вообще (для случая, когда актуальные материалы/рецепты берутся из
+// отдельного источника, например экспорта тестовой базы — см.
+// scripts/export-materials-recipes.sh).
 const fs = require('fs');
 const path = require('path');
 const db = require('../backend/db');
@@ -14,7 +19,8 @@ const { ORDER_COLUMNS } = require('../backend/handlers/orders');
 const { genToken } = require('../backend/tokens');
 
 async function main() {
-  const args = process.argv.slice(2).filter((a) => a !== '--force');
+  const skipMaterialsRecipes = process.argv.includes('--skip-materials-recipes');
+  const args = process.argv.slice(2).filter((a) => a !== '--force' && a !== '--skip-materials-recipes');
   const force = process.argv.includes('--force');
   const jsonPath = args[0] || path.join(__dirname, '..', 'data', 'db.json');
 
@@ -84,36 +90,40 @@ async function main() {
     }
     console.log(`aggregateTrucks: ${n}`);
 
-    n = 0;
-    for (const m of data.materials || []) {
-      const d = m.delivery || {};
-      await client.query(
-        `INSERT INTO materials (id, plant_id, name, unit, price, loss_percent, delivery_own_transport, delivery_truck_id, delivery_distance_km, delivery_fuel_price_per_liter, delivery_driver_surcharge, delivery_manual_cost_per_unit)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
-        [m.id, m.plantId, m.name, m.unit, m.price, m.lossPercent || 0, !!d.ownTransport, d.truckId || null, d.distanceKm || 0, d.fuelPricePerLiter || 0, d.driverSurcharge || 0, d.manualCostPerUnit || 0]
-      );
-      n++;
-    }
-    console.log(`materials: ${n}`);
-
-    n = 0;
-    let itemsN = 0;
-    for (const r of data.recipes || []) {
-      await client.query(
-        `INSERT INTO recipes (id, plant_id, name, sale_price) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-        [r.id, r.plantId, r.name, r.salePrice || 0]
-      );
-      const items = r.items || [];
-      for (let i = 0; i < items.length; i++) {
+    if (skipMaterialsRecipes) {
+      console.log('materials/recipes: пропущено (--skip-materials-recipes)');
+    } else {
+      n = 0;
+      for (const m of data.materials || []) {
+        const d = m.delivery || {};
         await client.query(
-          `INSERT INTO recipe_items (recipe_id, material_id, qty, position) VALUES ($1,$2,$3,$4)`,
-          [r.id, items[i].materialId, items[i].qty, i]
+          `INSERT INTO materials (id, plant_id, name, unit, price, loss_percent, delivery_own_transport, delivery_truck_id, delivery_distance_km, delivery_fuel_price_per_liter, delivery_driver_surcharge, delivery_manual_cost_per_unit)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
+          [m.id, m.plantId, m.name, m.unit, m.price, m.lossPercent || 0, !!d.ownTransport, d.truckId || null, d.distanceKm || 0, d.fuelPricePerLiter || 0, d.driverSurcharge || 0, d.manualCostPerUnit || 0]
         );
-        itemsN++;
+        n++;
       }
-      n++;
+      console.log(`materials: ${n}`);
+
+      n = 0;
+      let itemsN = 0;
+      for (const r of data.recipes || []) {
+        await client.query(
+          `INSERT INTO recipes (id, plant_id, name, sale_price) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
+          [r.id, r.plantId, r.name, r.salePrice || 0]
+        );
+        const items = r.items || [];
+        for (let i = 0; i < items.length; i++) {
+          await client.query(
+            `INSERT INTO recipe_items (recipe_id, material_id, qty, position) VALUES ($1,$2,$3,$4)`,
+            [r.id, items[i].materialId, items[i].qty, i]
+          );
+          itemsN++;
+        }
+        n++;
+      }
+      console.log(`recipes: ${n} (recipe_items: ${itemsN})`);
     }
-    console.log(`recipes: ${n} (recipe_items: ${itemsN})`);
 
     n = 0;
     let matN = 0;
