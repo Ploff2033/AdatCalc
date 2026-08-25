@@ -7,11 +7,12 @@ async function login(password) {
   if (typeof password !== 'string' || !password) {
     throw new HttpError(400, 'Введите пароль');
   }
-  const auth = db.get().config.auth || {};
-  if (auth.admin && verifyPassword(password, auth.admin.salt, auth.admin.hash)) {
+  const { rows } = await db.pool.query('SELECT admin_salt, admin_hash, manager_salt, manager_hash FROM config WHERE id = 1');
+  const cfg = rows[0];
+  if (cfg && verifyPassword(password, cfg.admin_salt, cfg.admin_hash)) {
     return { token: await createSession('admin'), role: 'admin' };
   }
-  if (auth.manager && verifyPassword(password, auth.manager.salt, auth.manager.hash)) {
+  if (cfg && verifyPassword(password, cfg.manager_salt, cfg.manager_hash)) {
     return { token: await createSession('manager'), role: 'manager' };
   }
   throw new HttpError(401, 'Неверный пароль');
@@ -21,8 +22,8 @@ async function logout(token) {
   await destroySession(token);
 }
 
-function me(token) {
-  const session = getSession(token);
+async function me(token) {
+  const session = await getSession(token);
   return { role: session ? session.role : null };
 }
 

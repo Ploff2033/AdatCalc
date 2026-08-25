@@ -1,132 +1,116 @@
 const fs = require('fs');
-const fsp = fs.promises;
 const path = require('path');
+const { Pool } = require('pg');
 const { hashPassword } = require('./auth');
+const { genToken } = require('./tokens');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'db.json');
-const TMP_PATH = DB_PATH + '.tmp';
+const DATABASE_URL = process.env.DATABASE_URL || 'postgres://localhost:5432/calc';
 
-function seedData() {
-  return {
-    employees: [
-      { id: 'emp_seed1', name: 'Иванов Иван', position: 'Оператор БСУ', salary: 65000 },
-      { id: 'emp_seed2', name: 'Петров Пётр', position: 'Водитель миксера', salary: 70000 }
-    ],
-    config: {
-      targetOutput: 500,
-      plantDepr: { balance: 1200000, residual: 100000, lifespanMonths: 96 },
-      utilitiesMonthly: 40000,
-      plantLocation: null,
-      fuelPriceDefault: 62,
-      neighborCitySurcharge: 1000,
-      auth: {
-        admin: hashPassword('AdatBetonAdmin'),
-        manager: hashPassword('adatadat')
-      }
-    },
-    materials: [
-      { id: 'mat_cement', name: 'Цемент', unit: 'т', price: 9000, lossPercent: 0, delivery: null },
-      { id: 'mat_sand', name: 'Песок', unit: 'т', price: 1100, lossPercent: 0, delivery: null },
-      { id: 'mat_gravel', name: 'Щебень', unit: 'т', price: 1600, lossPercent: 0, delivery: null },
-      { id: 'mat_water', name: 'Вода', unit: 'м³', price: 50, lossPercent: 0, delivery: null }
-    ],
-    recipes: [
-      {
-        id: 'rec_m200',
-        name: 'М200',
-        salePrice: 6800,
-        items: [
-          { materialId: 'mat_cement', qty: 0.35 },
-          { materialId: 'mat_sand', qty: 0.7 },
-          { materialId: 'mat_gravel', qty: 1.1 },
-          { materialId: 'mat_water', qty: 0.18 }
-        ]
-      }
-    ],
-    mixers: [
-      { id: 'mix_1', name: 'КамАЗ-53229 №1', capacity: 7, balance: 2500000, residual: 250000, mileage: 300000, fuelRate: 35 }
-    ],
-    aggregateTrucks: [
-      { id: 'atr_1', name: 'КамАЗ-самосвал №1', capacity: 15, balance: 1800000, residual: 200000, mileage: 300000, fuelRate: 32 }
-    ],
-    orders: [],
-    sessions: []
-  };
-}
-
-let cache = null;
-let writeChain = Promise.resolve();
-
-async function atomicWrite(data) {
-  const json = JSON.stringify(data, null, 2);
-  await fsp.writeFile(TMP_PATH, json, 'utf8');
-  await fsp.rename(TMP_PATH, DB_PATH);
-}
-
-async function load() {
-  let raw;
-  try {
-    raw = await fsp.readFile(DB_PATH, 'utf8');
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      cache = seedData();
-      await fsp.mkdir(path.dirname(DB_PATH), { recursive: true });
-      await atomicWrite(cache);
-      return cache;
-    }
-    throw err;
-  }
-  try {
-    cache = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`data/db.json is corrupted and could not be parsed: ${err.message}`);
-  }
-  applyMigrations(cache);
-  return cache;
-}
-
-// Fills in keys added by later versions of the app so older data/db.json
-// files (from before a feature existed) don't crash on missing fields.
-function applyMigrations(data) {
-  if (!Array.isArray(data.aggregateTrucks)) data.aggregateTrucks = [];
-  if (!Array.isArray(data.orders)) data.orders = [];
-  if (!Array.isArray(data.sessions)) data.sessions = [];
-  if (data.config && typeof data.config.fuelPriceDefault !== 'number') {
-    data.config.fuelPriceDefault = 62;
-  }
-  if (data.config && typeof data.config.neighborCitySurcharge !== 'number') {
-    data.config.neighborCitySurcharge = 1000;
-  }
-  if (data.config && !data.config.auth) {
-    data.config.auth = {
-      admin: hashPassword('AdatBetonAdmin'),
-      manager: hashPassword('adatadat')
-    };
-  }
-  return data;
-}
-
-function get() {
-  if (!cache) throw new Error('DB not loaded yet — call load() before get()');
-  return cache;
-}
-
-// fn receives a deep clone of the current data and returns the new data to persist.
-function mutate(fn) {
-  const task = writeChain.then(async () => {
-    const draft = JSON.parse(JSON.stringify(cache));
-    const next = fn(draft);
-    await atomicWrite(next);
-    cache = next;
-    return next;
-  });
-  // Keep the chain alive even if this mutation fails, so later mutations still run.
-  writeChain = task.catch(() => {});
-  return task;
-}
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 function genId(prefix) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-module.exports = { load, get, mutate, genId, DB_PATH };
+async function migrate() {
+  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+  await pool.query(schema);
+  await backfillAccessTokens();
+}
+
+// Заводы, созданные до появления access_token (или через ALTER TABLE на уже
+// существующей БД), получают токен здесь — идемпотентно, трогает только
+// строки с access_token IS NULL, на следующих запусках уже no-op.
+async function backfillAccessTokens() {
+  const { rows } = await pool.query('SELECT id FROM plants WHERE access_token IS NULL');
+  for (const row of rows) {
+    await pool.query('UPDATE plants SET access_token = $1 WHERE id = $2', [genToken(), row.id]);
+  }
+}
+
+// Заполняет базу начальными данными только если она реально пустая (первый
+// запуск). На уже существующей базе — no-op, ничего не перезаписывает.
+async function seedIfEmpty() {
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM plants');
+  if (rows[0].n > 0) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const plantId = 'plant_seed1';
+    await client.query(
+      `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly)
+       VALUES ($1, 'Завод 1', 500, 1200000, 100000, 96, 40000)`,
+      [plantId]
+    );
+
+    await client.query(
+      `INSERT INTO employees (id, plant_id, name, position, salary) VALUES
+       ('emp_seed1', $1, 'Иванов Иван', 'Оператор БСУ', 65000),
+       ('emp_seed2', $1, 'Петров Пётр', 'Водитель миксера', 70000)`,
+      [plantId]
+    );
+
+    const admin = hashPassword('AdatBetonAdmin');
+    const manager = hashPassword('adatadat');
+    await client.query(
+      `INSERT INTO config (id, fuel_price_default, neighbor_city_surcharge, admin_salt, admin_hash, manager_salt, manager_hash)
+       VALUES (1, 62, 1000, $1, $2, $3, $4)`,
+      [admin.salt, admin.hash, manager.salt, manager.hash]
+    );
+
+    const materials = [
+      ['mat_cement', 'Цемент', 'т', 9000],
+      ['mat_sand', 'Песок', 'т', 1100],
+      ['mat_gravel', 'Щебень', 'т', 1600],
+      ['mat_water', 'Вода', 'м³', 50]
+    ];
+    for (const [id, name, unit, price] of materials) {
+      await client.query(
+        `INSERT INTO materials (id, plant_id, name, unit, price) VALUES ($1, $2, $3, $4, $5)`,
+        [id, plantId, name, unit, price]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO recipes (id, plant_id, name, sale_price) VALUES ('rec_m200', $1, 'М200', 6800)`,
+      [plantId]
+    );
+    const recipeItems = [
+      ['mat_cement', 0.35],
+      ['mat_sand', 0.7],
+      ['mat_gravel', 1.1],
+      ['mat_water', 0.18]
+    ];
+    for (let i = 0; i < recipeItems.length; i++) {
+      await client.query(
+        `INSERT INTO recipe_items (recipe_id, material_id, qty, position) VALUES ('rec_m200', $1, $2, $3)`,
+        [recipeItems[i][0], recipeItems[i][1], i]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO mixers (id, name, capacity, balance, residual, mileage, fuel_rate)
+       VALUES ('mix_1', 'КамАЗ-53229 №1', 7, 2500000, 250000, 300000, 35)`
+    );
+    await client.query(
+      `INSERT INTO aggregate_trucks (id, name, capacity, balance, residual, mileage, fuel_rate)
+       VALUES ('atr_1', 'КамАЗ-самосвал №1', 15, 1800000, 200000, 300000, 32)`
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function load() {
+  await migrate();
+  await seedIfEmpty();
+}
+
+module.exports = { pool, genId, load, migrate, seedIfEmpty };

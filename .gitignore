@@ -1,3 +1,7 @@
 data/db.json
+data/db.json.*
 .DS_Store
 .claude/
+.env
+backups/
+node_modules/
