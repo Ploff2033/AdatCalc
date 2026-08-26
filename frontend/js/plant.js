@@ -1,6 +1,7 @@
 (function () {
   var currentId = null;
   var currentToken = null;
+  var isUniversalFlag = false;
   var lastError = null;
 
   function readUrlPlantId() {
@@ -29,32 +30,33 @@
     try { localStorage.setItem('current-plant-token', token); } catch (e) { /* ignore */ }
   }
 
-  // role: null (работник) | 'manager' | 'admin'. plants: полный список заводов
-  // (доступен только admin/manager, у них выбор по id как раньше — ссылка
-  // ?plant= или запомненный выбор в этом браузере, иначе первый завод).
-  // Работник без роли теперь приходит по ?token=<accessToken> — id завода в
-  // URL больше не участвует. Токен резолвится на бэкенде (и там же логируется
-  // при каждом обращении — не только на этой первой проверке), поэтому здесь
-  // делаем запрос к серверу, а не сверяем локально со списком.
+  // Выбор стартового завода из полного списка: ?plant= в URL, если валиден,
+  // иначе запомненный в этом браузере, иначе первый попавшийся. Общее для
+  // admin/manager (у них это единственный путь) и для общего токена подмены
+  // (у него тоже есть переключатель заводов — см. plant-switcher.js).
+  function pickPlantId(plants) {
+    var urlId = readUrlPlantId();
+    var validUrlId = urlId && plants.some(function (p) { return p.id === urlId; }) ? urlId : null;
+    var savedId = readSavedPlantId();
+    var validSavedId = savedId && plants.some(function (p) { return p.id === savedId; }) ? savedId : null;
+    var pick = validUrlId || validSavedId || (plants[0] && plants[0].id) || null;
+    if (pick) savePlantId(pick);
+    return pick;
+  }
+
+  // role: null (работник) | 'manager' | 'admin'. plants: полный список заводов.
+  // Работник без роли приходит по ?token=<accessToken> — либо токен конкретного
+  // завода (id завода в URL не участвует), либо общий токен подмены (даёт
+  // доступ работника, но с переключателем завода, как у admin/manager — для
+  // подмены оператора другого завода на время отпуска/больничного). Токен
+  // резолвится на бэкенде (и там же логируется при каждом обращении, не
+  // только на этой первой проверке), поэтому здесь запрос к серверу, а не
+  // сверка локально со списком.
   async function resolve(plants, role) {
     if (role) {
-      var urlId = readUrlPlantId();
-      var validUrlId = urlId && plants.some(function (p) { return p.id === urlId; }) ? urlId : null;
-      var savedId = readSavedPlantId();
-      var validSavedId = savedId && plants.some(function (p) { return p.id === savedId; }) ? savedId : null;
-
-      var pick = validUrlId || validSavedId;
-      if (pick) {
-        currentId = pick;
-        lastError = null;
-        savePlantId(pick);
-        return pick;
-      }
-
-      pick = (plants[0] && plants[0].id) || null;
+      var pick = pickPlantId(plants);
       currentId = pick;
       lastError = pick ? null : 'Нет ни одного завода — создайте завод на вкладке «Дашборд».';
-      if (pick) savePlantId(pick);
       return pick;
     }
 
@@ -62,20 +64,30 @@
     if (!token) {
       currentId = null;
       currentToken = null;
+      isUniversalFlag = false;
       lastError = 'Эта ссылка не привязана к заводу. Обратитесь к администратору за правильной ссылкой.';
       return null;
     }
 
     try {
-      var plant = await Api.get('/plants/resolve-token?token=' + encodeURIComponent(token));
-      currentId = plant.id;
+      var result = await Api.get('/plants/resolve-token?token=' + encodeURIComponent(token));
       currentToken = token;
-      lastError = null;
       saveToken(token);
+      if (result.universal) {
+        isUniversalFlag = true;
+        var picked = pickPlantId(plants);
+        currentId = picked;
+        lastError = picked ? null : 'Нет ни одного завода — создайте завод на вкладке «Дашборд».';
+        return currentId;
+      }
+      isUniversalFlag = false;
+      currentId = result.id;
+      lastError = null;
       return currentId;
     } catch (err) {
       currentId = null;
       currentToken = null;
+      isUniversalFlag = false;
       lastError = err.message;
       return null;
     }
@@ -98,11 +110,16 @@
     return lastError;
   }
 
+  function isUniversal() {
+    return isUniversalFlag;
+  }
+
   window.Plant = {
     resolve: resolve,
     setCurrent: setCurrent,
     currentPlantId: currentPlantId,
     currentToken: getCurrentToken,
+    isUniversal: isUniversal,
     error: error
   };
 })();

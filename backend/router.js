@@ -98,8 +98,13 @@ function crudRoutes(base, mod, opts) {
       role: opts.read,
       handler: async (req, res, m, role, query) => {
         if (opts.scopeByToken && !role) {
-          const plant = await plants.resolveToken(query.token, clientIp(req));
-          query = Object.assign({}, query, { plantId: plant.id });
+          const resolved = await plants.resolveToken(query.token, clientIp(req));
+          // Общий токен подмены не привязан к одному заводу — plantId выбирает
+          // сам фронтенд (переключатель заводов), сервер только проверяет, что
+          // токен действителен. Токен конкретного завода — как раньше, id из него.
+          const plantId = resolved.universal ? query.plantId : resolved.id;
+          if (!plantId) throw new HttpError(400, 'Не выбран завод');
+          query = Object.assign({}, query, { plantId });
         }
         sendJson(res, 200, await mod.list(query, role));
       }
@@ -173,15 +178,22 @@ const routes = [
   // своей ссылке (?token=) видит только заказы своего завода — см. scopeByToken.
   ...crudRoutes('/api/orders', orders, { read: null, write: null, scopeByToken: true }),
 
-  { method: 'GET', pattern: /^\/api\/config$/, handler: async (req, res) => sendJson(res, 200, await config.get()) },
+  { method: 'GET', pattern: /^\/api\/config$/, handler: async (req, res, m, role) => sendJson(res, 200, await config.get(role)) },
   {
     method: 'PUT',
     pattern: /^\/api\/config$/,
     role: 'manager',
-    handler: async (req, res) => {
+    handler: async (req, res, m, role) => {
       const body = await readBody(req);
-      sendJson(res, 200, await config.update(body));
+      sendJson(res, 200, await config.update(body, role));
     }
+  },
+  // Перевыпуск общей ссылки подмены — старая инвалидируется немедленно.
+  {
+    method: 'POST',
+    pattern: /^\/api\/config\/reissue-universal-token$/,
+    role: 'admin',
+    handler: async (req, res) => sendJson(res, 200, await config.reissueUniversalToken())
   },
 
   {

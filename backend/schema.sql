@@ -123,6 +123,10 @@ CREATE TABLE IF NOT EXISTS order_materials (
 );
 
 -- Общие настройки (одна строка) + хэши паролей.
+-- universal_worker_token — общая ссылка "подмены": в отличие от plants.access_token
+-- (закреплён за одним заводом), даёт обычный доступ уровня работника, но с
+-- переключателем завода — чтобы один оператор мог подменить другого на время
+-- отпуска/больничного без выдачи прав admin/manager.
 CREATE TABLE IF NOT EXISTS config (
   id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   fuel_price_default NUMERIC NOT NULL DEFAULT 0,
@@ -130,7 +134,10 @@ CREATE TABLE IF NOT EXISTS config (
   admin_salt TEXT NOT NULL,
   admin_hash TEXT NOT NULL,
   manager_salt TEXT NOT NULL,
-  manager_hash TEXT NOT NULL
+  manager_hash TEXT NOT NULL,
+  universal_worker_token TEXT,
+  universal_token_last_used_at TIMESTAMPTZ,
+  universal_token_last_used_ip TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -162,3 +169,6 @@ CREATE INDEX IF NOT EXISTS idx_plant_token_usage_plant ON plant_token_usage(plan
 -- колонка уже есть из CREATE TABLE выше; на старой — добавляют недостающее).
 ALTER TABLE plants ADD COLUMN IF NOT EXISTS access_token TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_plants_access_token ON plants(access_token) WHERE access_token IS NOT NULL;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_worker_token TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_token_last_used_at TIMESTAMPTZ;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_token_last_used_ip TEXT;

@@ -149,6 +149,44 @@
     document.getElementById('dash-total-revenue').textContent = Format.fmt(totalRevenue, 0);
   }
 
+  function universalTokenLink(token) {
+    return location.origin + location.pathname + '?token=' + encodeURIComponent(token);
+  }
+
+  async function copyLink(url, btn) {
+    var originalText = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(url);
+      btn.textContent = 'Скопировано!';
+      setTimeout(function () { btn.textContent = originalText; }, 2000);
+    } catch (err) {
+      window.prompt('Скопируйте ссылку (Ctrl+C):', url);
+    }
+  }
+
+  async function reissueUniversalToken(btn) {
+    if (!confirm('Перевыпустить общую ссылку подмены? Старая перестанет работать немедленно у всех, кто ей пользовался.')) return;
+    try {
+      await Api.post('/config/reissue-universal-token', {});
+      await State.loadAll();
+      var token = State.data.config.universalWorkerToken;
+      if (token) await copyLink(universalTokenLink(token), btn);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function renderUniversalToken() {
+    var config = State.data.config;
+    var token = config && config.universalWorkerToken;
+    document.getElementById('universal-token-meta').textContent = config && config.universalTokenLastUsedAt
+      ? 'Посл. доступ по ссылке: ' + new Date(config.universalTokenLastUsedAt).toLocaleString('ru-RU') + (config.universalTokenLastUsedIp ? ' (' + config.universalTokenLastUsedIp + ')' : '')
+      : 'Ссылка ещё не использовалась';
+    document.getElementById('universal-token-copy-btn').onclick = function (e) {
+      if (token) copyLink(universalTokenLink(token), e.target);
+    };
+  }
+
   function renderPlantTable() {
     var tbody = document.getElementById('dash-plant-table-body');
     tbody.innerHTML = '';
@@ -178,6 +216,9 @@
     Array.prototype.forEach.call(dialog.querySelectorAll('[data-close-dialog]'), function (btn) {
       btn.addEventListener('click', function () { dialog.close(); });
     });
+    document.getElementById('universal-token-reissue-btn').addEventListener('click', function (e) {
+      reissueUniversalToken(e.target);
+    });
   }
 
   function render() {
@@ -185,6 +226,7 @@
     renderPlantTiles();
     renderSummary();
     renderPlantTable();
+    renderUniversalToken();
   }
 
   window.DashboardTab = { init: init, render: render };

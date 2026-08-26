@@ -22,7 +22,10 @@
 
   // admin/manager (залогинены) шлют ?plantId= напрямую, как раньше. Работник
   // без роли шлёт ?token= — бэкенд сам резолвит его в plantId и логирует
-  // обращение (см. scopeByToken в backend/router.js).
+  // обращение (см. scopeByToken в backend/router.js). Общий токен подмены —
+  // отдельный случай: он не привязан к одному заводу, поэтому вместе с
+  // токеном шлём ещё и plantId (текущий выбор в переключателе заводов) —
+  // бэкенд его примет, раз токен общий и действителен.
   function withPlantFilter(path) {
     var role = window.Auth ? Auth.getRole() : null;
     if (role) {
@@ -30,7 +33,13 @@
       return plantId ? path + '?plantId=' + encodeURIComponent(plantId) : path;
     }
     var token = Plant.currentToken();
-    return token ? path + '?token=' + encodeURIComponent(token) : path;
+    if (!token) return path;
+    var url = path + '?token=' + encodeURIComponent(token);
+    if (Plant.isUniversal()) {
+      var universalPlantId = Plant.currentPlantId();
+      if (universalPlantId) url += '&plantId=' + encodeURIComponent(universalPlantId);
+    }
+    return url;
   }
 
   // Некоторые ресурсы (сотрудники, а в будущем и другие) требуют роли —

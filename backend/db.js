@@ -16,6 +16,7 @@ async function migrate() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   await pool.query(schema);
   await backfillAccessTokens();
+  await backfillUniversalToken();
 }
 
 // Заводы, созданные до появления access_token (или через ALTER TABLE на уже
@@ -26,6 +27,15 @@ async function backfillAccessTokens() {
   for (const row of rows) {
     await pool.query('UPDATE plants SET access_token = $1 WHERE id = $2', [genToken(), row.id]);
   }
+}
+
+// Та же идея, но для общего токена подмены в config (появился после ALTER
+// TABLE на существующих БД) — генерируется один раз, если ещё не задан.
+async function backfillUniversalToken() {
+  await pool.query(
+    'UPDATE config SET universal_worker_token = $1 WHERE id = 1 AND universal_worker_token IS NULL',
+    [genToken()]
+  );
 }
 
 // Заполняет базу начальными данными только если она реально пустая (первый
@@ -55,9 +65,9 @@ async function seedIfEmpty() {
     const admin = hashPassword('AdatBetonAdmin');
     const manager = hashPassword('adatadat');
     await client.query(
-      `INSERT INTO config (id, fuel_price_default, neighbor_city_surcharge, admin_salt, admin_hash, manager_salt, manager_hash)
-       VALUES (1, 62, 1000, $1, $2, $3, $4)`,
-      [admin.salt, admin.hash, manager.salt, manager.hash]
+      `INSERT INTO config (id, fuel_price_default, neighbor_city_surcharge, admin_salt, admin_hash, manager_salt, manager_hash, universal_worker_token)
+       VALUES (1, 62, 1000, $1, $2, $3, $4, $5)`,
+      [admin.salt, admin.hash, manager.salt, manager.hash, genToken()]
     );
 
     const materials = [

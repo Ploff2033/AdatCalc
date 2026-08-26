@@ -155,9 +155,18 @@ async function logTokenUsage(plantId, ip) {
 async function resolveToken(token, ip) {
   if (!token) throw new HttpError(404, TOKEN_INVALID_MESSAGE);
   const { rows } = await db.pool.query('SELECT * FROM plants WHERE access_token = $1', [token]);
-  if (!rows.length) throw new HttpError(404, TOKEN_INVALID_MESSAGE);
-  await logTokenUsage(rows[0].id, ip);
-  return rowToPlant(rows[0], false);
+  if (rows.length) {
+    await logTokenUsage(rows[0].id, ip);
+    return rowToPlant(rows[0], false);
+  }
+  // Не токен конкретного завода — может это общая ссылка подмены (доступ
+  // уровня работника, но с выбором завода)? checkUniversalToken сама логирует
+  // использование, если токен подошёл.
+  const { checkUniversalToken } = require('./config');
+  if (await checkUniversalToken(token, ip)) {
+    return { universal: true };
+  }
+  throw new HttpError(404, TOKEN_INVALID_MESSAGE);
 }
 
 // Генерирует новый токен и сохраняет — старая ссылка перестаёт резолвиться немедленно.

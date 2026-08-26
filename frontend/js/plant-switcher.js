@@ -11,7 +11,7 @@
 
   function render() {
     var select = document.getElementById('plant-switcher');
-    var visible = window.Auth && Auth.isAtLeast('manager') && State.data.plants.length > 0;
+    var visible = ((window.Auth && Auth.isAtLeast('manager')) || Plant.isUniversal()) && State.data.plants.length > 0;
     select.hidden = !visible;
     if (!visible) return;
 
