@@ -221,6 +221,23 @@ section.card.compact{
 .card-head .ghost-btn{
   margin-left:auto;
 }
+.vat-toggle-inline{
+  margin-left:auto;
+  align-self:center;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  font-weight:600;
+  color:var(--text-muted);
+  cursor:pointer;
+  white-space:nowrap;
+}
+.vat-toggle-inline input{
+  width:17px;
+  height:17px;
+  accent-color:var(--accent);
+}
 .orders-filters{
   display:flex;
   align-items:center;
@@ -694,6 +711,18 @@ section.card.compact{
 .order-title{
   font-weight:700;
   font-size:15px;
+}
+.order-vat-badge{
+  margin-left:8px;
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:var(--accent);
+  background:var(--accent-soft);
+  padding:2px 7px;
+  border-radius:6px;
+  vertical-align:middle;
 }
 .order-meta{
   font-size:12px;

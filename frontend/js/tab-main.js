@@ -1,15 +1,19 @@
 (function () {
+  var VAT_MULT = 1.22;
+
   var selectedRecipeId = '';
   var selectedMixerId = '';
   var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
-  var mixTestPriceDirty = false;
+  var vatGrossMode = false;
+  var testPriceDirty = false;
+  var testPriceNetStored = 0;
   var fuelPriceDirty = false;
   var submitAttempted = false;
   var lastCalc = null;
 
   var mixOutputIds = [
     'cost-materials', 'cost-payroll', 'cost-depr', 'cost-utilities', 'cost-per-m3',
-    'recipe-sale-price-display', 'mix-revenue', 'mix-cost', 'mix-profit', 'mix-margin',
+    'recipe-price', 'mix-revenue', 'mix-cost', 'mix-profit', 'mix-margin',
     'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct'
   ];
   var deliveryOutputIds = [
@@ -63,6 +67,25 @@
       document.getElementById(id).classList.remove('positive', 'negative');
     });
     document.getElementById('cost-materials-label').textContent = 'Материалы';
+  }
+
+  // Поле показывает НЕТТО или БРУТТО (×1.22) в зависимости от общего тумблера
+  // "Цены с НДС" — но не трогаем поле, пока в нём печатают (иначе прыгает
+  // курсор): NumericInput.attach уже форматирует по мере ввода сам.
+  function displayVatField(input, netValue) {
+    if (document.activeElement === input) return;
+    NumericInput.setFormattedValue(input, vatGrossMode ? netValue * VAT_MULT : netValue);
+  }
+
+  function netFromField(input) {
+    var entered = NumericInput.parseNumber(input.value) || 0;
+    return vatGrossMode ? entered / VAT_MULT : entered;
+  }
+
+  function updateVatLabels() {
+    var suffix = vatGrossMode ? 'с НДС' : 'без НДС';
+    document.getElementById('recipe-price-label').textContent = 'Цена отпуска ' + suffix;
+    document.getElementById('test-price-label').textContent = 'Проверить цену ' + suffix;
   }
 
   function recalc() {
@@ -170,16 +193,20 @@
       };
     });
 
+    // "Цена отпуска (рецепт)" — просто отображение цены рецепта, без ввода,
+    // не влияет на расчёт прибыли. recipe.salePrice в базе — всегда без НДС.
     var salePrice = recipe.salePrice || 0;
-    document.getElementById('recipe-sale-price-display').textContent = Format.fmt(salePrice, 2);
+    document.getElementById('recipe-price').textContent = Format.fmt(vatGrossMode ? salePrice * VAT_MULT : salePrice, 2);
 
-    var testPriceInput = document.getElementById('mix-test-price');
-    if (!mixTestPriceDirty) {
-      NumericInput.setFormattedValue(testPriceInput, salePrice);
-    }
-    var testPrice = NumericInput.parseNumber(testPriceInput.value) || 0;
+    // "Проверить цену" — реально используемая в расчёте цена. testPriceNet
+    // (без НДС) — единственное, что участвует в себестоимости/прибыли
+    // (требование: расчёт прибыли никогда не использует цену с НДС напрямую).
+    var testPriceInput = document.getElementById('test-price');
+    var testPriceNet = testPriceDirty ? testPriceNetStored : salePrice;
+    displayVatField(testPriceInput, testPriceNet);
 
-    var mixRevenue = testPrice * saleVolume;
+    var mixRevenue = testPriceNet * saleVolume;
+    var mixRevenueGross = testPriceNet * VAT_MULT * saleVolume;
     var mixCost = costPerM3 * saleVolume;
     var mixProfit = mixRevenue - mixCost;
     document.getElementById('mix-revenue').textContent = Format.fmt(mixRevenue, 2);
@@ -188,10 +215,10 @@
     var mixMarginPercent = Calc.marginPercent(mixProfit, mixRevenue);
     setMarginBadge(document.getElementById('mix-margin'), mixMarginPercent);
 
-    var safetyMargin = testPrice - costPerM3;
+    var safetyMargin = testPriceNet - costPerM3;
     document.getElementById('mix-breakeven-price').textContent = Format.fmt(costPerM3, 2);
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
-    setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPrice > 0 ? (safetyMargin / testPrice) * 100 : 0);
+    setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
 
     var deliveryReady = selfPickup || (!!mixer && !distMissing);
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
@@ -229,12 +256,19 @@
       dashOut(deliveryOutputIds);
     }
 
-    var totalRevenue = mixRevenue + deliveryRevenue;
+    // Прибыль/рентабельность — всегда от выручки без НДС (доставка без
+    // изменений, в ней НДС не участвует), это не зависит от тумблера.
+    // "К оплате" — то, что реально выставляется клиенту: тумблер "Цены с
+    // НДС" определяет, идёт ли эта сделка с НДС вообще — выключен, значит
+    // сделка без НДС и "К оплате" = чистая выручка без наценки налога.
+    var totalRevenueNet = mixRevenue + deliveryRevenue;
+    var totalRevenueGross = mixRevenueGross + deliveryRevenue;
+    var totalRevenueDisplayed = vatGrossMode ? totalRevenueGross : totalRevenueNet;
     var totalProfit = mixProfit + deliveryProfit;
     var profitPerM3Total = saleVolume > 0 ? totalProfit / saleVolume : 0;
-    var marginTotal = Calc.marginPercent(totalProfit, totalRevenue);
+    var marginTotal = Calc.marginPercent(totalProfit, totalRevenueNet);
 
-    document.getElementById('revenue-total').textContent = Format.fmt(totalRevenue, 2);
+    document.getElementById('revenue-total').textContent = Format.fmt(totalRevenueDisplayed, 2);
 
     var profitTotalEl = document.getElementById('profit-total');
     var profitTotalWrap = document.getElementById('profit-total-wrap');
@@ -286,15 +320,16 @@
       deprCost: depr,
       utilitiesCost: utilities,
       costPerM3: costPerM3,
-      salePrice: testPrice,
+      salePrice: testPriceNet,
       mixRevenue: mixRevenue,
       mixCost: mixCost,
       mixProfit: mixProfit,
       mixMarginPercent: mixMarginPercent,
-      totalRevenue: totalRevenue,
+      totalRevenue: totalRevenueDisplayed,
       totalProfit: totalProfit,
       profitPerM3: profitPerM3Total,
-      totalMarginPercent: marginTotal
+      totalMarginPercent: marginTotal,
+      vatApplied: vatGrossMode
     };
   }
 
@@ -305,8 +340,9 @@
     inputIds.forEach(function (id) { document.getElementById(id).value = ''; });
     document.getElementById('nb-city').checked = false;
     document.getElementById('self-pickup').checked = false;
-    document.getElementById('mix-test-price').value = '';
-    mixTestPriceDirty = false;
+    document.getElementById('test-price').value = '';
+    testPriceDirty = false;
+    testPriceNetStored = 0;
     document.getElementById('fuel-price').value = '';
     fuelPriceDirty = false;
     submitAttempted = false;
@@ -338,6 +374,21 @@
     }
   }
 
+  function initVatToggle() {
+    var toggle = document.getElementById('vat-gross-mode-toggle');
+    var saved = null;
+    try { saved = localStorage.getItem('vat-gross-mode'); } catch (e) { /* ignore */ }
+    vatGrossMode = saved === '1';
+    toggle.checked = vatGrossMode;
+    updateVatLabels();
+    toggle.addEventListener('change', function () {
+      vatGrossMode = toggle.checked;
+      try { localStorage.setItem('vat-gross-mode', vatGrossMode ? '1' : '0'); } catch (e) { /* ignore */ }
+      updateVatLabels();
+      recalc();
+    });
+  }
+
   function init() {
     // Работник (без роли, по ссылке-токену) не должен видеть, сколько внутри
     // сделки уходит на материалы/ФОТ/амортизацию — только видит, в плюсе
@@ -349,6 +400,8 @@
     document.getElementById('mix-breakeven').hidden = !isInternal;
     document.getElementById('mix-split-cols').classList.toggle('single-col', !isInternal);
 
+    initVatToggle();
+
     NumericInput.attach(document.getElementById('delivery-charge'));
     inputIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', recalc);
@@ -356,13 +409,15 @@
     document.getElementById('nb-city').addEventListener('change', recalc);
     document.getElementById('self-pickup').addEventListener('change', recalc);
 
-    NumericInput.attach(document.getElementById('mix-test-price'));
-    document.getElementById('mix-test-price').addEventListener('input', function () {
-      mixTestPriceDirty = true;
+    var testPriceInput = document.getElementById('test-price');
+    NumericInput.attach(testPriceInput);
+    testPriceInput.addEventListener('input', function () {
+      testPriceDirty = true;
+      testPriceNetStored = netFromField(testPriceInput);
       recalc();
     });
-    document.getElementById('mix-test-price-reset').addEventListener('click', function () {
-      mixTestPriceDirty = false;
+    document.getElementById('test-price-reset').addEventListener('click', function () {
+      testPriceDirty = false;
       recalc();
     });
 
@@ -378,7 +433,7 @@
 
     document.getElementById('main-recipe').addEventListener('change', function () {
       selectedRecipeId = this.value;
-      mixTestPriceDirty = false;
+      testPriceDirty = false;
       recalc();
     });
     document.getElementById('main-mixer').addEventListener('change', function () {

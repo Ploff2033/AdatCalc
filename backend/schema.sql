@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS orders (
   total_revenue NUMERIC NOT NULL,
   total_profit NUMERIC NOT NULL,
   profit_per_m3 NUMERIC NOT NULL,
-  total_margin_percent NUMERIC NOT NULL
+  total_margin_percent NUMERIC NOT NULL,
+  vat_applied BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS order_materials (
@@ -172,3 +173,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_plants_access_token ON plants(access_token
 ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_worker_token TEXT;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_token_last_used_at TIMESTAMPTZ;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_token_last_used_ip TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_applied BOOLEAN NOT NULL DEFAULT FALSE;

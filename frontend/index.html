@@ -223,10 +223,17 @@
 
       <div class="main-col">
         <section class="card compact">
-          <div class="card-head"><span class="num">02</span><h2>Расчёт</h2></div>
+          <div class="card-head">
+            <span class="num">02</span><h2>Расчёт</h2>
+            <label class="vat-toggle-inline" for="vat-gross-mode-toggle">
+              <input type="checkbox" id="vat-gross-mode-toggle">
+              <span>Цены с НДС</span>
+            </label>
+          </div>
 
           <div class="calc-section">
             <h3 class="calc-section-title">Смесь</h3>
+
             <div class="split-cols" id="mix-split-cols">
               <div class="split-col expense" id="mix-cost-breakdown">
                 <div class="split-col-label">Расход</div>
@@ -240,15 +247,18 @@
               <div class="split-col income">
                 <div class="split-col-label">Доход</div>
                 <div class="breakdown compact">
-                  <div class="line"><span class="l">Цена отпуска (рецепт)</span><span class="v" id="recipe-sale-price-display">—</span></div>
                   <div class="line">
-                    <span class="l">Проверить цену</span>
+                    <span class="l" id="recipe-price-label">Цена отпуска без НДС</span>
+                    <span class="v" id="recipe-price">—</span>
+                  </div>
+                  <div class="line">
+                    <span class="l" id="test-price-label">Проверить цену без НДС</span>
                     <span class="v-wrap">
-                      <div class="field mini"><input type="text" id="mix-test-price" inputmode="decimal"></div>
-                      <button type="button" class="icon-btn" id="mix-test-price-reset" title="Сбросить к цене рецепта">↺</button>
+                      <div class="field mini"><input type="text" id="test-price" inputmode="decimal"></div>
+                      <button type="button" class="icon-btn" id="test-price-reset" title="Сбросить к цене рецепта">↺</button>
                     </span>
                   </div>
-                  <div class="line"><span class="l">Выручка со смеси</span><span class="v" id="mix-revenue">—</span></div>
+                  <div class="line"><span class="l">Выручка со смеси (без НДС)</span><span class="v" id="mix-revenue">—</span></div>
                 </div>
               </div>
             </div>

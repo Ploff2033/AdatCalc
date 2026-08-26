@@ -56,7 +56,7 @@
     card.innerHTML =
       '<div class="order-card-head">' +
         '<div class="order-card-head-main">' +
-          '<div class="order-title"></div>' +
+          '<div class="order-title"><span data-title-text></span><span class="order-vat-badge" data-vat-badge hidden>С НДС</span></div>' +
           '<div class="order-meta"></div>' +
         '</div>' +
         '<div class="order-summary-figures">' +
@@ -89,6 +89,7 @@
             '<div class="breakdown compact">' +
               '<div class="line"><span class="l">Цена</span><span class="v" data-f="salePrice">—</span></div>' +
               '<div class="line"><span class="l">Выручка</span><span class="v" data-f="mixRevenue">—</span></div>' +
+              '<div class="line" data-vat-row hidden><span class="l">в т.ч. НДС</span><span class="v" data-f="ndsAmount">—</span></div>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -119,7 +120,8 @@
         '</div>' +
       '</div>';
 
-    card.querySelector('.order-title').textContent = order.recipeName + ' → ' + order.mixerName;
+    card.querySelector('[data-title-text]').textContent = order.recipeName + ' → ' + order.mixerName;
+    if (order.vatApplied) card.querySelector('[data-vat-badge]').hidden = false;
     var metaParts = [
       order.plantName,
       formatDate(order.createdAt),
@@ -138,6 +140,14 @@
     });
     fillAll(card, 'roundTripKm', Format.fmtNum(order.roundTripKm || 0, 0, 'км'));
     fillAll(card, 'tripCount', Format.fmtNum(order.tripCount || 0, 0, 'рейс(ов)'));
+
+    // НДС — только по бетону (mixRevenue), доставка в него не входит и не
+    // менялась. mixRevenue всегда хранится без НДС, поэтому сумма налога —
+    // 22% от него (эквивалентно 22/122 от выручки с НДС, mixRevenue×1.22).
+    if (order.vatApplied) {
+      card.querySelector('[data-vat-row]').hidden = false;
+      fillAll(card, 'ndsAmount', Format.fmt((order.mixRevenue || 0) * 0.22, 2));
+    }
 
     var materialsListEl = card.querySelector('[data-materials-list]');
     (order.materials || []).forEach(function (m) {
@@ -329,20 +339,25 @@
       'Себестоимость смеси (₽)', 'Цена (₽/м³)', 'Выручка со смеси (₽)', 'Прибыль от смеси (₽)', 'Рентабельность смеси (%)',
       'Пробег за рейс (км)', 'Топливо за рейс (₽)', 'Амортизация техники за рейс (₽)', 'Доплата водителю (₽)', 'Рейсов',
       'Расход на доставку (₽)', 'Доход от доставки (₽)', 'Прибыль от доставки (₽)', 'Рентабельность доставки (%)',
-      'Выручка всего (₽)', 'Чистая прибыль (₽)', 'Прибыль на 1м³ (₽)', 'Рентабельность сделки (%)', 'Расход материалов'
+      'Выручка всего (₽)', 'С НДС', 'в т.ч. НДС 22% (₽)', 'Чистая прибыль (₽)', 'Прибыль на 1м³ (₽)', 'Рентабельность сделки (%)', 'Расход материалов'
     ];
 
     var rows = orders.map(function (o) {
       var materialsText = (o.materials || []).map(function (m) {
         return m.name + ': ' + csvNum(m.qty) + ' ' + m.unit;
       }).join(', ');
+      // НДС в заказе — не всегда: тумблер "Цены с НДС" на Главной определяет
+      // сделку целиком (см. o.vatApplied). Извлекаем 22/122 из totalRevenue
+      // только когда сделка реально была с НДС — иначе там просто чистая
+      // выручка без наценки налога, извлекать из неё нечего.
+      var ndsAmount = o.vatApplied ? (o.totalRevenue || 0) * 22 / 122 : 0;
       return [
         o.plantName, formatDate(o.createdAt), o.recipeName, o.mixerName, csvNum(o.saleVolume), csvNum(o.distanceKm), o.neighborCity ? 'да' : 'нет',
         csvNum(o.materialsCost), csvNum(o.payrollCost), csvNum(o.deprCost), csvNum(o.utilitiesCost), csvNum(o.costPerM3),
         csvNum(o.mixCost), csvNum(o.salePrice), csvNum(o.mixRevenue), csvNum(o.mixProfit), csvNum(o.mixMarginPercent),
         csvNum(o.roundTripKm), csvNum(o.fuelCostPerTrip), csvNum(o.amortCostPerTrip), csvNum(o.surchargePerTrip), csvNum(o.tripCount),
         csvNum(o.deliveryCostTotal), csvNum(o.deliveryRevenue), csvNum(o.deliveryProfit), csvNum(o.deliveryMarginPercent),
-        csvNum(o.totalRevenue), csvNum(o.totalProfit), csvNum(o.profitPerM3), csvNum(o.totalMarginPercent), materialsText
+        csvNum(o.totalRevenue), o.vatApplied ? 'да' : 'нет', csvNum(ndsAmount), csvNum(o.totalProfit), csvNum(o.profitPerM3), csvNum(o.totalMarginPercent), materialsText
       ];
     });
 

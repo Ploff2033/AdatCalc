@@ -37,7 +37,8 @@ const ORDER_COLUMNS = [
   ['total_revenue', 'totalRevenue'],
   ['total_profit', 'totalProfit'],
   ['profit_per_m3', 'profitPerM3'],
-  ['total_margin_percent', 'totalMarginPercent']
+  ['total_margin_percent', 'totalMarginPercent'],
+  ['vat_applied', 'vatApplied']
 ];
 
 // Расход материалов по заказу (снимок: название/ед. на момент заказа, а не
@@ -89,7 +90,8 @@ function sanitize(body) {
     totalRevenue: num(body.totalRevenue, 'totalRevenue'),
     totalProfit: num(body.totalProfit, 'totalProfit'),
     profitPerM3: num(body.profitPerM3, 'profitPerM3'),
-    totalMarginPercent: num(body.totalMarginPercent, 'totalMarginPercent')
+    totalMarginPercent: num(body.totalMarginPercent, 'totalMarginPercent'),
+    vatApplied: !!body.vatApplied
   };
 }
 
@@ -100,7 +102,7 @@ function rowToOrder(row, materialRows) {
   for (const [col, field] of ORDER_COLUMNS) {
     const v = row[col];
     if (col === 'created_at') out[field] = new Date(v).toISOString();
-    else if (col === 'neighbor_city' || ORDER_TEXT_COLUMNS.has(col)) out[field] = v;
+    else if (col === 'neighbor_city' || col === 'vat_applied' || ORDER_TEXT_COLUMNS.has(col)) out[field] = v;
     else out[field] = Number(v);
   }
   out.materials = materialRows.map((m) => ({ name: m.name, unit: m.unit, qty: Number(m.qty) }));
