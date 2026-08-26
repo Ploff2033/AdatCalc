@@ -3,6 +3,7 @@
   var selectedMixerId = '';
   var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
   var mixTestPriceDirty = false;
+  var fuelPriceDirty = false;
   var lastCalc = null;
 
   var outputIds = [
@@ -89,9 +90,14 @@
     var dist = parseFloat(distRaw) || 0;
     var distMissing = !selfPickup && (distRaw.trim() === '' || !(dist > 0));
 
-    // Цена топлива — единый источник (Техника → Общие настройки), на Главной только отображается.
-    var fuelPrice = data.config.fuelPriceDefault || 0;
-    document.getElementById('fuel-price').value = fuelPrice;
+    // Цена топлива — предустановка из Техника → Общие настройки, но на Главной
+    // её можно переопределить под конкретный заказ (как с ценой смеси).
+    var fuelPriceInput = document.getElementById('fuel-price');
+    var configFuelPrice = data.config.fuelPriceDefault || 0;
+    if (!fuelPriceDirty) {
+      NumericInput.setFormattedValue(fuelPriceInput, configFuelPrice);
+    }
+    var fuelPrice = NumericInput.parseNumber(fuelPriceInput.value) || 0;
 
     var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
     document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
@@ -269,6 +275,8 @@
     document.getElementById('self-pickup').checked = false;
     document.getElementById('mix-test-price').value = '';
     mixTestPriceDirty = false;
+    document.getElementById('fuel-price').value = '';
+    fuelPriceDirty = false;
   }
 
   async function handlePlaceOrder() {
@@ -308,6 +316,23 @@
       mixTestPriceDirty = false;
       recalc();
     });
+
+    NumericInput.attach(document.getElementById('fuel-price'));
+    document.getElementById('fuel-price').addEventListener('input', function () {
+      fuelPriceDirty = true;
+      recalc();
+    });
+    document.getElementById('fuel-price-reset').addEventListener('click', function () {
+      fuelPriceDirty = false;
+      recalc();
+    });
+
+    // Блок "Смесь" — на десктопе открыт сразу, на мобильном свёрнут по
+    // умолчанию (пользователь всё равно может развернуть). Решаем один раз
+    // при загрузке, а не на resize, чтобы не сбрасывать выбор пользователя.
+    if (window.matchMedia('(min-width: 761px)').matches) {
+      document.getElementById('mix-details').open = true;
+    }
 
     document.getElementById('main-recipe').addEventListener('change', function () {
       selectedRecipeId = this.value;

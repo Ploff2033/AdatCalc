@@ -365,6 +365,9 @@ section.card.compact{
   grid-template-columns:1fr 1fr;
   gap:14px;
 }
+@media (max-width:760px){
+  .two-col.stack-mobile{ grid-template-columns:1fr; }
+}
 .config-grid{
   display:grid;
   grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));
@@ -415,6 +418,7 @@ section.card.compact{
 .breakdown .line{
   display:flex;
   justify-content:space-between;
+  align-items:center;
   font-size:14px;
 }
 .breakdown .line .l{ color:var(--text-muted); }
@@ -505,6 +509,28 @@ section.card.compact{
   color:var(--text-muted);
 }
 
+/* Блок "Смесь" на Главной — на мобильном по умолчанию свёрнут за аккордеон
+   (JS выставляет [open] на десктопе при загрузке, см. tab-main.js), чтобы не
+   занимать треть экрана себестоимостью/рентабельностью, которые оператору в
+   поле обычно не нужны. На десктопе выглядит и ведёт себя как обычный заголовок. */
+summary.calc-section-title{
+  cursor:pointer;
+  list-style:none;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+summary.calc-section-title::-webkit-details-marker{ display:none; }
+summary.calc-section-title::after{
+  content:'▾';
+  font-size:10px;
+  color:var(--text-muted);
+  transition:transform .15s ease;
+  flex-shrink:0;
+}
+details.mix-details[open] summary.calc-section-title::after{ transform:rotate(180deg); }
+
 .dialog-section-label{
   font-size:11px;
   font-weight:700;
@@ -524,6 +550,13 @@ section.card.compact{
   padding-top:8px;
   font-weight:800;
   font-size:16px;
+}
+@media (max-width:760px){
+  .split-total{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:4px;
+  }
 }
 .split-total .v-wrap{
   display:flex;
@@ -561,6 +594,15 @@ section.card.compact{
 .field.mini input{
   width:76px;
   font-size:13px;
+}
+.input-with-reset{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.input-with-reset .field{
+  flex:1;
+  min-width:0;
 }
 .breakeven-block{
   margin-top:2px;

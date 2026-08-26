@@ -190,14 +190,17 @@
             </div>
           </div>
 
-          <div class="two-col">
+          <div class="two-col stack-mobile">
             <div class="field-group">
               <label for="dist">Расстояние (в одну сторону)</label>
               <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
             </div>
             <div class="field-group">
               <label for="fuel-price">Цена топлива</label>
-              <div class="field readonly"><input type="text" id="fuel-price" readonly><span class="unit">₽/л</span></div>
+              <div class="input-with-reset">
+                <div class="field"><input type="text" id="fuel-price" inputmode="decimal"><span class="unit">₽/л</span></div>
+                <button type="button" class="icon-btn" id="fuel-price-reset" title="Сбросить к цене по умолчанию">↺</button>
+              </div>
             </div>
           </div>
 
@@ -224,8 +227,8 @@
         <section class="card compact">
           <div class="card-head"><span class="num">02</span><h2>Расчёт</h2></div>
 
-          <div class="calc-section">
-            <h3 class="calc-section-title">Смесь</h3>
+          <details class="calc-section mix-details" id="mix-details">
+            <summary class="calc-section-title">Смесь</summary>
             <div class="split-cols">
               <div class="split-col expense">
                 <div class="split-col-label">Расход</div>
@@ -261,7 +264,7 @@
               <div class="line"><span class="l">Цена безубыточности</span><span class="v" id="mix-breakeven-price">—</span></div>
               <div class="line"><span class="l">Запас прочности</span><span class="v-wrap"><span class="v" id="mix-safety-margin">—</span><span class="margin" id="mix-safety-margin-pct">—</span></span></div>
             </div>
-          </div>
+          </details>
 
           <div class="calc-section" id="delivery-section">
             <h3 class="calc-section-title">Доставка</h3>
