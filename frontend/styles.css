@@ -309,6 +309,7 @@ section.card.compact{
   border:1px solid var(--border);
   border-radius:8px;
   padding:8px 10px;
+  height:38px;
 }
 .field:has(input:disabled){
   opacity:.55;
@@ -349,6 +350,7 @@ section.card.compact{
   border:1px solid var(--border);
   border-radius:8px;
   padding:8px 10px;
+  height:38px;
   color:var(--text);
   font-size:14px;
   outline:none;
@@ -592,6 +594,7 @@ section.card.compact{
 .field.mini{
   padding:3px 8px;
   gap:4px;
+  height:auto;
 }
 .field.mini input{
   width:76px;
