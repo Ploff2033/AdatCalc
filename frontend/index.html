@@ -174,34 +174,35 @@
 
           <div class="validation-banner" id="main-validation-error" hidden></div>
 
-          <div class="checkbox-row">
-            <input type="checkbox" id="self-pickup">
-            <label for="self-pickup">Самовывоз (клиент забирает сам)</label>
-          </div>
-
           <div class="two-col">
             <div class="field-group">
               <label for="main-recipe">Марка / рецепт</label>
               <select class="select" id="main-recipe"></select>
             </div>
             <div class="field-group">
-              <label for="main-mixer">Миксер</label>
-              <select class="select" id="main-mixer"></select>
+              <label for="sale-volume">Объём заказа</label>
+              <div class="field"><input type="number" id="sale-volume" min="0" step="any" value="6" inputmode="decimal"><span class="unit">м³</span></div>
             </div>
           </div>
 
-          <div class="two-col stack-mobile">
-            <div class="field-group">
-              <label for="dist">Расстояние (в одну сторону)</label>
-              <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
-            </div>
-            <div class="field-group">
-              <label for="fuel-price">Цена топлива</label>
-              <div class="input-with-reset">
-                <div class="field"><input type="text" id="fuel-price" inputmode="decimal"><span class="unit">₽/л</span></div>
-                <button type="button" class="icon-btn" id="fuel-price-reset" title="Сбросить к цене по умолчанию">↺</button>
-              </div>
-            </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="self-pickup">
+            <label for="self-pickup">Самовывоз (клиент забирает сам)</label>
+          </div>
+
+          <div class="field-group">
+            <label for="delivery-charge">Доставка для клиента</label>
+            <div class="field"><input type="text" id="delivery-charge" inputmode="decimal" value="500"><span class="unit">₽/м³</span></div>
+          </div>
+
+          <div class="field-group">
+            <label for="main-mixer">Миксер</label>
+            <select class="select" id="main-mixer"></select>
+          </div>
+
+          <div class="field-group">
+            <label for="dist">Расстояние (в одну сторону)</label>
+            <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
           </div>
 
           <div class="checkbox-row">
@@ -210,14 +211,11 @@
             <span class="badge" id="nb-city-badge">—</span>
           </div>
 
-          <div class="two-col">
-            <div class="field-group">
-              <label for="delivery-charge">Доставка для клиента</label>
-              <div class="field"><input type="text" id="delivery-charge" inputmode="decimal" value="500"><span class="unit">₽/м³</span></div>
-            </div>
-            <div class="field-group">
-              <label for="sale-volume">Объём заказа</label>
-              <div class="field"><input type="number" id="sale-volume" min="0" step="any" value="6" inputmode="decimal"><span class="unit">м³</span></div>
+          <div class="field-group">
+            <label for="fuel-price">Цена топлива</label>
+            <div class="input-with-reset">
+              <div class="field"><input type="text" id="fuel-price" inputmode="decimal"><span class="unit">₽/л</span></div>
+              <button type="button" class="icon-btn" id="fuel-price-reset" title="Сбросить к цене по умолчанию">↺</button>
             </div>
           </div>
         </section>
@@ -227,18 +225,16 @@
         <section class="card compact">
           <div class="card-head"><span class="num">02</span><h2>Расчёт</h2></div>
 
-          <details class="calc-section mix-details" id="mix-details">
-            <summary class="calc-section-title">Смесь</summary>
-            <div class="split-cols">
-              <div class="split-col expense">
+          <div class="calc-section">
+            <h3 class="calc-section-title">Смесь</h3>
+            <div class="split-cols" id="mix-split-cols">
+              <div class="split-col expense" id="mix-cost-breakdown">
                 <div class="split-col-label">Расход</div>
                 <div class="breakdown compact">
                   <div class="line"><span class="l" id="cost-materials-label">Материалы</span><span class="v" id="cost-materials">—</span></div>
                   <div class="line"><span class="l">ФОТ</span><span class="v" id="cost-payroll">—</span></div>
                   <div class="line"><span class="l">Амортизация завода</span><span class="v" id="cost-depr">—</span></div>
                   <div class="line"><span class="l">Коммуналка</span><span class="v" id="cost-utilities">—</span></div>
-                  <div class="line total"><span class="l">Итого на 1 м³</span><span class="v" id="cost-per-m3">—</span></div>
-                  <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
                 </div>
               </div>
               <div class="split-col income">
@@ -256,15 +252,19 @@
                 </div>
               </div>
             </div>
+            <div class="breakdown compact">
+              <div class="line total"><span class="l">Себестоимость на 1 м³</span><span class="v" id="cost-per-m3">—</span></div>
+              <div class="line"><span class="l">Себестоимость смеси</span><span class="v" id="mix-cost">—</span></div>
+            </div>
             <div class="split-total">
               <span class="l">Прибыль от смеси</span>
               <span class="v-wrap"><span class="v" id="mix-profit">—</span><span class="margin" id="mix-margin">—</span></span>
             </div>
-            <div class="breakdown compact breakeven-block">
+            <div class="breakdown compact breakeven-block" id="mix-breakeven">
               <div class="line"><span class="l">Цена безубыточности</span><span class="v" id="mix-breakeven-price">—</span></div>
               <div class="line"><span class="l">Запас прочности</span><span class="v-wrap"><span class="v" id="mix-safety-margin">—</span><span class="margin" id="mix-safety-margin-pct">—</span></span></div>
             </div>
-          </details>
+          </div>
 
           <div class="calc-section" id="delivery-section">
             <h3 class="calc-section-title">Доставка</h3>
@@ -314,7 +314,7 @@
               </div>
             </div>
             <div class="order-actions">
-              <button type="button" class="primary-btn" id="place-order-btn" disabled>Оформить заказ</button>
+              <button type="button" class="primary-btn not-ready" id="place-order-btn">Оформить заказ</button>
               <span class="hint" id="order-placed-hint" hidden>Заказ добавлен во вкладку «Заказы».</span>
             </div>
           </div>

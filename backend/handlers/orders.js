@@ -115,15 +115,26 @@ async function fetchMaterials(client, orderId) {
 // query.plantId задан — только заказы этого завода (для незалогиненного
 // работника, привязанного к своему заводу по ссылке). Не задан — все
 // (админ/менеджер видят общий список с фильтром на фронте).
-async function list(query) {
+//
+// Работник (role falsy — анонимный доступ по токену) видит только заказы
+// ЗА СЕГОДНЯ: вся история заказов завода — коммерческая информация, которая
+// не должна быть доступна просто по ссылке. Ограничение проверяется здесь,
+// на бэкенде, а не только скрытием в интерфейсе — иначе достаточно дёрнуть
+// API напрямую, чтобы получить всю историю.
+async function list(query, role) {
   const client = await db.pool.connect();
   try {
-    let rows;
+    const conditions = [];
+    const params = [];
     if (query && query.plantId) {
-      ({ rows } = await client.query('SELECT * FROM orders WHERE plant_id = $1 ORDER BY created_at DESC', [query.plantId]));
-    } else {
-      ({ rows } = await client.query('SELECT * FROM orders ORDER BY created_at DESC'));
+      params.push(query.plantId);
+      conditions.push(`plant_id = $${params.length}`);
     }
+    if (!role) {
+      conditions.push(`created_at >= (date_trunc('day', now() AT TIME ZONE 'Europe/Moscow') AT TIME ZONE 'Europe/Moscow')`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const { rows } = await client.query(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, params);
     const result = [];
     for (const row of rows) result.push(rowToOrder(row, await fetchMaterials(client, row.id)));
     return result;

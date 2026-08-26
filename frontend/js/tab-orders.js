@@ -215,7 +215,18 @@
     return { from: null, to: null };
   }
 
+  // Работнику бэкенд и так отдаёт только заказы за сегодня (см. backend/
+  // handlers/orders.js), независимо от фильтра — показывать сам селектор
+  // периода ему смысла нет, он бы вводил в заблуждение (любой выбор давал
+  // бы один и тот же результат).
   function renderPeriodFilter() {
+    var isInternal = !!(window.Auth && Auth.getRole());
+    var periodSelect = document.getElementById('orders-period-filter');
+    periodSelect.hidden = !isInternal;
+    if (!isInternal) {
+      document.getElementById('orders-custom-range').hidden = true;
+      return;
+    }
     document.getElementById('orders-custom-range').hidden = periodFilterValue !== 'custom';
   }
 
@@ -286,6 +297,7 @@
     var orders = filteredOrders();
     container.innerHTML = '';
     emptyHint.hidden = orders.length > 0;
+    exportBtn.hidden = !(window.Auth && Auth.getRole());
     exportBtn.disabled = orders.length === 0;
     orders.forEach(function (order) {
       container.appendChild(buildOrderCard(order));

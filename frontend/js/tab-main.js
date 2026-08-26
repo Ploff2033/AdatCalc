@@ -4,16 +4,19 @@
   var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
   var mixTestPriceDirty = false;
   var fuelPriceDirty = false;
+  var submitAttempted = false;
   var lastCalc = null;
 
-  var outputIds = [
+  var mixOutputIds = [
     'cost-materials', 'cost-payroll', 'cost-depr', 'cost-utilities', 'cost-per-m3',
     'recipe-sale-price-display', 'mix-revenue', 'mix-cost', 'mix-profit', 'mix-margin',
-    'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct',
-    'round-trip', 'fuel-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
-    'delivery-revenue', 'delivery-profit', 'delivery-margin',
-    'revenue-total', 'profit-total', 'profit-per-m3', 'margin-total'
+    'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct'
   ];
+  var deliveryOutputIds = [
+    'round-trip', 'fuel-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
+    'delivery-revenue', 'delivery-profit', 'delivery-margin'
+  ];
+  var totalOutputIds = ['revenue-total', 'profit-total', 'profit-per-m3', 'margin-total'];
 
   function populateSelect(select, items, preferredId) {
     select.innerHTML = '';
@@ -44,12 +47,18 @@
     el.classList.add(percent >= 0 ? 'positive' : 'negative');
   }
 
-  function resetOutputsToDash() {
-    outputIds.forEach(function (id) {
+  function dashOut(ids) {
+    ids.forEach(function (id) {
       var el = document.getElementById(id);
       el.textContent = '—';
       el.classList.remove('positive', 'negative');
     });
+  }
+
+  function resetOutputsToDash() {
+    dashOut(mixOutputIds);
+    dashOut(deliveryOutputIds);
+    dashOut(totalOutputIds);
     ['profit-total-wrap', 'profit-per-m3-wrap', 'margin-total-wrap'].forEach(function (id) {
       document.getElementById(id).classList.remove('positive', 'negative');
     });
@@ -77,6 +86,8 @@
     distInput.disabled = selfPickup;
     nbCityInput.disabled = selfPickup;
     deliveryChargeInput.disabled = selfPickup;
+    document.getElementById('fuel-price').disabled = selfPickup;
+    document.getElementById('fuel-price-reset').disabled = selfPickup;
     deliverySection.hidden = selfPickup;
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
@@ -102,24 +113,34 @@
     var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
     document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
 
-    [recipeSelect, mixerSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
-    var missing = [];
-    if (!recipe) missing.push(recipeSelect);
-    if (!selfPickup && !mixer) missing.push(mixerSelect);
-    if (distMissing) missing.push(distField);
+    // Марка/рецепт нужна для любого расчёта. Миксер/расстояние нужны только
+    // для доставки — без них уже можно посмотреть себестоимость и прибыль по
+    // смеси (быстрая проверка цены без лишних кликов).
+    var missingDelivery = [];
+    if (!selfPickup && !mixer) missingDelivery.push(mixerSelect);
+    if (distMissing) missingDelivery.push(distField);
+    var missing = recipe ? missingDelivery : [recipeSelect].concat(missingDelivery);
 
-    if (missing.length) {
+    // Баннер и красная обводка — только после попытки оформить заказ с
+    // незаполненными полями, а не сразу при открытии формы: иначе баннер
+    // занимает место и вёрстка прыгает при каждом вводе.
+    [recipeSelect, mixerSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
+    if (submitAttempted && missing.length) {
       missing.forEach(function (el) { el.classList.add('invalid'); });
       errorEl.textContent = selfPickup
         ? 'Заполните обязательное поле: марка/рецепт — оно выделено красным.'
         : 'Заполните обязательные поля: марка/рецепт, миксер и расстояние — они выделены красным.';
       errorEl.hidden = false;
-      placeOrderBtn.disabled = true;
+    } else {
+      errorEl.hidden = true;
+    }
+
+    if (!recipe) {
+      placeOrderBtn.classList.add('not-ready');
       lastCalc = null;
       resetOutputsToDash();
       return;
     }
-    errorEl.hidden = true;
 
     var materialsCost = Calc.materialsCostPerM3(recipe, data.materials, data.aggregateTrucks);
     var payroll = Calc.payrollPerM3(plant, data.plants, data.personnelSummary);
@@ -172,11 +193,12 @@
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPrice > 0 ? (safetyMargin / testPrice) * 100 : 0);
 
+    var deliveryReady = selfPickup || (!!mixer && !distMissing);
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
       surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0,
       deliveryProfit = 0, deliveryMarginPercent = 0;
 
-    if (!selfPickup) {
+    if (deliveryReady && !selfPickup) {
       trips = Calc.tripsForVolume(mixer, saleVolume);
       roundTrip = dist * 2;
       var fuelRate = mixer.fuelRate;
@@ -201,6 +223,10 @@
       document.getElementById('delivery-revenue').textContent = Format.fmt(deliveryRevenue, 2);
       setProfitLine(document.getElementById('delivery-profit'), deliveryProfit);
       setMarginBadge(document.getElementById('delivery-margin'), deliveryMarginPercent);
+    } else if (!selfPickup) {
+      // Миксер/расстояние ещё не заполнены — доставку показывать нечего,
+      // но по смеси (выше) уже можно смотреть цифры для быстрой прикидки.
+      dashOut(deliveryOutputIds);
     }
 
     var totalRevenue = mixRevenue + deliveryRevenue;
@@ -228,7 +254,13 @@
     marginTotalWrap.classList.remove('positive', 'negative');
     marginTotalWrap.classList.add(marginTotal >= 0 ? 'positive' : 'negative');
 
-    placeOrderBtn.disabled = false;
+    if (!deliveryReady) {
+      placeOrderBtn.classList.add('not-ready');
+      lastCalc = null;
+      return;
+    }
+
+    placeOrderBtn.classList.remove('not-ready');
     lastCalc = {
       plantId: plant.id,
       plantName: plant.name,
@@ -277,10 +309,15 @@
     mixTestPriceDirty = false;
     document.getElementById('fuel-price').value = '';
     fuelPriceDirty = false;
+    submitAttempted = false;
   }
 
   async function handlePlaceOrder() {
-    if (!lastCalc) return;
+    if (!lastCalc) {
+      submitAttempted = true;
+      recalc();
+      return;
+    }
     var placeOrderBtn = document.getElementById('place-order-btn');
     var hintEl = document.getElementById('order-placed-hint');
     placeOrderBtn.disabled = true;
@@ -295,11 +332,21 @@
     } catch (err) {
       alert('Не удалось оформить заказ: ' + err.message);
     } finally {
-      placeOrderBtn.disabled = !lastCalc;
+      placeOrderBtn.disabled = false;
     }
   }
 
   function init() {
+    // Работник (без роли, по ссылке-токену) не должен видеть, сколько внутри
+    // сделки уходит на материалы/ФОТ/амортизацию — только видит, в плюсе
+    // сделка или в минусе (строка "Прибыль от смеси" ниже остаётся видна
+    // всем). Роль не меняется без перезагрузки страницы (см. auth.js), так
+    // что достаточно решить один раз при инициализации, а не на каждый recalc().
+    var isInternal = !!(window.Auth && Auth.getRole());
+    document.getElementById('mix-cost-breakdown').hidden = !isInternal;
+    document.getElementById('mix-breakeven').hidden = !isInternal;
+    document.getElementById('mix-split-cols').classList.toggle('single-col', !isInternal);
+
     NumericInput.attach(document.getElementById('delivery-charge'));
     inputIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', recalc);
@@ -326,13 +373,6 @@
       fuelPriceDirty = false;
       recalc();
     });
-
-    // Блок "Смесь" — на десктопе открыт сразу, на мобильном свёрнут по
-    // умолчанию (пользователь всё равно может развернуть). Решаем один раз
-    // при загрузке, а не на resize, чтобы не сбрасывать выбор пользователя.
-    if (window.matchMedia('(min-width: 761px)').matches) {
-      document.getElementById('mix-details').open = true;
-    }
 
     document.getElementById('main-recipe').addEventListener('change', function () {
       selectedRecipeId = this.value;

@@ -50,6 +50,11 @@
 }
 
 *{box-sizing:border-box;}
+/* [hidden] обязан всегда побеждать: без этого класс с явным display (flex/
+   grid/...) на том же элементе перебивает встроенный UA-стиль [hidden]{
+   display:none}, потому что автор-стили всегда весомее агента независимо
+   от специфичности — элемент с hidden=true молча остаётся видимым. */
+[hidden]{ display:none !important; }
 body{
   margin:0;
   background:var(--bg);
@@ -91,6 +96,11 @@ h1{
   font-weight:800;
   letter-spacing:-0.01em;
   text-wrap:balance;
+}
+@media (max-width:760px){
+  /* Крупный заголовок съедал треть экрана на телефоне — оставляем компактный
+     "eyebrow"-лейбл над ним для брендинга, сам заголовок только на десктопе. */
+  h1{ display:none; }
 }
 .sub{
   margin:0;
@@ -298,7 +308,13 @@ section.card.compact{
   background:var(--surface-2);
   border:1px solid var(--border);
   border-radius:8px;
-  padding:6px 10px;
+  padding:8px 10px;
+}
+.field:has(input:disabled){
+  opacity:.55;
+}
+.field input:disabled{
+  cursor:not-allowed;
 }
 .field input{
   width:100%;
@@ -332,10 +348,14 @@ section.card.compact{
   background:var(--surface-2);
   border:1px solid var(--border);
   border-radius:8px;
-  padding:9px 10px;
+  padding:8px 10px;
   color:var(--text);
   font-size:14px;
   outline:none;
+}
+.select:disabled{
+  opacity:.55;
+  cursor:not-allowed;
 }
 .select:focus-visible{
   border-color:var(--focus);
@@ -364,9 +384,6 @@ section.card.compact{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:14px;
-}
-@media (max-width:760px){
-  .two-col.stack-mobile{ grid-template-columns:1fr; }
 }
 .config-grid{
   display:grid;
@@ -397,6 +414,12 @@ section.card.compact{
   width:17px;
   height:17px;
   accent-color:var(--accent);
+}
+.checkbox-row:has(input:disabled){
+  opacity:.55;
+}
+.checkbox-row:has(input:disabled) label{
+  cursor:not-allowed;
 }
 .checkbox-row label{
   font-size:14px;
@@ -482,6 +505,7 @@ section.card.compact{
   grid-template-columns:1fr 1fr;
   gap:16px;
 }
+.split-cols.single-col{ grid-template-columns:1fr; }
 .split-col-label{
   font-size:11px;
   font-weight:700;
@@ -508,28 +532,6 @@ section.card.compact{
   letter-spacing:.06em;
   color:var(--text-muted);
 }
-
-/* Блок "Смесь" на Главной — на мобильном по умолчанию свёрнут за аккордеон
-   (JS выставляет [open] на десктопе при загрузке, см. tab-main.js), чтобы не
-   занимать треть экрана себестоимостью/рентабельностью, которые оператору в
-   поле обычно не нужны. На десктопе выглядит и ведёт себя как обычный заголовок. */
-summary.calc-section-title{
-  cursor:pointer;
-  list-style:none;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-}
-summary.calc-section-title::-webkit-details-marker{ display:none; }
-summary.calc-section-title::after{
-  content:'▾';
-  font-size:10px;
-  color:var(--text-muted);
-  transition:transform .15s ease;
-  flex-shrink:0;
-}
-details.mix-details[open] summary.calc-section-title::after{ transform:rotate(180deg); }
 
 .dialog-section-label{
   font-size:11px;
@@ -604,6 +606,9 @@ details.mix-details[open] summary.calc-section-title::after{ transform:rotate(18
   flex:1;
   min-width:0;
 }
+.input-with-reset:has(input:disabled){
+  opacity:.55;
+}
 .breakeven-block{
   margin-top:2px;
   padding-top:6px;
@@ -645,6 +650,16 @@ details.mix-details[open] summary.calc-section-title::after{ transform:rotate(18
 .primary-btn:disabled{
   opacity:.5;
   cursor:not-allowed;
+}
+@media (max-width:760px){
+  .order-actions{
+    flex-direction:column;
+    align-items:stretch;
+  }
+  #place-order-btn{
+    font-size:16px;
+    padding:16px 18px;
+  }
 }
 
 /* ---- Заказы ---- */
@@ -951,6 +966,12 @@ input:focus-visible{ outline:none; }
   padding:9px 18px;
   border-radius:8px;
   cursor:pointer;
+}
+/* Кнопка "Оформить заказ" остаётся кликабельной, даже когда форма ещё не
+   заполнена — клик по ней и показывает, чего не хватает (см. tab-main.js).
+   Приглушаем, но не как :disabled — она не заблокирована, а просто "рано". */
+.primary-btn.not-ready{
+  opacity:.8;
 }
 .ghost-btn{
   border:1px solid var(--border);
