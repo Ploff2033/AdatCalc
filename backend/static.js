@@ -1,6 +1,7 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
+const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..', 'frontend');
 
@@ -12,6 +13,10 @@ const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon'
 };
+
+// Сжимаем только текстовые форматы — картинки/иконки и так компактны,
+// повторное сжатие только тратит CPU без пользы.
+const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.json', '.svg']);
 
 async function serveStatic(req, res, pathname) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -32,14 +37,44 @@ async function serveStatic(req, res, pathname) {
       await serveStatic(req, res, path.posix.join(pathname, 'index.html'));
       return;
     }
+
+    // Cache-Control: no-cache — браузер обязан спросить сервер перед тем как
+    // использовать закэшированную копию, но если файл не менялся (по
+    // Last-Modified), сервер отвечает пустым 304 вместо повторной прокачки
+    // всего файла. Безопаснее max-age (нет риска подсунуть старую версию
+    // после деплоя), но экономит и трафик, и время на неизменных файлах.
+    const mtimeRounded = Math.floor(stat.mtimeMs / 1000) * 1000;
+    const lastModified = new Date(mtimeRounded).toUTCString();
+    const ifModifiedSince = req.headers['if-modified-since'];
+    if (ifModifiedSince) {
+      const sinceTime = new Date(ifModifiedSince).getTime();
+      if (!isNaN(sinceTime) && sinceTime >= mtimeRounded) {
+        res.writeHead(304, { 'Cache-Control': 'no-cache', 'Last-Modified': lastModified });
+        res.end();
+        return;
+      }
+    }
+
     const ext = path.extname(resolved);
     const type = CONTENT_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': type });
+    const headers = {
+      'Content-Type': type,
+      'Cache-Control': 'no-cache',
+      'Last-Modified': lastModified
+    };
+
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+    const useGzip = COMPRESSIBLE.has(ext) && /\bgzip\b/.test(acceptEncoding);
+    if (useGzip) headers['Content-Encoding'] = 'gzip';
+
+    res.writeHead(200, headers);
     if (req.method === 'HEAD') {
       res.end();
-    } else {
-      fs.createReadStream(resolved).pipe(res);
+      return;
     }
+    const stream = fs.createReadStream(resolved);
+    if (useGzip) stream.pipe(zlib.createGzip()).pipe(res);
+    else stream.pipe(res);
   } catch (err) {
     if (err.code === 'ENOENT') {
       if (path.extname(pathname)) {
