@@ -60,7 +60,7 @@
           '<div class="order-meta"></div>' +
         '</div>' +
         '<div class="order-summary-figures">' +
-          '<div class="order-figure"><span class="order-figure-label">Выручка (к оплате)</span><span class="order-figure-value big" data-f="totalRevenue">—</span></div>' +
+          '<div class="order-figure"><span class="order-figure-label">К оплате</span><span class="order-figure-value big" data-f="totalRevenue">—</span></div>' +
           '<div class="order-figure"><span class="order-figure-label">Прибыль</span><span class="order-figure-value big" data-f="totalProfit">—</span></div>' +
           '<div class="order-figure"><span class="order-figure-label">От смеси</span><span class="order-figure-value" data-f="mixProfit">—</span></div>' +
           '<div class="order-figure"><span class="order-figure-label">От доставки</span><span class="order-figure-value" data-f="deliveryProfit">—</span></div>' +
@@ -112,7 +112,7 @@
         '</div>' +
         '<div class="split-total"><span class="l">Прибыль от доставки</span><span class="v-wrap"><span class="v" data-f="deliveryProfit">—</span><span class="margin" data-f="deliveryMarginPercent">—</span></span></div>' +
         '<div class="final-grid compact">' +
-          '<div class="final-result"><span class="label">Итого выручка (к оплате клиентом)</span><span class="value" data-f="totalRevenue">—</span></div>' +
+          '<div class="final-result"><span class="label">К оплате</span><span class="value" data-f="totalRevenue">—</span></div>' +
           '<div class="final-result" data-fr="1"><span class="label">Чистая прибыль</span><span class="value" data-f="totalProfit">—</span></div>' +
           '<div class="final-result" data-fr="1"><span class="label">Прибыль на 1 м³</span><span class="value" data-f="profitPerM3">—</span></div>' +
           '<div class="final-result" data-fr="1"><span class="label">Рентабельность</span><span class="value" data-f="totalMarginPercent">—</span></div>' +

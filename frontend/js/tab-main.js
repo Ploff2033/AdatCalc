@@ -298,9 +298,9 @@
     };
   }
 
-  // Марку/миксер оставляем выбранными (обычно следующий заказ — та же смесь),
-  // а расстояние/объём/доплату за рейс/цену-испытание/чекбокс соседнего города
-  // очищаем — это разовые параметры конкретного заказа.
+  // Миксер оставляем выбранным (обычно следующий заказ — тот же миксер),
+  // марку/расстояние/объём/доплату за рейс/цену-испытание/чекбокс соседнего
+  // города очищаем — это разовые параметры конкретного заказа.
   function resetOrderForm() {
     inputIds.forEach(function (id) { document.getElementById(id).value = ''; });
     document.getElementById('nb-city').checked = false;
@@ -310,6 +310,8 @@
     document.getElementById('fuel-price').value = '';
     fuelPriceDirty = false;
     submitAttempted = false;
+    selectedRecipeId = '';
+    document.getElementById('main-recipe').value = '';
   }
 
   async function handlePlaceOrder() {
