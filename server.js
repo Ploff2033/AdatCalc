@@ -21,6 +21,12 @@ async function main() {
     });
   });
 
+  // Node не включает TCP_NODELAY по умолчанию — без этого ответы, отправленные
+  // несколькими TCP-пакетами (заголовки отдельно от тела), застревают на связке
+  // Nagle + delayed ACK: до ~200-400мс на КАЖДЫЙ запрос по реальной сети (на
+  // loopback незаметно, отсюда "локально быстро, а с браузера тормозит").
+  server.on('connection', (socket) => socket.setNoDelay(true));
+
   server.listen(PORT, HOST, () => {
     console.log(`Сервер запущен: http://localhost:${PORT} (слушает ${HOST}:${PORT})`);
   });
