@@ -445,8 +445,15 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><span class="num">04</span><h2>Точка безубыточности (с начала месяца)</h2></div>
+      <div class="card-head">
+        <span class="num">04</span><h2>Точка безубыточности</h2>
+        <select class="select breakeven-month-select" id="dash-breakeven-month"></select>
+      </div>
       <p class="hint">Постоянные расходы завода (ФОТ + амортизация + коммуналка) за месяц — и сколько из них уже покрыто маржой фактических заказов. Пока не покрыто полностью, реальной чистой прибыли ещё нет, даже если по отдельным заказам она уже показывает плюс.</p>
+      <div class="breakeven-chart-wrap">
+        <svg id="dash-breakeven-chart" viewBox="0 0 800 260" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="breakeven-legend" id="dash-breakeven-legend"></div>
       <div class="dash-table-wrap">
         <table class="dash-table" id="dash-breakeven-table">
           <thead>

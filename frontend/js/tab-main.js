@@ -136,6 +136,13 @@
     }
     var fuelPrice = NumericInput.parseNumber(fuelPriceInput.value) || 0;
 
+    var ureaPriceInput = document.getElementById('urea-price');
+    var configUreaPrice = data.config.ureaPriceDefault || 0;
+    if (!ureaPriceDirty) {
+      NumericInput.setFormattedValue(ureaPriceInput, configUreaPrice);
+    }
+    var ureaPrice = NumericInput.parseNumber(ureaPriceInput.value) || 0;
+
     var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
     document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
 
@@ -222,13 +229,6 @@
     document.getElementById('mix-breakeven-price').textContent = Format.fmt(costPerM3, 2);
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
-
-    var ureaPriceInput = document.getElementById('urea-price');
-    var configUreaPrice = data.config.ureaPriceDefault || 0;
-    if (!ureaPriceDirty) {
-      NumericInput.setFormattedValue(ureaPriceInput, configUreaPrice);
-    }
-    var ureaPrice = NumericInput.parseNumber(ureaPriceInput.value) || 0;
 
     var deliveryReady = selfPickup || (!!mixer && !distMissing);
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,

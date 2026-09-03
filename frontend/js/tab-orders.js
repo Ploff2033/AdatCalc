@@ -40,6 +40,24 @@
     return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  function dayKey(iso) {
+    var d = new Date(iso);
+    return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+  }
+
+  // "Сегодня"/"Вчера" — быстрее считывается глазами, чем дата, когда
+  // сверяешь недавние заказы (для этого и завели разделители по дням).
+  function dayLabel(iso) {
+    var d = new Date(iso);
+    var now = new Date();
+    var dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var diffDays = Math.round((todayStart - dayStart) / 86400000);
+    if (diffDays === 0) return 'Сегодня';
+    if (diffDays === 1) return 'Вчера';
+    return d.toLocaleDateString('ru-RU', { weekday: 'long', day: '2-digit', month: 'long' });
+  }
+
   async function handleDelete(order) {
     if (!confirm('Удалить заказ от ' + formatDate(order.createdAt) + '?')) return;
     try {
@@ -236,10 +254,11 @@
     return { from: null, to: null };
   }
 
-  // Работнику бэкенд и так отдаёт только заказы за сегодня (см. backend/
-  // handlers/orders.js), независимо от фильтра — показывать сам селектор
-  // периода ему смысла нет, он бы вводил в заблуждение (любой выбор давал
-  // бы один и тот же результат).
+  // Работнику бэкенд и так отдаёт только заказы за текущую неделю (см.
+  // backend/handlers/orders.js) — показывать сам селектор периода ему
+  // смысла нет: варианты вроде "месяц"/"всё время" выглядели бы как будто
+  // покажут больше, чем реально есть, а разделители по дням в списке и так
+  // дают быстро свериться с недавними заказами.
   function renderPeriodFilter() {
     var isInternal = !!(window.Auth && Auth.getRole());
     var periodSelect = document.getElementById('orders-period-filter');
@@ -320,7 +339,17 @@
     emptyHint.hidden = orders.length > 0;
     exportBtn.hidden = !(window.Auth && Auth.getRole());
     exportBtn.disabled = orders.length === 0;
+    var lastDayKey = null;
     orders.forEach(function (order) {
+      var key = dayKey(order.createdAt);
+      if (key !== lastDayKey) {
+        var sep = document.createElement('div');
+        sep.className = 'orders-day-separator';
+        sep.innerHTML = '<span></span>';
+        sep.querySelector('span').textContent = dayLabel(order.createdAt);
+        container.appendChild(sep);
+        lastDayKey = key;
+      }
       container.appendChild(buildOrderCard(order));
     });
     renderMaterialsSummary(orders);

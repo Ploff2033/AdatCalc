@@ -204,26 +204,72 @@
     });
   }
 
-  // Начало текущего календарного месяца (локальное время браузера — этот
-  // раздел только для admin, точность до часового пояса тут не критична).
-  function monthStartMs() {
-    var d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  var MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  var PLANT_COLORS = ['#3e7a52', '#b5502a', '#4a6fa5', '#8a6a3f', '#7a4a8a', '#2b8f8a', '#a5334a', '#5a8a2b'];
+  var breakevenMonthValue = '';
+
+  // 'YYYY-MM' -> год/месяц + границы месяца + до какого дня есть смысл
+  // считать (сегодня, если это текущий месяц — будущих дней у прошлого
+  // месяца нет, у текущего они просто ещё не наступили).
+  function monthRange(monthStr) {
+    var parts = monthStr.split('-');
+    var year = parseInt(parts[0], 10);
+    var month = parseInt(parts[1], 10) - 1;
+    var start = new Date(year, month, 1);
+    var end = new Date(year, month + 1, 1);
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var now = new Date();
+    var isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
+    var lastDay = isCurrentMonth ? now.getDate() : daysInMonth;
+    return { year: year, month: month, start: start, end: end, daysInMonth: daysInMonth, lastDay: lastDay };
   }
 
-  function renderBreakevenTable() {
+  function populateBreakevenMonthOptions() {
+    var select = document.getElementById('dash-breakeven-month');
+    if (select.options.length) return; // заполняем один раз при init
+    var now = new Date();
+    for (var i = 0; i < 12; i++) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      var opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
+      select.appendChild(opt);
+    }
+    breakevenMonthValue = select.value;
+  }
+
+  // Расход/накопление по дням месяца для одного завода (или суммарно, если
+  // plant не задан — тогда fixedCosts и contribution уже посчитаны заранее).
+  function dailyCumulative(orders, plantId, range) {
+    var byDay = {};
+    orders.forEach(function (o) {
+      if (plantId && o.plantId !== plantId) return;
+      var d = new Date(o.createdAt);
+      if (d < range.start || d >= range.end) return;
+      var day = d.getDate();
+      byDay[day] = (byDay[day] || 0) + Calc.orderContribution(o);
+    });
+    var cumulative = [];
+    var running = 0;
+    for (var day = 1; day <= range.lastDay; day++) {
+      running += byDay[day] || 0;
+      cumulative.push(running);
+    }
+    return cumulative;
+  }
+
+  function renderBreakevenTable(range) {
     var tbody = document.getElementById('dash-breakeven-table-body');
     tbody.innerHTML = '';
     var plants = State.data.plants;
     var orders = State.data.orders || [];
     var summary = State.data.personnelSummary || { byPlant: {}, sharedTotal: 0 };
-    var monthStart = monthStartMs();
 
     plants.forEach(function (plant) {
       var fixedCosts = Calc.fixedCostsMonthly(plant, plants, summary);
-      var contribution = orders
-        .filter(function (o) { return o.plantId === plant.id && new Date(o.createdAt).getTime() >= monthStart; })
-        .reduce(function (sum, o) { return sum + Calc.orderContribution(o); }, 0);
+      var series = dailyCumulative(orders, plant.id, range);
+      var contribution = series.length ? series[series.length - 1] : 0;
       var coveredPercent = fixedCosts > 0 ? (contribution / fixedCosts) * 100 : (contribution > 0 ? 100 : 0);
       var realProfit = contribution - fixedCosts;
 
@@ -241,6 +287,97 @@
     });
   }
 
+  // Линии + залитая площадь под ними — по оси X дни месяца, по оси Y
+  // процент покрытия постоянных расходов (0-100%+). Пунктир на 100% —
+  // сама точка безубыточности. "Итого" — сумма расходов и маржи по ВСЕМ
+  // заводам разом (не среднее по процентам — иначе крупный завод и
+  // копеечный весили бы поровну).
+  function renderBreakevenChart(range) {
+    var svg = document.getElementById('dash-breakeven-chart');
+    var legend = document.getElementById('dash-breakeven-legend');
+    svg.innerHTML = '';
+    legend.innerHTML = '';
+
+    var plants = State.data.plants;
+    var orders = State.data.orders || [];
+    var summary = State.data.personnelSummary || { byPlant: {}, sharedTotal: 0 };
+    if (!plants.length || range.lastDay < 1) return;
+
+    var W = 800, H = 260, padL = 36, padR = 8, padT = 10, padB = 22;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+
+    var series = [{ id: null, name: 'Итого', color: 'var(--accent)' }].concat(
+      plants.map(function (p, i) { return { id: p.id, name: p.name, color: PLANT_COLORS[i % PLANT_COLORS.length] }; })
+    );
+
+    var totalFixed = plants.reduce(function (sum, p) { return sum + Calc.fixedCostsMonthly(p, plants, summary); }, 0);
+
+    var seriesData = series.map(function (s) {
+      var fixedCosts = s.id === null ? totalFixed : Calc.fixedCostsMonthly(plants.find(function (p) { return p.id === s.id; }), plants, summary);
+      var cumulative = dailyCumulative(orders, s.id, range);
+      var pct = cumulative.map(function (v) { return fixedCosts > 0 ? (v / fixedCosts) * 100 : (v > 0 ? 100 : 0); });
+      return { def: s, pct: pct, current: pct.length ? pct[pct.length - 1] : 0 };
+    });
+
+    var maxPct = seriesData.reduce(function (m, s) { return Math.max(m, s.pct.reduce(function (mm, v) { return Math.max(mm, v); }, 0)); }, 100);
+    var yMax = Math.max(120, Math.ceil((maxPct + 10) / 20) * 20);
+
+    function x(day) { return padL + (range.lastDay > 1 ? (day - 1) / (range.lastDay - 1) : 0) * plotW; }
+    function y(pct) { return padT + plotH - (pct / yMax) * plotH; }
+
+    var svgNS = 'http://www.w3.org/2000/svg';
+    function el(tag, attrs) {
+      var e = document.createElementNS(svgNS, tag);
+      Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+      return e;
+    }
+
+    // Сетка + подпись 100%
+    svg.appendChild(el('line', { x1: padL, x2: W - padR, y1: y(100), y2: y(100), stroke: 'var(--border)', 'stroke-width': 1, 'stroke-dasharray': '4,4' }));
+    svg.appendChild(el('text', { x: padL, y: y(100) - 4, fill: 'var(--text-muted)', 'font-size': 10 })).textContent = '100%';
+    [0, yMax / 2, yMax].forEach(function (v) {
+      var line = el('line', { x1: padL, x2: W - padR, y1: y(v), y2: y(v), stroke: 'var(--border)', 'stroke-width': 1, opacity: 0.4 });
+      svg.appendChild(line);
+      var label = el('text', { x: 2, y: y(v) + 3, fill: 'var(--text-muted)', 'font-size': 10 });
+      label.textContent = Math.round(v) + '%';
+      svg.appendChild(label);
+    });
+    // Подписи по оси X — начало, середина, конец
+    [1, Math.ceil(range.lastDay / 2), range.lastDay].forEach(function (day) {
+      var label = el('text', { x: x(day), y: H - 4, fill: 'var(--text-muted)', 'font-size': 10, 'text-anchor': day === 1 ? 'start' : (day === range.lastDay ? 'end' : 'middle') });
+      label.textContent = day + ' числа';
+      svg.appendChild(label);
+    });
+
+    seriesData.forEach(function (s) {
+      if (s.pct.length < 2) return;
+      var linePoints = s.pct.map(function (v, i) { return x(i + 1) + ',' + y(v); }).join(' ');
+      var areaPoints = 'M ' + x(1) + ',' + y(0) + ' L ' + s.pct.map(function (v, i) { return x(i + 1) + ',' + y(v); }).join(' L ') + ' L ' + x(s.pct.length) + ',' + y(0) + ' Z';
+      svg.appendChild(el('path', { d: areaPoints, fill: s.def.color, opacity: s.def.id === null ? 0.12 : 0.08 }));
+      svg.appendChild(el('polyline', {
+        points: linePoints, fill: 'none', stroke: s.def.color,
+        'stroke-width': s.def.id === null ? 2.5 : 1.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+      }));
+    });
+
+    seriesData.forEach(function (s) {
+      var item = document.createElement('div');
+      item.className = 'breakeven-legend-item';
+      item.innerHTML = '<span class="swatch"></span><span class="name"></span><span class="pct"></span>';
+      item.querySelector('.swatch').style.background = s.def.color;
+      item.querySelector('.name').textContent = s.def.name;
+      item.querySelector('.pct').textContent = Format.fmtNum(Math.max(0, s.current), 0, '%');
+      item.querySelector('.pct').style.color = s.current >= 100 ? 'var(--positive)' : 'var(--negative)';
+      legend.appendChild(item);
+    });
+  }
+
+  function renderBreakeven() {
+    var range = monthRange(breakevenMonthValue || document.getElementById('dash-breakeven-month').value);
+    renderBreakevenTable(range);
+    renderBreakevenChart(range);
+  }
+
   function init() {
     document.getElementById('add-plant-btn').addEventListener('click', openForCreate);
     form.addEventListener('submit', handleSubmit);
@@ -250,6 +387,11 @@
     document.getElementById('universal-token-reissue-btn').addEventListener('click', function (e) {
       reissueUniversalToken(e.target);
     });
+    populateBreakevenMonthOptions();
+    document.getElementById('dash-breakeven-month').addEventListener('change', function () {
+      breakevenMonthValue = this.value;
+      renderBreakeven();
+    });
   }
 
   function render() {
@@ -257,7 +399,7 @@
     renderPlantTiles();
     renderSummary();
     renderPlantTable();
-    renderBreakevenTable();
+    renderBreakeven();
     renderUniversalToken();
   }
 

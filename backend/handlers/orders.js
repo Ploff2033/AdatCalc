@@ -123,10 +123,13 @@ async function fetchMaterials(client, orderId) {
 // (админ/менеджер видят общий список с фильтром на фронте).
 //
 // Работник (role falsy — анонимный доступ по токену) видит только заказы
-// ЗА СЕГОДНЯ: вся история заказов завода — коммерческая информация, которая
-// не должна быть доступна просто по ссылке. Ограничение проверяется здесь,
-// на бэкенде, а не только скрытием в интерфейсе — иначе достаточно дёрнуть
-// API напрямую, чтобы получить всю историю.
+// ЗА ТЕКУЩУЮ НЕДЕЛЮ (с понедельника): вся история заказов завода —
+// коммерческая информация, которая не должна быть доступна просто по
+// ссылке, но недели достаточно, чтобы проверить недавние заказы и не
+// задублировать (раньше был день — не хватало, чтобы свериться с вчера/
+// позавчера). Ограничение проверяется здесь, на бэкенде, а не только
+// скрытием в интерфейсе — иначе достаточно дёрнуть API напрямую, чтобы
+// получить всю историю.
 async function list(query, role) {
   const client = await db.pool.connect();
   try {
@@ -137,7 +140,7 @@ async function list(query, role) {
       conditions.push(`plant_id = $${params.length}`);
     }
     if (!role) {
-      conditions.push(`created_at >= (date_trunc('day', now() AT TIME ZONE 'Europe/Moscow') AT TIME ZONE 'Europe/Moscow')`);
+      conditions.push(`created_at >= (date_trunc('week', now() AT TIME ZONE 'Europe/Moscow') AT TIME ZONE 'Europe/Moscow')`);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await client.query(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, params);

@@ -267,6 +267,53 @@ section.card.compact{
 #orders-materials-summary .line .l{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
+.breakeven-month-select{
+  margin-left:auto;
+  width:auto;
+  height:32px;
+  font-size:13px;
+}
+.breakeven-chart-wrap{
+  width:100%;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:var(--surface);
+  padding:8px;
+  box-sizing:border-box;
+  margin:10px 0 4px;
+}
+.breakeven-chart-wrap svg{
+  width:100%;
+  height:220px;
+  display:block;
+  overflow:visible;
+}
+.breakeven-legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:14px;
+  margin-bottom:14px;
+}
+.breakeven-legend-item{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  color:var(--text-muted);
+}
+.breakeven-legend-item .swatch{
+  width:10px;
+  height:10px;
+  border-radius:3px;
+  flex-shrink:0;
+}
+.breakeven-legend-item .pct{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums;
+  font-weight:700;
+  color:var(--text);
+}
+
 .dash-table-wrap{
   overflow-x:auto;
 }
@@ -687,6 +734,23 @@ section.card.compact{
   display:flex;
   flex-direction:column;
   gap:14px;
+}
+.orders-day-separator{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:6px 0 -4px;
+  color:var(--text-muted);
+  font-size:13px;
+  font-weight:600;
+  text-transform:capitalize;
+}
+.orders-day-separator::before,
+.orders-day-separator::after{
+  content:'';
+  flex:1;
+  height:1px;
+  background:var(--border);
 }
 .order-card{
   border:1px solid var(--border);
