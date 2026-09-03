@@ -19,6 +19,7 @@
   var matDeliveryFields = document.getElementById('material-delivery-fields');
   var matDeliveryDistanceInput = document.getElementById('material-delivery-distance');
   var matDeliveryFuelPriceInput = document.getElementById('material-delivery-fuel-price');
+  var matDeliveryUreaPriceInput = document.getElementById('material-delivery-urea-price');
   var matDeliverySurchargeInput = document.getElementById('material-delivery-surcharge');
 
   function buildTruckOptions(selectedId) {
@@ -39,6 +40,7 @@
   function clearDeliveryFields() {
     matDeliveryDistanceInput.value = '';
     matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
+    matDeliveryUreaPriceInput.value = State.data.config.ureaPriceDefault || '';
     matDeliverySurchargeInput.value = '';
   }
 
@@ -62,6 +64,9 @@
     if (truck && !matDeliveryFuelPriceInput.value) {
       matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
     }
+    if (truck && !matDeliveryUreaPriceInput.value) {
+      matDeliveryUreaPriceInput.value = State.data.config.ureaPriceDefault || '';
+    }
     updateMaterialDialogPricing();
   }
 
@@ -73,6 +78,7 @@
         truckId: null,
         distanceKm: 0,
         fuelPricePerLiter: 0,
+        ureaPricePerLiter: 0,
         driverSurcharge: 0,
         manualCostPerUnit: parseFloat(matDeliveryManualCostInput.value) || 0
       };
@@ -82,6 +88,7 @@
       truckId: matDeliveryTruckSelect.value,
       distanceKm: parseFloat(matDeliveryDistanceInput.value) || 0,
       fuelPricePerLiter: parseFloat(matDeliveryFuelPriceInput.value) || 0,
+      ureaPricePerLiter: parseFloat(matDeliveryUreaPriceInput.value) || 0,
       driverSurcharge: parseFloat(matDeliverySurchargeInput.value) || 0,
       manualCostPerUnit: 0
     };
@@ -96,6 +103,8 @@
       var perTrip = Calc.aggregateDeliveryPerTrip(delivery, truck);
       perUnit = truck && truck.capacity > 0 ? perTrip.total / truck.capacity : 0;
       document.getElementById('material-delivery-fuel-cost').textContent = Format.fmt(perTrip.fuel, 2);
+      document.getElementById('material-delivery-urea-cost').textContent = Format.fmt(perTrip.urea, 2);
+      document.getElementById('material-delivery-platon-cost').textContent = Format.fmt(perTrip.platon, 2);
       document.getElementById('material-delivery-amort-cost').textContent = Format.fmt(perTrip.amort, 2);
       document.getElementById('material-delivery-surcharge-cost').textContent = Format.fmt(perTrip.surcharge, 2);
       document.getElementById('material-delivery-trip-total').textContent = Format.fmt(perTrip.total, 2);
@@ -145,6 +154,7 @@
     if (ownTransport) {
       matDeliveryDistanceInput.value = delivery.distanceKm;
       matDeliveryFuelPriceInput.value = delivery.fuelPricePerLiter;
+      matDeliveryUreaPriceInput.value = delivery.ureaPricePerLiter;
       matDeliverySurchargeInput.value = delivery.driverSurcharge;
       matDeliveryManualCostInput.value = '0';
     } else {
@@ -421,7 +431,7 @@
     matDeliveryOwnTransportCheckbox.addEventListener('change', handleOwnTransportToggle);
     matDeliveryTruckSelect.addEventListener('change', handleDeliveryTruckChange);
     matDeliveryManualCostInput.addEventListener('input', updateMaterialDialogPricing);
-    [matDeliveryDistanceInput, matDeliveryFuelPriceInput, matDeliverySurchargeInput].forEach(function (input) {
+    [matDeliveryDistanceInput, matDeliveryFuelPriceInput, matDeliveryUreaPriceInput, matDeliverySurchargeInput].forEach(function (input) {
       input.addEventListener('input', updateMaterialDialogPricing);
     });
 

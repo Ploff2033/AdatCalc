@@ -120,11 +120,15 @@
           <div class="field"><input type="number" id="fuel-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
         </div>
         <div class="field-group">
+          <label for="urea-price-default">Цена мочевины (AdBlue)</label>
+          <div class="field"><input type="number" id="urea-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
+        </div>
+        <div class="field-group">
           <label for="neighbor-city-surcharge">Надбавка за рейс в другой город</label>
           <div class="field"><input type="number" id="neighbor-city-surcharge" min="0" step="any"><span class="unit">₽/рейс</span></div>
         </div>
       </div>
-      <p class="hint">Цена топлива используется во всех расчётах доставки (бетона и инертных). Надбавка — доплата водителю за рейс в соседний город, применяется на Главной по чекбоксу.</p>
+      <p class="hint">Цена топлива и мочевины используется во всех расчётах доставки (бетона и инертных). Надбавка — доплата водителю за рейс в соседний город, применяется на Главной по чекбоксу.</p>
     </section>
 
     <section class="card" id="mixers-card">
@@ -218,6 +222,14 @@
               <button type="button" class="icon-btn" id="fuel-price-reset" title="Сбросить к цене по умолчанию">↺</button>
             </div>
           </div>
+
+          <div class="field-group">
+            <label for="urea-price">Цена мочевины (AdBlue)</label>
+            <div class="input-with-reset">
+              <div class="field"><input type="text" id="urea-price" inputmode="decimal"><span class="unit">₽/л</span></div>
+              <button type="button" class="icon-btn" id="urea-price-reset" title="Сбросить к цене по умолчанию">↺</button>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -284,6 +296,7 @@
                 <div class="breakdown compact">
                   <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
                   <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
+                  <div class="line"><span class="l">Мочевина (1 рейс)</span><span class="v" id="urea-cost">—</span></div>
                   <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
                   <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
                   <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
@@ -431,8 +444,27 @@
       </div>
     </section>
 
+    <section class="card">
+      <div class="card-head"><span class="num">04</span><h2>Точка безубыточности (с начала месяца)</h2></div>
+      <p class="hint">Постоянные расходы завода (ФОТ + амортизация + коммуналка) за месяц — и сколько из них уже покрыто маржой фактических заказов. Пока не покрыто полностью, реальной чистой прибыли ещё нет, даже если по отдельным заказам она уже показывает плюс.</p>
+      <div class="dash-table-wrap">
+        <table class="dash-table" id="dash-breakeven-table">
+          <thead>
+            <tr>
+              <th>Завод</th>
+              <th>Расходы за месяц</th>
+              <th>Накоплено маржи</th>
+              <th>Покрыто</th>
+              <th>Реальная прибыль</th>
+            </tr>
+          </thead>
+          <tbody id="dash-breakeven-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card compact">
-      <div class="card-head"><span class="num">04</span><h2>Общая ссылка (подмена)</h2></div>
+      <div class="card-head"><span class="num">05</span><h2>Общая ссылка (подмена)</h2></div>
       <p class="hint">Доступ уровня работника, но с переключателем завода — чтобы один оператор мог подменить другого на время отпуска/больничного, без прав менеджера или админа.</p>
       <div class="tile">
         <div class="tile-meta" id="universal-token-meta"></div>
@@ -543,12 +575,18 @@
         </div>
       </div>
       <div class="field-group">
+        <label for="material-delivery-urea-price">Цена мочевины (AdBlue)</label>
+        <div class="field"><input type="number" id="material-delivery-urea-price" min="0" step="any"><span class="unit">₽/л</span></div>
+      </div>
+      <div class="field-group">
         <label for="material-delivery-surcharge">Доплата водителю за рейс</label>
         <div class="field"><input type="number" id="material-delivery-surcharge" min="0" step="any"><span class="unit">₽</span></div>
       </div>
 
       <div class="breakdown compact">
         <div class="line"><span class="l">Топливо за рейс</span><span class="v" id="material-delivery-fuel-cost">—</span></div>
+        <div class="line"><span class="l">Мочевина за рейс</span><span class="v" id="material-delivery-urea-cost">—</span></div>
+        <div class="line"><span class="l">Платон за рейс</span><span class="v" id="material-delivery-platon-cost">—</span></div>
         <div class="line"><span class="l">Амортизация за рейс</span><span class="v" id="material-delivery-amort-cost">—</span></div>
         <div class="line"><span class="l">Доплата водителю</span><span class="v" id="material-delivery-surcharge-cost">—</span></div>
         <div class="line total"><span class="l">Итого за рейс</span><span class="v" id="material-delivery-trip-total">—</span></div>
@@ -629,6 +667,10 @@
       <label for="mixer-fuel-rate">Расход топлива</label>
       <div class="field"><input type="number" id="mixer-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
     </div>
+    <div class="field-group">
+      <label for="mixer-urea-rate">Расход мочевины (AdBlue)</label>
+      <div class="field"><input type="number" id="mixer-urea-rate" min="0" step="any" value="0"><span class="unit">л/100км</span></div>
+    </div>
     <p class="dialog-error" id="mixer-dialog-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
@@ -664,6 +706,14 @@
     <div class="field-group">
       <label for="aggregate-truck-fuel-rate">Расход топлива</label>
       <div class="field"><input type="number" id="aggregate-truck-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-urea-rate">Расход мочевины (AdBlue)</label>
+      <div class="field"><input type="number" id="aggregate-truck-urea-rate" min="0" step="any" value="0"><span class="unit">л/100км</span></div>
+    </div>
+    <div class="field-group">
+      <label for="aggregate-truck-platon-rate">Платон</label>
+      <div class="field"><input type="number" id="aggregate-truck-platon-rate" min="0" step="any" value="0"><span class="unit">₽/км</span></div>
     </div>
     <p class="dialog-error" id="aggregate-truck-dialog-error" hidden></p>
     <div class="dialog-actions">

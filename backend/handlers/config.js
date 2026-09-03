@@ -10,11 +10,12 @@ const { genToken } = require('../tokens');
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT fuel_price_default, neighbor_city_surcharge, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
+    'SELECT fuel_price_default, urea_price_default, neighbor_city_surcharge, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
     fuelPriceDefault: Number(row.fuel_price_default),
+    ureaPriceDefault: Number(row.urea_price_default),
     neighborCitySurcharge: Number(row.neighbor_city_surcharge)
   };
   if (role === 'admin') {
@@ -31,6 +32,10 @@ async function update(body, role) {
   if (body.fuelPriceDefault !== undefined) {
     values.push(num(body.fuelPriceDefault, 'fuelPriceDefault'));
     sets.push(`fuel_price_default = $${values.length}`);
+  }
+  if (body.ureaPriceDefault !== undefined) {
+    values.push(num(body.ureaPriceDefault, 'ureaPriceDefault'));
+    sets.push(`urea_price_default = $${values.length}`);
   }
   if (body.neighborCitySurcharge !== undefined) {
     values.push(num(body.neighborCitySurcharge, 'neighborCitySurcharge'));

@@ -15,6 +15,7 @@ function rowToMaterial(row) {
       truckId: row.delivery_truck_id,
       distanceKm: Number(row.delivery_distance_km),
       fuelPricePerLiter: Number(row.delivery_fuel_price_per_liter),
+      ureaPricePerLiter: Number(row.delivery_urea_price_per_liter),
       driverSurcharge: Number(row.delivery_driver_surcharge),
       manualCostPerUnit: Number(row.delivery_manual_cost_per_unit)
     }
@@ -30,6 +31,7 @@ async function sanitizeDelivery(client, delivery) {
       truckId: null,
       distanceKm: 0,
       fuelPricePerLiter: 0,
+      ureaPricePerLiter: 0,
       driverSurcharge: 0,
       manualCostPerUnit: num(d.manualCostPerUnit, 'delivery.manualCostPerUnit')
     };
@@ -43,6 +45,7 @@ async function sanitizeDelivery(client, delivery) {
     truckId: d.truckId,
     distanceKm: num(d.distanceKm, 'delivery.distanceKm'),
     fuelPricePerLiter: num(d.fuelPricePerLiter, 'delivery.fuelPricePerLiter'),
+    ureaPricePerLiter: num(d.ureaPricePerLiter, 'delivery.ureaPricePerLiter'),
     driverSurcharge: num(d.driverSurcharge, 'delivery.driverSurcharge'),
     manualCostPerUnit: 0
   };
@@ -74,9 +77,9 @@ async function create(body) {
 
     const id = db.genId('mat');
     await client.query(
-      `INSERT INTO materials (id, plant_id, name, unit, price, loss_percent, delivery_own_transport, delivery_truck_id, delivery_distance_km, delivery_fuel_price_per_liter, delivery_driver_surcharge, delivery_manual_cost_per_unit)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [id, plantId, name, unit, price, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.driverSurcharge, d.manualCostPerUnit]
+      `INSERT INTO materials (id, plant_id, name, unit, price, loss_percent, delivery_own_transport, delivery_truck_id, delivery_distance_km, delivery_fuel_price_per_liter, delivery_urea_price_per_liter, delivery_driver_surcharge, delivery_manual_cost_per_unit)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [id, plantId, name, unit, price, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.ureaPricePerLiter, d.driverSurcharge, d.manualCostPerUnit]
     );
     const { rows } = await client.query('SELECT * FROM materials WHERE id = $1', [id]);
     return rowToMaterial(rows[0]);
@@ -102,9 +105,9 @@ async function update(id, body) {
     const d = await sanitizeDelivery(client, body.delivery);
 
     await client.query(
-      `UPDATE materials SET plant_id=$2, name=$3, unit=$4, price=$5, loss_percent=$6, delivery_own_transport=$7, delivery_truck_id=$8, delivery_distance_km=$9, delivery_fuel_price_per_liter=$10, delivery_driver_surcharge=$11, delivery_manual_cost_per_unit=$12
+      `UPDATE materials SET plant_id=$2, name=$3, unit=$4, price=$5, loss_percent=$6, delivery_own_transport=$7, delivery_truck_id=$8, delivery_distance_km=$9, delivery_fuel_price_per_liter=$10, delivery_urea_price_per_liter=$11, delivery_driver_surcharge=$12, delivery_manual_cost_per_unit=$13
        WHERE id=$1`,
-      [id, plantId, name, unit, price, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.driverSurcharge, d.manualCostPerUnit]
+      [id, plantId, name, unit, price, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.ureaPricePerLiter, d.driverSurcharge, d.manualCostPerUnit]
     );
     const { rows } = await client.query('SELECT * FROM materials WHERE id = $1', [id]);
     return rowToMaterial(rows[0]);

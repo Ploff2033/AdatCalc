@@ -8,6 +8,7 @@
   var testPriceDirty = false;
   var testPriceNetStored = 0;
   var fuelPriceDirty = false;
+  var ureaPriceDirty = false;
   var submitAttempted = false;
   var lastCalc = null;
 
@@ -17,7 +18,7 @@
     'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct'
   ];
   var deliveryOutputIds = [
-    'round-trip', 'fuel-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
+    'round-trip', 'fuel-cost', 'urea-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
     'delivery-revenue', 'delivery-profit', 'delivery-margin'
   ];
   var totalOutputIds = ['revenue-total', 'profit-total', 'profit-per-m3', 'margin-total'];
@@ -111,6 +112,8 @@
     deliveryChargeInput.disabled = selfPickup;
     document.getElementById('fuel-price').disabled = selfPickup;
     document.getElementById('fuel-price-reset').disabled = selfPickup;
+    document.getElementById('urea-price').disabled = selfPickup;
+    document.getElementById('urea-price-reset').disabled = selfPickup;
     deliverySection.hidden = selfPickup;
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
@@ -220,8 +223,15 @@
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
 
+    var ureaPriceInput = document.getElementById('urea-price');
+    var configUreaPrice = data.config.ureaPriceDefault || 0;
+    if (!ureaPriceDirty) {
+      NumericInput.setFormattedValue(ureaPriceInput, configUreaPrice);
+    }
+    var ureaPrice = NumericInput.parseNumber(ureaPriceInput.value) || 0;
+
     var deliveryReady = selfPickup || (!!mixer && !distMissing);
-    var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
+    var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
       surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0,
       deliveryProfit = 0, deliveryMarginPercent = 0;
 
@@ -231,13 +241,15 @@
       var fuelRate = mixer.fuelRate;
       var amortPerKm = Calc.amortPerKm(mixer);
       fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
+      ureaCostPerTrip = roundTrip * ((mixer.ureaRate || 0) / 100) * ureaPrice;
       amortCostPerTrip = roundTrip * amortPerKm;
       neighborCity = nbCityInput.checked;
       surchargePerTrip = neighborCity ? neighborCitySurcharge : 0;
-      deliveryCostTotal = (fuelCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
+      deliveryCostTotal = (fuelCostPerTrip + ureaCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
 
       document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
       document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
+      document.getElementById('urea-cost').textContent = Format.fmt(ureaCostPerTrip, 2);
       document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
       document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
       document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
@@ -304,6 +316,8 @@
       saleVolume: saleVolume,
       distanceKm: selfPickup ? 0 : dist,
       fuelPricePerLiter: fuelPrice,
+      ureaPricePerLiter: ureaPrice,
+      ureaCostPerTrip: ureaCostPerTrip,
       neighborCity: neighborCity,
       surchargePerTrip: surchargePerTrip,
       tripCount: trips,
@@ -345,6 +359,8 @@
     testPriceNetStored = 0;
     document.getElementById('fuel-price').value = '';
     fuelPriceDirty = false;
+    document.getElementById('urea-price').value = '';
+    ureaPriceDirty = false;
     submitAttempted = false;
     selectedRecipeId = '';
     document.getElementById('main-recipe').value = '';
@@ -403,6 +419,7 @@
     initVatToggle();
 
     NumericInput.attach(document.getElementById('delivery-charge'));
+    NumericInput.attach(document.getElementById('urea-price'));
     inputIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', recalc);
     });
@@ -428,6 +445,16 @@
     });
     document.getElementById('fuel-price-reset').addEventListener('click', function () {
       fuelPriceDirty = false;
+      recalc();
+    });
+
+    NumericInput.attach(document.getElementById('urea-price'));
+    document.getElementById('urea-price').addEventListener('input', function () {
+      ureaPriceDirty = true;
+      recalc();
+    });
+    document.getElementById('urea-price-reset').addEventListener('click', function () {
+      ureaPriceDirty = false;
       recalc();
     });
 

@@ -7,12 +7,6 @@
   var nameInput = document.getElementById('plant-name');
   var submitBtn = document.getElementById('plant-form-submit');
 
-  function plantDeprMonthly(plant) {
-    var pd = plant.plantDepr;
-    if (!pd || !(pd.lifespanMonths > 0)) return 0;
-    return (pd.balance - pd.residual) / pd.lifespanMonths;
-  }
-
   function plantLink(plant) {
     return location.origin + location.pathname + '?token=' + encodeURIComponent(plant.accessToken);
   }
@@ -112,7 +106,7 @@
         '</div>';
       tile.querySelector('.tile-title').textContent = plant.name;
       tile.querySelector('.tile-meta').textContent =
-        Format.fmtNum(plant.targetOutput, 0, 'м³/мес') + ' · амортизация ' + Format.fmt(plantDeprMonthly(plant), 0) + '/мес';
+        Format.fmtNum(plant.targetOutput, 0, 'м³/мес') + ' · амортизация ' + Format.fmt(Calc.plantDeprMonthly(plant), 0) + '/мес';
       tile.querySelector('.tile-meta-access').textContent = plant.tokenLastUsedAt
         ? 'Посл. доступ по ссылке: ' + new Date(plant.tokenLastUsedAt).toLocaleString('ru-RU') + (plant.tokenLastUsedIp ? ' (' + plant.tokenLastUsedIp + ')' : '')
         : 'Ссылка ещё не использовалась';
@@ -129,7 +123,7 @@
     var orders = State.data.orders || [];
     var summary = State.data.personnelSummary || { byPlant: {}, sharedTotal: 0 };
 
-    var totalDepr = plants.reduce(function (sum, p) { return sum + plantDeprMonthly(p); }, 0);
+    var totalDepr = plants.reduce(function (sum, p) { return sum + Calc.plantDeprMonthly(p); }, 0);
     var totalOutput = plants.reduce(function (sum, p) { return sum + (p.targetOutput || 0); }, 0);
     var totalPayroll = plants.reduce(function (sum, p) { return sum + ((summary.byPlant && summary.byPlant[p.id]) || 0); }, 0) + (summary.sharedTotal || 0);
     var totalProfit = orders.reduce(function (sum, o) { return sum + (o.totalProfit || 0); }, 0);
@@ -201,11 +195,48 @@
       var cells = tr.querySelectorAll('td');
       cells[0].textContent = plant.name;
       cells[1].textContent = Format.fmtNum(plant.targetOutput, 0, 'м³');
-      cells[2].textContent = Format.fmt(plantDeprMonthly(plant), 0);
+      cells[2].textContent = Format.fmt(Calc.plantDeprMonthly(plant), 0);
       cells[3].textContent = Format.fmt(plant.utilitiesMonthly || 0, 0);
       cells[4].textContent = Format.fmtNum(plantOrders.length, 0, '');
       cells[5].textContent = Format.fmt(profit, 0);
       cells[5].classList.add(profit >= 0 ? 'positive' : 'negative');
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Начало текущего календарного месяца (локальное время браузера — этот
+  // раздел только для admin, точность до часового пояса тут не критична).
+  function monthStartMs() {
+    var d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  }
+
+  function renderBreakevenTable() {
+    var tbody = document.getElementById('dash-breakeven-table-body');
+    tbody.innerHTML = '';
+    var plants = State.data.plants;
+    var orders = State.data.orders || [];
+    var summary = State.data.personnelSummary || { byPlant: {}, sharedTotal: 0 };
+    var monthStart = monthStartMs();
+
+    plants.forEach(function (plant) {
+      var fixedCosts = Calc.fixedCostsMonthly(plant, plants, summary);
+      var contribution = orders
+        .filter(function (o) { return o.plantId === plant.id && new Date(o.createdAt).getTime() >= monthStart; })
+        .reduce(function (sum, o) { return sum + Calc.orderContribution(o); }, 0);
+      var coveredPercent = fixedCosts > 0 ? (contribution / fixedCosts) * 100 : (contribution > 0 ? 100 : 0);
+      var realProfit = contribution - fixedCosts;
+
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
+      var cells = tr.querySelectorAll('td');
+      cells[0].textContent = plant.name;
+      cells[1].textContent = Format.fmt(fixedCosts, 0);
+      cells[2].textContent = Format.fmt(contribution, 0);
+      cells[3].textContent = Format.fmtNum(Math.max(0, coveredPercent), 0, '%');
+      cells[3].classList.add(coveredPercent >= 100 ? 'positive' : 'negative');
+      cells[4].textContent = Format.fmt(realProfit, 0);
+      cells[4].classList.add(realProfit >= 0 ? 'positive' : 'negative');
       tbody.appendChild(tr);
     });
   }
@@ -226,6 +257,7 @@
     renderPlantTiles();
     renderSummary();
     renderPlantTable();
+    renderBreakevenTable();
     renderUniversalToken();
   }
 

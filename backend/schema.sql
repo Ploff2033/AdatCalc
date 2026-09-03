@@ -32,9 +32,13 @@ CREATE TABLE IF NOT EXISTS mixers (
   balance NUMERIC NOT NULL,
   residual NUMERIC NOT NULL,
   mileage NUMERIC NOT NULL,
-  fuel_rate NUMERIC NOT NULL
+  fuel_rate NUMERIC NOT NULL,
+  urea_rate NUMERIC NOT NULL DEFAULT 0
 );
 
+-- platon_rate_per_km — ставка «Платона» (₽/км), применяется только к доставке
+-- инертных (аналог топлива, но без отдельной "цены" — сама ставка уже
+-- полная, вводится один раз на карточке техники).
 CREATE TABLE IF NOT EXISTS aggregate_trucks (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -42,7 +46,9 @@ CREATE TABLE IF NOT EXISTS aggregate_trucks (
   balance NUMERIC NOT NULL,
   residual NUMERIC NOT NULL,
   mileage NUMERIC NOT NULL,
-  fuel_rate NUMERIC NOT NULL
+  fuel_rate NUMERIC NOT NULL,
+  urea_rate NUMERIC NOT NULL DEFAULT 0,
+  platon_rate_per_km NUMERIC NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS materials (
@@ -56,6 +62,7 @@ CREATE TABLE IF NOT EXISTS materials (
   delivery_truck_id TEXT REFERENCES aggregate_trucks(id) ON DELETE RESTRICT,
   delivery_distance_km NUMERIC NOT NULL DEFAULT 0,
   delivery_fuel_price_per_liter NUMERIC NOT NULL DEFAULT 0,
+  delivery_urea_price_per_liter NUMERIC NOT NULL DEFAULT 0,
   delivery_driver_surcharge NUMERIC NOT NULL DEFAULT 0,
   delivery_manual_cost_per_unit NUMERIC NOT NULL DEFAULT 0
 );
@@ -87,6 +94,8 @@ CREATE TABLE IF NOT EXISTS orders (
   sale_volume NUMERIC NOT NULL,
   distance_km NUMERIC NOT NULL,
   fuel_price_per_liter NUMERIC NOT NULL,
+  urea_price_per_liter NUMERIC NOT NULL DEFAULT 0,
+  urea_cost_per_trip NUMERIC NOT NULL DEFAULT 0,
   neighbor_city BOOLEAN NOT NULL DEFAULT FALSE,
   surcharge_per_trip NUMERIC NOT NULL,
   trip_count NUMERIC NOT NULL,
@@ -131,6 +140,7 @@ CREATE TABLE IF NOT EXISTS order_materials (
 CREATE TABLE IF NOT EXISTS config (
   id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   fuel_price_default NUMERIC NOT NULL DEFAULT 0,
+  urea_price_default NUMERIC NOT NULL DEFAULT 0,
   neighbor_city_surcharge NUMERIC NOT NULL DEFAULT 0,
   admin_salt TEXT NOT NULL,
   admin_hash TEXT NOT NULL,
@@ -174,3 +184,10 @@ ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_worker_token TEXT;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_token_last_used_at TIMESTAMPTZ;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS universal_token_last_used_ip TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_applied BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE mixers ADD COLUMN IF NOT EXISTS urea_rate NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS urea_rate NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS platon_rate_per_km NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS delivery_urea_price_per_liter NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS urea_price_per_liter NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS urea_cost_per_trip NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS urea_price_default NUMERIC NOT NULL DEFAULT 0;

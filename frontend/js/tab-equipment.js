@@ -11,6 +11,7 @@
   var residualInput = document.getElementById('mixer-residual');
   var mileageInput = document.getElementById('mixer-mileage');
   var fuelRateInput = document.getElementById('mixer-fuel-rate');
+  var ureaRateInput = document.getElementById('mixer-urea-rate');
 
   function openForCreate() {
     titleEl.textContent = 'Новый миксер';
@@ -21,6 +22,7 @@
     residualInput.value = '';
     mileageInput.value = '';
     fuelRateInput.value = '';
+    ureaRateInput.value = '0';
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -34,6 +36,7 @@
     NumericInput.setFormattedValue(residualInput, mixer.residual);
     mileageInput.value = mixer.mileage;
     fuelRateInput.value = mixer.fuelRate;
+    ureaRateInput.value = mixer.ureaRate || 0;
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -50,7 +53,8 @@
       balance: NumericInput.parseNumber(balanceInput.value),
       residual: NumericInput.parseNumber(residualInput.value),
       mileage: parseFloat(mileageInput.value),
-      fuelRate: parseFloat(fuelRateInput.value)
+      fuelRate: parseFloat(fuelRateInput.value),
+      ureaRate: parseFloat(ureaRateInput.value) || 0
     };
     try {
       if (idInput.value) {
@@ -110,6 +114,8 @@
   var atResidualInput = document.getElementById('aggregate-truck-residual');
   var atMileageInput = document.getElementById('aggregate-truck-mileage');
   var atFuelRateInput = document.getElementById('aggregate-truck-fuel-rate');
+  var atUreaRateInput = document.getElementById('aggregate-truck-urea-rate');
+  var atPlatonRateInput = document.getElementById('aggregate-truck-platon-rate');
 
   function openTruckForCreate() {
     atTitleEl.textContent = 'Новая техника';
@@ -120,6 +126,8 @@
     atResidualInput.value = '';
     atMileageInput.value = '';
     atFuelRateInput.value = '';
+    atUreaRateInput.value = '0';
+    atPlatonRateInput.value = '0';
     atErrorEl.hidden = true;
     atDialog.showModal();
   }
@@ -133,6 +141,8 @@
     NumericInput.setFormattedValue(atResidualInput, truck.residual);
     atMileageInput.value = truck.mileage;
     atFuelRateInput.value = truck.fuelRate;
+    atUreaRateInput.value = truck.ureaRate || 0;
+    atPlatonRateInput.value = truck.platonRatePerKm || 0;
     atErrorEl.hidden = true;
     atDialog.showModal();
   }
@@ -149,7 +159,9 @@
       balance: NumericInput.parseNumber(atBalanceInput.value),
       residual: NumericInput.parseNumber(atResidualInput.value),
       mileage: parseFloat(atMileageInput.value),
-      fuelRate: parseFloat(atFuelRateInput.value)
+      fuelRate: parseFloat(atFuelRateInput.value),
+      ureaRate: parseFloat(atUreaRateInput.value) || 0,
+      platonRatePerKm: parseFloat(atPlatonRateInput.value) || 0
     };
     try {
       if (atIdInput.value) {
@@ -192,7 +204,9 @@
         '<div class="tile-value"></div>' +
         '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="copy-btn">Копировать</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = truck.name;
-      tile.querySelector('.tile-meta').textContent = Format.fmtNum(truck.capacity, 1, 'т') + ' · ' + Format.fmtNum(truck.fuelRate, 1, 'л/100км');
+      tile.querySelector('.tile-meta').textContent = Format.fmtNum(truck.capacity, 1, 'т') + ' · ' + Format.fmtNum(truck.fuelRate, 1, 'л/100км')
+        + (truck.ureaRate ? ' · мочевина ' + Format.fmtNum(truck.ureaRate, 1, 'л/100км') : '')
+        + (truck.platonRatePerKm ? ' · Платон ' + Format.fmt(truck.platonRatePerKm, 2) + '/км' : '');
       tile.querySelector('.tile-value').textContent = Format.fmt(amortPerKm, 2) + '/км';
       tile.querySelector('.edit-btn').addEventListener('click', function () { openTruckForEdit(truck); });
       tile.querySelector('.copy-btn').addEventListener('click', function () { openTruckForDuplicate(truck); });
@@ -222,6 +236,28 @@
   function renderFuelPriceDefault() {
     if (document.activeElement === fuelPriceDefaultInput) return;
     fuelPriceDefaultInput.value = State.data.config.fuelPriceDefault || 0;
+  }
+
+  var ureaPriceDefaultInput = document.getElementById('urea-price-default');
+  var ureaPriceSaveTimer = null;
+
+  function scheduleUreaPriceSave() {
+    clearTimeout(ureaPriceSaveTimer);
+    ureaPriceSaveTimer = setTimeout(saveUreaPriceDefault, 500);
+  }
+
+  async function saveUreaPriceDefault() {
+    try {
+      await Api.put('/config', { ureaPriceDefault: parseFloat(ureaPriceDefaultInput.value) || 0 });
+      await State.loadAll();
+    } catch (err) {
+      alert('Не удалось сохранить цену мочевины: ' + err.message);
+    }
+  }
+
+  function renderUreaPriceDefault() {
+    if (document.activeElement === ureaPriceDefaultInput) return;
+    ureaPriceDefaultInput.value = State.data.config.ureaPriceDefault || 0;
   }
 
   var neighborSurchargeInput = document.getElementById('neighbor-city-surcharge');
@@ -264,6 +300,7 @@
     NumericInput.attach(atResidualInput);
 
     fuelPriceDefaultInput.addEventListener('input', scheduleFuelPriceSave);
+    ureaPriceDefaultInput.addEventListener('input', scheduleUreaPriceSave);
     neighborSurchargeInput.addEventListener('input', scheduleNeighborSurchargeSave);
   }
 
@@ -277,6 +314,7 @@
     renderTiles();
     renderTruckTiles();
     renderFuelPriceDefault();
+    renderUreaPriceDefault();
     renderNeighborSurcharge();
     renderAdminOnlyCards();
   }

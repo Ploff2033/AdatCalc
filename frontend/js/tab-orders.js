@@ -77,6 +77,13 @@
           '<div class="line"><span class="l">Коммуналка</span><span class="v" data-f="utilitiesCost">—</span></div>' +
           '<div class="line total"><span class="l">Себестоимость 1 м³</span><span class="v" data-f="costPerM3">—</span></div>' +
         '</div>' +
+        '<div class="split-col-label">Расход на весь заказ (себестоимость × объём)</div>' +
+        '<div class="breakdown compact">' +
+          '<div class="line"><span class="l">Материалы</span><span class="v" data-f="materialsCostTotal">—</span></div>' +
+          '<div class="line"><span class="l">ФОТ</span><span class="v" data-f="payrollCostTotal">—</span></div>' +
+          '<div class="line"><span class="l">Амортизация завода</span><span class="v" data-f="deprCostTotal">—</span></div>' +
+          '<div class="line"><span class="l">Коммуналка</span><span class="v" data-f="utilitiesCostTotal">—</span></div>' +
+        '</div>' +
         '<div class="split-col-label">Расход материалов (на весь заказ)</div>' +
         '<div class="breakdown compact" data-materials-list></div>' +
         '<div class="split-cols">' +
@@ -137,6 +144,10 @@
       'totalRevenue', 'totalProfit', 'profitPerM3'
     ].forEach(function (key) {
       fillAll(card, key, Format.fmt(order[key] || 0, 2));
+    });
+
+    ['materialsCost', 'payrollCost', 'deprCost', 'utilitiesCost'].forEach(function (key) {
+      fillAll(card, key + 'Total', Format.fmt((order[key] || 0) * (order.saleVolume || 0), 2));
     });
     fillAll(card, 'roundTripKm', Format.fmtNum(order.roundTripKm || 0, 0, 'км'));
     fillAll(card, 'tripCount', Format.fmtNum(order.tripCount || 0, 0, 'рейс(ов)'));
