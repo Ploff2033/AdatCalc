@@ -207,6 +207,30 @@
   var MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
   var PLANT_COLORS = ['#3e7a52', '#b5502a', '#4a6fa5', '#8a6a3f', '#7a4a8a', '#2b8f8a', '#a5334a', '#5a8a2b'];
   var breakevenMonthValue = '';
+  var breakevenScopeValue = '';
+
+  // Пусто — показываем все заводы + "Итого" на одном графике (масштаб по
+  // самому крупному %). Конкретный завод — только его линия, в изоляции:
+  // иначе один завод с сотнями % покрытия визуально "съедает" другой,
+  // который ещё в минусе (см. скриншот пользователя — Теберда на фоне
+  // Джаги выглядела плоской нулевой линией).
+  function populateBreakevenScopeOptions() {
+    var select = document.getElementById('dash-breakeven-scope');
+    select.innerHTML = '';
+    var allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'Все заводы';
+    select.appendChild(allOpt);
+    State.data.plants.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      select.appendChild(opt);
+    });
+    var valid = State.data.plants.some(function (p) { return p.id === breakevenScopeValue; });
+    select.value = valid ? breakevenScopeValue : '';
+    breakevenScopeValue = select.value;
+  }
 
   // 'YYYY-MM' -> год/месяц + границы месяца + до какого дня есть смысл
   // считать (сегодня, если это текущий месяц — будущих дней у прошлого
@@ -309,6 +333,10 @@
     var series = [{ id: null, name: 'Итого', color: 'var(--accent)' }].concat(
       plants.map(function (p, i) { return { id: p.id, name: p.name, color: PLANT_COLORS[i % PLANT_COLORS.length] }; })
     );
+    // Изоляция одного завода — своя шкала, без "Итого" и остальных заводов.
+    if (breakevenScopeValue) {
+      series = series.filter(function (s) { return s.id === breakevenScopeValue; });
+    }
 
     var totalFixed = plants.reduce(function (sum, p) { return sum + Calc.fixedCostsMonthly(p, plants, summary); }, 0);
 
@@ -373,6 +401,7 @@
   }
 
   function renderBreakeven() {
+    populateBreakevenScopeOptions();
     var range = monthRange(breakevenMonthValue || document.getElementById('dash-breakeven-month').value);
     renderBreakevenTable(range);
     renderBreakevenChart(range);
@@ -391,6 +420,10 @@
     document.getElementById('dash-breakeven-month').addEventListener('change', function () {
       breakevenMonthValue = this.value;
       renderBreakeven();
+    });
+    document.getElementById('dash-breakeven-scope').addEventListener('change', function () {
+      breakevenScopeValue = this.value;
+      renderBreakevenChart(monthRange(breakevenMonthValue || document.getElementById('dash-breakeven-month').value));
     });
   }
 

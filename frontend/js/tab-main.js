@@ -18,7 +18,7 @@
     'mix-breakeven-price', 'mix-safety-margin', 'mix-safety-margin-pct'
   ];
   var deliveryOutputIds = [
-    'round-trip', 'fuel-cost', 'urea-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
+    'round-trip', 'fuel-cost', 'urea-cost', 'platon-cost', 'amort-cost', 'surcharge-cost', 'trip-count', 'delivery-cost-total',
     'delivery-revenue', 'delivery-profit', 'delivery-margin'
   ];
   var totalOutputIds = ['revenue-total', 'profit-total', 'profit-per-m3', 'margin-total'];
@@ -231,7 +231,7 @@
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
 
     var deliveryReady = selfPickup || (!!mixer && !distMissing);
-    var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
+    var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
       surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0,
       deliveryProfit = 0, deliveryMarginPercent = 0;
 
@@ -242,14 +242,16 @@
       var amortPerKm = Calc.amortPerKm(mixer);
       fuelCostPerTrip = roundTrip * (fuelRate / 100) * fuelPrice;
       ureaCostPerTrip = roundTrip * ((mixer.ureaRate || 0) / 100) * ureaPrice;
+      platonCostPerTrip = roundTrip * (mixer.platonRatePerKm || 0);
       amortCostPerTrip = roundTrip * amortPerKm;
       neighborCity = nbCityInput.checked;
       surchargePerTrip = neighborCity ? neighborCitySurcharge : 0;
-      deliveryCostTotal = (fuelCostPerTrip + ureaCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
+      deliveryCostTotal = (fuelCostPerTrip + ureaCostPerTrip + platonCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
 
       document.getElementById('round-trip').textContent = Format.fmtNum(roundTrip, 0, 'км');
       document.getElementById('fuel-cost').textContent = Format.fmt(fuelCostPerTrip, 2);
       document.getElementById('urea-cost').textContent = Format.fmt(ureaCostPerTrip, 2);
+      document.getElementById('platon-cost').textContent = Format.fmt(platonCostPerTrip, 2);
       document.getElementById('amort-cost').textContent = Format.fmt(amortCostPerTrip, 2);
       document.getElementById('surcharge-cost').textContent = Format.fmt(surchargePerTrip, 2);
       document.getElementById('trip-count').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
@@ -318,6 +320,7 @@
       fuelPricePerLiter: fuelPrice,
       ureaPricePerLiter: ureaPrice,
       ureaCostPerTrip: ureaCostPerTrip,
+      platonCostPerTrip: platonCostPerTrip,
       neighborCity: neighborCity,
       surchargePerTrip: surchargePerTrip,
       tripCount: trips,

@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS mixers (
   residual NUMERIC NOT NULL,
   mileage NUMERIC NOT NULL,
   fuel_rate NUMERIC NOT NULL,
-  urea_rate NUMERIC NOT NULL DEFAULT 0
+  urea_rate NUMERIC NOT NULL DEFAULT 0,
+  platon_rate_per_km NUMERIC NOT NULL DEFAULT 0
 );
 
 -- platon_rate_per_km — ставка «Платона» (₽/км), применяется только к доставке
@@ -96,6 +97,7 @@ CREATE TABLE IF NOT EXISTS orders (
   fuel_price_per_liter NUMERIC NOT NULL,
   urea_price_per_liter NUMERIC NOT NULL DEFAULT 0,
   urea_cost_per_trip NUMERIC NOT NULL DEFAULT 0,
+  platon_cost_per_trip NUMERIC NOT NULL DEFAULT 0,
   neighbor_city BOOLEAN NOT NULL DEFAULT FALSE,
   surcharge_per_trip NUMERIC NOT NULL,
   trip_count NUMERIC NOT NULL,
@@ -191,3 +193,5 @@ ALTER TABLE materials ADD COLUMN IF NOT EXISTS delivery_urea_price_per_liter NUM
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS urea_price_per_liter NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS urea_cost_per_trip NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS urea_price_default NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE mixers ADD COLUMN IF NOT EXISTS platon_rate_per_km NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS platon_cost_per_trip NUMERIC NOT NULL DEFAULT 0;

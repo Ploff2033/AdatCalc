@@ -12,6 +12,7 @@
   var mileageInput = document.getElementById('mixer-mileage');
   var fuelRateInput = document.getElementById('mixer-fuel-rate');
   var ureaRateInput = document.getElementById('mixer-urea-rate');
+  var platonRateInput = document.getElementById('mixer-platon-rate');
 
   function openForCreate() {
     titleEl.textContent = 'Новый миксер';
@@ -23,6 +24,7 @@
     mileageInput.value = '';
     fuelRateInput.value = '';
     ureaRateInput.value = '0';
+    platonRateInput.value = '0';
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -37,6 +39,7 @@
     mileageInput.value = mixer.mileage;
     fuelRateInput.value = mixer.fuelRate;
     ureaRateInput.value = mixer.ureaRate || 0;
+    platonRateInput.value = mixer.platonRatePerKm || 0;
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -54,7 +57,8 @@
       residual: NumericInput.parseNumber(residualInput.value),
       mileage: parseFloat(mileageInput.value),
       fuelRate: parseFloat(fuelRateInput.value),
-      ureaRate: parseFloat(ureaRateInput.value) || 0
+      ureaRate: parseFloat(ureaRateInput.value) || 0,
+      platonRatePerKm: parseFloat(platonRateInput.value) || 0
     };
     try {
       if (idInput.value) {
@@ -93,7 +97,9 @@
         '<div class="tile-value"></div>' +
         '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="copy-btn">Копировать</button><button type="button" class="danger del-btn">Удалить</button></div>';
       tile.querySelector('.tile-title').textContent = mixer.name;
-      tile.querySelector('.tile-meta').textContent = Format.fmtNum(mixer.capacity, 1, 'м³') + ' · ' + Format.fmtNum(mixer.fuelRate, 1, 'л/100км');
+      tile.querySelector('.tile-meta').textContent = Format.fmtNum(mixer.capacity, 1, 'м³') + ' · ' + Format.fmtNum(mixer.fuelRate, 1, 'л/100км')
+        + (mixer.ureaRate ? ' · мочевина ' + Format.fmtNum(mixer.ureaRate, 1, 'л/100км') : '')
+        + (mixer.platonRatePerKm ? ' · Платон ' + Format.fmt(mixer.platonRatePerKm, 2) + '/км' : '');
       tile.querySelector('.tile-value').textContent = Format.fmt(amortPerKm, 2) + '/км';
       tile.querySelector('.edit-btn').addEventListener('click', function () { openForEdit(mixer); });
       tile.querySelector('.copy-btn').addEventListener('click', function () { openForDuplicate(mixer); });

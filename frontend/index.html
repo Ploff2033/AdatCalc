@@ -297,6 +297,7 @@
                   <div class="line"><span class="l">Пробег (1 рейс)</span><span class="v" id="round-trip">—</span></div>
                   <div class="line"><span class="l">Топливо (1 рейс)</span><span class="v" id="fuel-cost">—</span></div>
                   <div class="line"><span class="l">Мочевина (1 рейс)</span><span class="v" id="urea-cost">—</span></div>
+                  <div class="line"><span class="l">Платон (1 рейс)</span><span class="v" id="platon-cost">—</span></div>
                   <div class="line"><span class="l">Амортизация (1 рейс)</span><span class="v" id="amort-cost">—</span></div>
                   <div class="line"><span class="l">Доплата водителю (1 рейс)</span><span class="v" id="surcharge-cost">—</span></div>
                   <div class="line"><span class="l">Количество рейсов</span><span class="v" id="trip-count">—</span></div>
@@ -447,11 +448,14 @@
     <section class="card">
       <div class="card-head">
         <span class="num">04</span><h2>Точка безубыточности</h2>
-        <select class="select breakeven-month-select" id="dash-breakeven-month"></select>
+        <div class="breakeven-filters">
+          <select class="select breakeven-scope-select" id="dash-breakeven-scope"></select>
+          <select class="select breakeven-month-select" id="dash-breakeven-month"></select>
+        </div>
       </div>
       <p class="hint">Постоянные расходы завода (ФОТ + амортизация + коммуналка) за месяц — и сколько из них уже покрыто маржой фактических заказов. Пока не покрыто полностью, реальной чистой прибыли ещё нет, даже если по отдельным заказам она уже показывает плюс.</p>
       <div class="breakeven-chart-wrap">
-        <svg id="dash-breakeven-chart" viewBox="0 0 800 260" preserveAspectRatio="none"></svg>
+        <svg id="dash-breakeven-chart" viewBox="0 0 800 260"></svg>
       </div>
       <div class="breakeven-legend" id="dash-breakeven-legend"></div>
       <div class="dash-table-wrap">
@@ -677,6 +681,10 @@
     <div class="field-group">
       <label for="mixer-urea-rate">Расход мочевины (AdBlue)</label>
       <div class="field"><input type="number" id="mixer-urea-rate" min="0" step="any" value="0"><span class="unit">л/100км</span></div>
+    </div>
+    <div class="field-group">
+      <label for="mixer-platon-rate">Платон</label>
+      <div class="field"><input type="number" id="mixer-platon-rate" min="0" step="any" value="0"><span class="unit">₽/км</span></div>
     </div>
     <p class="dialog-error" id="mixer-dialog-error" hidden></p>
     <div class="dialog-actions">
