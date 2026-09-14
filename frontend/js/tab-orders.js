@@ -40,6 +40,14 @@
     return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  // Значение для <input type="datetime-local"> — локальное время без таймзоны
+  // (в отличие от toISOString(), которая бы отдала UTC и сдвинула часы на экране).
+  function toDatetimeLocalValue(iso) {
+    var d = new Date(iso);
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
   function dayKey(iso) {
     var d = new Date(iso);
     return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
@@ -68,6 +76,30 @@
     }
   }
 
+  function openEditDate(order) {
+    document.getElementById('order-date-id').value = order.id;
+    document.getElementById('order-date-input').value = toDatetimeLocalValue(order.createdAt);
+    document.getElementById('order-date-dialog-error').hidden = true;
+    document.getElementById('order-date-dialog').showModal();
+  }
+
+  async function handleEditDateSubmit(e) {
+    e.preventDefault();
+    var errorEl = document.getElementById('order-date-dialog-error');
+    errorEl.hidden = true;
+    var id = document.getElementById('order-date-id').value;
+    var inputValue = document.getElementById('order-date-input').value;
+    if (!inputValue) return;
+    try {
+      await Api.put('/orders/' + id + '/date', { createdAt: new Date(inputValue).toISOString() });
+      document.getElementById('order-date-dialog').close();
+      await State.loadAll();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+    }
+  }
+
   function buildOrderCard(order) {
     var card = document.createElement('div');
     card.className = 'order-card';
@@ -75,7 +107,10 @@
       '<div class="order-card-head">' +
         '<div class="order-card-head-main">' +
           '<div class="order-title"><span data-title-text></span><span class="order-vat-badge" data-vat-badge hidden>С НДС</span></div>' +
-          '<div class="order-meta"></div>' +
+          '<div class="order-meta-row">' +
+            '<div class="order-meta"></div>' +
+            '<button type="button" class="icon-btn edit-date-btn" title="Изменить дату" hidden>✎</button>' +
+          '</div>' +
         '</div>' +
         '<div class="order-summary-figures">' +
           '<div class="order-figure"><span class="order-figure-label">К оплате</span><span class="order-figure-value big" data-f="totalRevenue">—</span></div>' +
@@ -202,13 +237,17 @@
     var details = card.querySelector('.order-details');
     var toggleBtn = card.querySelector('.toggle-btn');
     head.addEventListener('click', function (e) {
-      if (e.target.closest('.del-btn')) return;
+      if (e.target.closest('.del-btn') || e.target.closest('.edit-date-btn')) return;
       var willOpen = details.hidden;
       details.hidden = !willOpen;
       toggleBtn.classList.toggle('open', willOpen);
       toggleBtn.title = willOpen ? 'Свернуть' : 'Развернуть';
     });
     card.querySelector('.del-btn').addEventListener('click', function () { handleDelete(order); });
+
+    var editDateBtn = card.querySelector('.edit-date-btn');
+    editDateBtn.hidden = !(window.Auth && Auth.isAtLeast('manager'));
+    editDateBtn.addEventListener('click', function (e) { e.stopPropagation(); openEditDate(order); });
 
     return card;
   }
@@ -419,6 +458,10 @@
 
   function init() {
     document.getElementById('export-orders-btn').addEventListener('click', exportToExcel);
+    document.getElementById('order-date-form').addEventListener('submit', handleEditDateSubmit);
+    Array.prototype.forEach.call(document.getElementById('order-date-dialog').querySelectorAll('[data-close-dialog]'), function (btn) {
+      btn.addEventListener('click', function () { document.getElementById('order-date-dialog').close(); });
+    });
     document.getElementById('orders-plant-filter').addEventListener('change', function () {
       plantFilterValue = this.value;
       render();

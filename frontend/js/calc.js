@@ -35,13 +35,25 @@
   // напрямую, а не через payrollPerM3×targetOutput — при targetOutput=0 (ещё
   // не заполнили) деление на м³ обнулило бы реальный ФОТ, а тут это просто
   // сумма фактических месячных расходов, которую нужно "отбить" заказами.
-  function fixedCostsMonthly(plant, allPlants, personnelSummary) {
-    if (!plant) return 0;
+  //
+  // Разбита на ФОТ и (амортизация + коммуналка) отдельно — для водопада
+  // покрытия на дашборде: накопленная маржа закрывает сначала ФОТ, и только
+  // остаток идёт на амортизацию/коммуналку (см. renderBreakevenTable в
+  // tab-dashboard.js). fixedCostsMonthly() ниже — просто сумма обеих частей,
+  // для мест, где важен только итог, а не порядок покрытия.
+  function fixedCostsBreakdown(plant, allPlants, personnelSummary) {
+    if (!plant) return { payroll: 0, deprUtilities: 0, total: 0 };
     var totalOutput = (allPlants || []).reduce(function (sum, p) { return sum + (p.targetOutput || 0); }, 0);
     var ownPayroll = (personnelSummary && personnelSummary.byPlant && personnelSummary.byPlant[plant.id]) || 0;
     var sharedTotal = (personnelSummary && personnelSummary.sharedTotal) || 0;
     var sharedShare = totalOutput > 0 ? sharedTotal * ((plant.targetOutput || 0) / totalOutput) : 0;
-    return ownPayroll + sharedShare + plantDeprMonthly(plant) + (plant.utilitiesMonthly || 0);
+    var payroll = ownPayroll + sharedShare;
+    var deprUtilities = plantDeprMonthly(plant) + (plant.utilitiesMonthly || 0);
+    return { payroll: payroll, deprUtilities: deprUtilities, total: payroll + deprUtilities };
+  }
+
+  function fixedCostsMonthly(plant, allPlants, personnelSummary) {
+    return fixedCostsBreakdown(plant, allPlants, personnelSummary).total;
   }
 
   // Вклад заказа в покрытие постоянных расходов (маржинальная прибыль) —
@@ -125,6 +137,7 @@
     plantDeprMonthly: plantDeprMonthly,
     utilitiesPerM3: utilitiesPerM3,
     fixedCostsMonthly: fixedCostsMonthly,
+    fixedCostsBreakdown: fixedCostsBreakdown,
     orderContribution: orderContribution,
     materialEffectivePrice: materialEffectivePrice,
     materialLandedPrice: materialLandedPrice,

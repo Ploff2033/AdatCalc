@@ -563,6 +563,11 @@ section.card.compact{
 }
 .final-result.positive .value{ color:var(--positive); }
 .final-result.negative .value{ color:var(--negative); }
+.final-result .value-note{
+  font-size:12px;
+  color:var(--text-muted);
+  font-variant-numeric:tabular-nums;
+}
 .final-grid.compact{ gap:10px; }
 .final-grid.compact .final-result{ padding:8px 12px; }
 .final-grid.compact .final-result .value{ font-size:19px; }
@@ -793,10 +798,21 @@ section.card.compact{
   border-radius:6px;
   vertical-align:middle;
 }
+.order-meta-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-top:2px;
+}
 .order-meta{
   font-size:12px;
   color:var(--text-muted);
-  margin-top:2px;
+}
+.order-meta-row .edit-date-btn{
+  width:22px;
+  height:22px;
+  font-size:11px;
+  border-radius:5px;
 }
 .order-summary-figures{
   display:flex;

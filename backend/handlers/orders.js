@@ -185,4 +185,22 @@ async function remove(id) {
   if (!rowCount) throw new HttpError(404, 'Заказ не найден');
 }
 
-module.exports = { list, create, remove, ORDER_COLUMNS };
+// Дата заказа — единственное поле уже оформленного заказа, которое можно
+// поменять (остальное — неизменяемый снимок расчёта, см. sanitize() выше).
+// Нужно на случай, если заказ завели не на тот завод: его удаляют и заводят
+// заново на верном заводе, но новый заказ создаётся с текущим временем —
+// эта функция возвращает ему исходную дату/время.
+async function updateDate(id, createdAtRaw) {
+  const createdAt = str(createdAtRaw, 'createdAt');
+  const client = await db.pool.connect();
+  try {
+    const { rows } = await client.query('UPDATE orders SET created_at = $1 WHERE id = $2 RETURNING id', [createdAt, id]);
+    if (!rows.length) throw new HttpError(404, 'Заказ не найден');
+    const { rows: full } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
+    return rowToOrder(full[0], await fetchMaterials(client, id));
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { list, create, remove, updateDate, ORDER_COLUMNS };

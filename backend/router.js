@@ -178,6 +178,21 @@ const routes = [
   // своей ссылке (?token=) видит только заказы своего завода — см. scopeByToken.
   ...crudRoutes('/api/orders', orders, { read: null, write: null, scopeByToken: true }),
 
+  // Смена даты заказа — единственное разрешённое редактирование уже
+  // оформленного заказа (см. комментарий в handlers/orders.js). Только
+  // менеджер и выше — в отличие от создания/удаления заказов это не рутинное
+  // действие работника, а исправление задним числом, и открывать его всем
+  // по анонимной ссылке на завод не стоит.
+  {
+    method: 'PUT',
+    pattern: /^\/api\/orders\/([^/]+)\/date$/,
+    role: 'manager',
+    handler: async (req, res, m) => {
+      const body = await readBody(req);
+      sendJson(res, 200, await orders.updateDate(decodeURIComponent(m[1]), body.createdAt));
+    }
+  },
+
   { method: 'GET', pattern: /^\/api\/config$/, handler: async (req, res, m, role) => sendJson(res, 200, await config.get(role)) },
   {
     method: 'PUT',

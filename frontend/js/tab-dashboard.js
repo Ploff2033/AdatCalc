@@ -286,6 +286,19 @@
     return cumulative;
   }
 
+  // Сумма поля заказа за месяц для завода — та же логика фильтра по дате,
+  // что и в dailyCumulative(), но без накопления по дням (нужен только итог).
+  function sumInRange(orders, plantId, range, fn) {
+    var total = 0;
+    orders.forEach(function (o) {
+      if (plantId && o.plantId !== plantId) return;
+      var d = new Date(o.createdAt);
+      if (d < range.start || d >= range.end) return;
+      total += fn(o);
+    });
+    return total;
+  }
+
   function renderBreakevenTable(range) {
     var tbody = document.getElementById('dash-breakeven-table-body');
     tbody.innerHTML = '';
@@ -294,22 +307,35 @@
     var summary = State.data.personnelSummary || { byPlant: {}, sharedTotal: 0 };
 
     plants.forEach(function (plant) {
-      var fixedCosts = Calc.fixedCostsMonthly(plant, plants, summary);
+      var fixed = Calc.fixedCostsBreakdown(plant, plants, summary);
       var series = dailyCumulative(orders, plant.id, range);
       var contribution = series.length ? series[series.length - 1] : 0;
-      var coveredPercent = fixedCosts > 0 ? (contribution / fixedCosts) * 100 : (contribution > 0 ? 100 : 0);
-      var realProfit = contribution - fixedCosts;
+      var realProfit = contribution - fixed.total;
+      var materialsTotal = sumInRange(orders, plant.id, range, function (o) { return (o.materialsCost || 0) * (o.saleVolume || 0); });
+
+      // Водопад: накопленная маржа закрывает сначала ФОТ, остаток — на
+      // амортизацию с коммуналкой. Показываем отдельно, а не одним "Покрыто",
+      // потому что для решений вроде демпинга/премий важно знать, что именно
+      // ещё не покрыто — зарплаты или "бумажная" амортизация.
+      var payrollCovered = Math.min(Math.max(0, contribution), fixed.payroll);
+      var payrollPercent = fixed.payroll > 0 ? (payrollCovered / fixed.payroll) * 100 : (contribution > 0 ? 100 : 0);
+      var remainderAfterPayroll = Math.max(0, contribution - fixed.payroll);
+      var deprUtilCovered = Math.min(remainderAfterPayroll, fixed.deprUtilities);
+      var deprUtilPercent = fixed.deprUtilities > 0 ? (deprUtilCovered / fixed.deprUtilities) * 100 : (remainderAfterPayroll > 0 ? 100 : 0);
 
       var tr = document.createElement('tr');
-      tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td>';
+      tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
       var cells = tr.querySelectorAll('td');
       cells[0].textContent = plant.name;
-      cells[1].textContent = Format.fmt(fixedCosts, 0);
-      cells[2].textContent = Format.fmt(contribution, 0);
-      cells[3].textContent = Format.fmtNum(Math.max(0, coveredPercent), 0, '%');
-      cells[3].classList.add(coveredPercent >= 100 ? 'positive' : 'negative');
-      cells[4].textContent = Format.fmt(realProfit, 0);
-      cells[4].classList.add(realProfit >= 0 ? 'positive' : 'negative');
+      cells[1].textContent = Format.fmt(fixed.total, 0);
+      cells[2].textContent = Format.fmt(materialsTotal, 0);
+      cells[3].textContent = Format.fmt(contribution, 0);
+      cells[4].textContent = Format.fmtNum(Math.max(0, payrollPercent), 0, '%');
+      cells[4].classList.add(payrollPercent >= 100 ? 'positive' : 'negative');
+      cells[5].textContent = Format.fmtNum(Math.max(0, deprUtilPercent), 0, '%');
+      cells[5].classList.add(deprUtilPercent >= 100 ? 'positive' : 'negative');
+      cells[6].textContent = Format.fmt(realProfit, 0);
+      cells[6].classList.add(realProfit >= 0 ? 'positive' : 'negative');
       tbody.appendChild(tr);
     });
   }

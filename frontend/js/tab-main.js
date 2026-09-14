@@ -64,6 +64,7 @@
     dashOut(mixOutputIds);
     dashOut(deliveryOutputIds);
     dashOut(totalOutputIds);
+    document.getElementById('revenue-total-vat-note').hidden = true;
     ['profit-total-wrap', 'profit-per-m3-wrap', 'margin-total-wrap'].forEach(function (id) {
       document.getElementById(id).classList.remove('positive', 'negative');
     });
@@ -283,6 +284,19 @@
     var marginTotal = Calc.marginPercent(totalProfit, totalRevenueNet);
 
     document.getElementById('revenue-total').textContent = Format.fmt(totalRevenueDisplayed, 2);
+
+    // НДС сидит только в цене смеси (доставка — отдельная услуга без НДС,
+    // см. комментарий выше), поэтому "в т.ч. НДС" считаем от mixRevenueGross,
+    // а не от totalRevenueDisplayed — иначе доставка ошибочно тоже попадает
+    // под налог.
+    var vatNoteEl = document.getElementById('revenue-total-vat-note');
+    if (vatGrossMode && mixRevenue > 0) {
+      var vatAmount = mixRevenueGross - mixRevenue;
+      vatNoteEl.textContent = 'в т.ч. НДС ' + Format.fmt(vatAmount, 2);
+      vatNoteEl.hidden = false;
+    } else {
+      vatNoteEl.hidden = true;
+    }
 
     var profitTotalEl = document.getElementById('profit-total');
     var profitTotalWrap = document.getElementById('profit-total-wrap');

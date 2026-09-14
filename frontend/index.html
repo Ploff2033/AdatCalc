@@ -323,6 +323,7 @@
               <div class="final-result" id="revenue-total-wrap">
                 <span class="label">К оплате</span>
                 <span class="value" id="revenue-total">—</span>
+                <span class="value-note" id="revenue-total-vat-note" hidden>в т.ч. НДС —</span>
               </div>
               <div class="final-result" id="profit-total-wrap">
                 <span class="label">Чистая прибыль</span>
@@ -453,7 +454,7 @@
           <select class="select breakeven-month-select" id="dash-breakeven-month"></select>
         </div>
       </div>
-      <p class="hint">Постоянные расходы завода (ФОТ + амортизация + коммуналка) за месяц — и сколько из них уже покрыто маржой фактических заказов. Пока не покрыто полностью, реальной чистой прибыли ещё нет, даже если по отдельным заказам она уже показывает плюс.</p>
+      <p class="hint">Постоянные расходы завода (ФОТ + амортизация + коммуналка) за месяц — и куда идёт накопленная маржа заказов (выручка за вычетом материалов и доставки): сначала на ФОТ, затем остаток — на амортизацию с коммуналкой. Пока обе колонки не дойдут до 100%, реальной чистой прибыли ещё нет, даже если по отдельным заказам она уже показывает плюс.</p>
       <div class="breakeven-chart-wrap">
         <svg id="dash-breakeven-chart" viewBox="0 0 800 260"></svg>
       </div>
@@ -464,8 +465,10 @@
             <tr>
               <th>Завод</th>
               <th>Расходы за месяц</th>
+              <th>Материалы</th>
               <th>Накоплено маржи</th>
-              <th>Покрыто</th>
+              <th>Покрыто ФОТ</th>
+              <th>Покрыто аморт.+комм.</th>
               <th>Реальная прибыль</th>
             </tr>
           </thead>
@@ -751,6 +754,23 @@
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
       <button type="submit" class="primary-btn" id="plant-form-submit">Создать</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="app-dialog" id="order-date-dialog">
+  <form method="dialog" id="order-date-form">
+    <h3>Изменить дату заказа</h3>
+    <input type="hidden" id="order-date-id">
+    <div class="field-group">
+      <label for="order-date-input">Дата и время</label>
+      <div class="field"><input type="datetime-local" id="order-date-input" required></div>
+    </div>
+    <p class="hint">Меняет только дату/время заказа в отчётах и дашборде — на расчёт и суммы заказа не влияет. Обычно нужно после удаления и повторного заведения заказа на верный завод, чтобы вернуть исходную дату.</p>
+    <p class="dialog-error" id="order-date-dialog-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
+      <button type="submit" class="primary-btn">Сохранить</button>
     </div>
   </form>
 </dialog>
