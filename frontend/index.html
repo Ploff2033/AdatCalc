@@ -760,13 +760,17 @@
 
 <dialog class="app-dialog" id="order-date-dialog">
   <form method="dialog" id="order-date-form">
-    <h3>Изменить дату заказа</h3>
+    <h3>Изменить дату/завод заказа</h3>
     <input type="hidden" id="order-date-id">
     <div class="field-group">
       <label for="order-date-input">Дата и время</label>
       <div class="field"><input type="datetime-local" id="order-date-input" required></div>
     </div>
-    <p class="hint">Меняет только дату/время заказа в отчётах и дашборде — на расчёт и суммы заказа не влияет. Обычно нужно после удаления и повторного заведения заказа на верный завод, чтобы вернуть исходную дату.</p>
+    <div class="field-group">
+      <label for="order-date-plant">Завод</label>
+      <div class="field"><select id="order-date-plant"></select></div>
+    </div>
+    <p class="hint">Меняет дату/время и завод заказа в отчётах и дашборде — на расчёт и суммы заказа не влияет. Обычно нужно после того, как заказ завели не на тот завод: раньше приходилось удалять и заводить заново, теряя исходную дату.</p>
     <p class="dialog-error" id="order-date-dialog-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>

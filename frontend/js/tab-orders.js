@@ -79,6 +79,22 @@
   function openEditDate(order) {
     document.getElementById('order-date-id').value = order.id;
     document.getElementById('order-date-input').value = toDatetimeLocalValue(order.createdAt);
+    var plantSelect = document.getElementById('order-date-plant');
+    plantSelect.innerHTML = '';
+    (State.data.plants || []).forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      plantSelect.appendChild(opt);
+    });
+    var hasCurrentPlant = (State.data.plants || []).some(function (p) { return p.id === order.plantId; });
+    if (!hasCurrentPlant) {
+      var currentOpt = document.createElement('option');
+      currentOpt.value = order.plantId;
+      currentOpt.textContent = order.plantName;
+      plantSelect.insertBefore(currentOpt, plantSelect.firstChild);
+    }
+    plantSelect.value = order.plantId;
     document.getElementById('order-date-dialog-error').hidden = true;
     document.getElementById('order-date-dialog').showModal();
   }
@@ -89,9 +105,10 @@
     errorEl.hidden = true;
     var id = document.getElementById('order-date-id').value;
     var inputValue = document.getElementById('order-date-input').value;
-    if (!inputValue) return;
+    var plantId = document.getElementById('order-date-plant').value;
+    if (!inputValue || !plantId) return;
     try {
-      await Api.put('/orders/' + id + '/date', { createdAt: new Date(inputValue).toISOString() });
+      await Api.put('/orders/' + id + '/date', { createdAt: new Date(inputValue).toISOString(), plantId: plantId });
       document.getElementById('order-date-dialog').close();
       await State.loadAll();
     } catch (err) {
@@ -109,7 +126,6 @@
           '<div class="order-title"><span data-title-text></span><span class="order-vat-badge" data-vat-badge hidden>С НДС</span></div>' +
           '<div class="order-meta-row">' +
             '<div class="order-meta"></div>' +
-            '<button type="button" class="icon-btn edit-date-btn" title="Изменить дату" hidden>✎</button>' +
           '</div>' +
         '</div>' +
         '<div class="order-summary-figures">' +
@@ -119,6 +135,7 @@
           '<div class="order-figure"><span class="order-figure-label">От доставки</span><span class="order-figure-value" data-f="deliveryProfit">—</span></div>' +
           '<div class="order-figure"><span class="order-figure-label">Рент-ть</span><span class="order-figure-value" data-f="totalMarginPercent">—</span></div>' +
         '</div>' +
+        '<button type="button" class="edit-order-btn" hidden>Изменить</button>' +
         '<button type="button" class="danger del-btn">Удалить</button>' +
         '<button type="button" class="icon-btn toggle-btn" title="Развернуть">⌄</button>' +
       '</div>' +
@@ -237,7 +254,7 @@
     var details = card.querySelector('.order-details');
     var toggleBtn = card.querySelector('.toggle-btn');
     head.addEventListener('click', function (e) {
-      if (e.target.closest('.del-btn') || e.target.closest('.edit-date-btn')) return;
+      if (e.target.closest('.del-btn') || e.target.closest('.edit-order-btn')) return;
       var willOpen = details.hidden;
       details.hidden = !willOpen;
       toggleBtn.classList.toggle('open', willOpen);
@@ -245,9 +262,9 @@
     });
     card.querySelector('.del-btn').addEventListener('click', function () { handleDelete(order); });
 
-    var editDateBtn = card.querySelector('.edit-date-btn');
-    editDateBtn.hidden = !(window.Auth && Auth.isAtLeast('manager'));
-    editDateBtn.addEventListener('click', function (e) { e.stopPropagation(); openEditDate(order); });
+    var editOrderBtn = card.querySelector('.edit-order-btn');
+    editOrderBtn.hidden = !(window.Auth && Auth.isAtLeast('manager'));
+    editOrderBtn.addEventListener('click', function (e) { e.stopPropagation(); openEditDate(order); });
 
     return card;
   }

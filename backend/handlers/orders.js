@@ -185,18 +185,32 @@ async function remove(id) {
   if (!rowCount) throw new HttpError(404, 'Заказ не найден');
 }
 
-// Дата заказа — единственное поле уже оформленного заказа, которое можно
+// Дата и завод — единственные поля уже оформленного заказа, которые можно
 // поменять (остальное — неизменяемый снимок расчёта, см. sanitize() выше).
-// Нужно на случай, если заказ завели не на тот завод: его удаляют и заводят
-// заново на верном заводе, но новый заказ создаётся с текущим временем —
-// эта функция возвращает ему исходную дату/время.
-async function updateDate(id, createdAtRaw) {
+// Нужно на случай, если заказ завели не на тот завод: раньше его приходилось
+// удалять и заводить заново на верном заводе, из-за чего терялась исходная
+// дата/время — теперь и то, и другое можно поправить прямо в заказе.
+async function updateDate(id, createdAtRaw, plantIdRaw) {
   const createdAt = str(createdAtRaw, 'createdAt');
   const client = await db.pool.connect();
   try {
-    const { rows } = await client.query('UPDATE orders SET created_at = $1 WHERE id = $2 RETURNING id', [createdAt, id]);
-    if (!rows.length) throw new HttpError(404, 'Заказ не найден');
+    let plantName;
+    if (plantIdRaw != null) {
+      const plantId = str(plantIdRaw, 'plantId');
+      const { rows: plantRows } = await client.query('SELECT name FROM plants WHERE id = $1', [plantId]);
+      if (!plantRows.length) throw new HttpError(400, 'Завод не найден');
+      plantName = plantRows[0].name;
+      const { rowCount } = await client.query(
+        'UPDATE orders SET created_at = $1, plant_id = $2, plant_name = $3 WHERE id = $4',
+        [createdAt, plantId, plantName, id]
+      );
+      if (!rowCount) throw new HttpError(404, 'Заказ не найден');
+    } else {
+      const { rowCount } = await client.query('UPDATE orders SET created_at = $1 WHERE id = $2', [createdAt, id]);
+      if (!rowCount) throw new HttpError(404, 'Заказ не найден');
+    }
     const { rows: full } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
+    if (!full.length) throw new HttpError(404, 'Заказ не найден');
     return rowToOrder(full[0], await fetchMaterials(client, id));
   } finally {
     client.release();
