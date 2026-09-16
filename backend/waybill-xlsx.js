@@ -1,0 +1,117 @@
+const fs = require('fs');
+const path = require('path');
+const JSZip = require('jszip');
+
+// Официальный бланк формы №4-П (Постановление Госкомстата России от
+// 28.11.1997 №78) — реальный .xlsx, а не картинка: рамки/шрифты/объединения
+// остаются именно теми, что в оригинале, потому что мы не пересобираем файл
+// через библиотеку (это ломает форматирование — проверено), а точечно
+// подменяем текст внутри xl/worksheets/sheet1.xml (лист "стр1", лицевая
+// сторона) прямо в ZIP-контейнере. Всё остальное — стр2 (оборотная сторона,
+// талоны заказчика), стили, размеры — копируется из шаблона как есть.
+const TEMPLATE_PATH = path.join(__dirname, 'assets', 'waybill-4p-template.xlsx');
+const SHEET_PATH = 'xl/worksheets/sheet1.xml';
+
+const MONTHS_GENITIVE = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+];
+
+// Адреса пустых объединённых ячеек бланка — сняты вручную по шаблону
+// (первая объединённая ячейка сразу справа/ниже соответствующей подписи).
+// При замене файла assets/waybill-4p-template.xlsx другой версией бланка
+// их придётся снимать заново (см. scratchpad при разработке).
+const CELLS = {
+  day: 'BG5',
+  month: 'BP5',
+  year: 'CL5',
+  organization: 'Q6',
+  mixerName: 'P12',
+  mixerPlate: 'Z13',
+  driverName: 'I14',
+  driverLicenseNumber: 'O16',
+  task: 'A31',
+  notesLine1: 'EU32',
+  notesLine2: 'EU33'
+};
+
+function xmlEscape(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatNum(n, decimals) {
+  if (!isFinite(n)) n = 0;
+  var fixed = n.toFixed(decimals || 0);
+  var parts = fixed.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return parts.join(',');
+}
+
+// Ячейка в шаблоне пустая — либо самозакрывающаяся <c r="X" s="N"/>, либо
+// <c r="X" s="N"></c>. В обоих случаях подменяем на inlineStr с нужным
+// текстом, сохраняя исходный s="N" (стиль ячейки — рамки, шрифт, выравнивание
+// бланка), чтобы визуально ничего кроме текста не изменилось.
+function setCell(xml, addr, value) {
+  if (!value) return xml;
+  var escaped = xmlEscape(value);
+  // Ячейка в шаблоне бывает самозакрывающейся (пустая) или с телом (напр.
+  // A31 хранит "18" — номер графы бланка, который наше значение заменяет) —
+  // нужно захватить весь <c>...</c> целиком, а не только открывающий тег.
+  var pattern = new RegExp('<c r="' + addr + '"([^>]*?)(?:/>|>[\\s\\S]*?</c>)');
+  if (!pattern.test(xml)) return xml;
+  return xml.replace(pattern, function (match, attrs) {
+    var cleanAttrs = attrs.replace(/\st="[^"]*"/, '');
+    return '<c r="' + addr + '"' + cleanAttrs + ' t="inlineStr"><is><t xml:space="preserve">' + escaped + '</t></is></c>';
+  });
+}
+
+// order.driverName/mixerPlate — снимок на момент рейса (см. handlers/orders.js).
+// organization — реквизиты организации (config.companyRequisites, см.
+// handlers/config.js); если не заданы админом, подставляется название завода.
+function buildOrderXml(sheetXml, order, organization) {
+  var d = new Date(order.createdAt);
+  var litersPerTrip = order.fuelPricePerLiter > 0 ? order.fuelCostPerTrip / order.fuelPricePerLiter : 0;
+  var totalLiters = litersPerTrip * (order.tripCount || 0);
+  var totalDistanceKm = (order.roundTripKm || 0) * (order.tripCount || 0);
+
+  var xml = sheetXml;
+  xml = setCell(xml, CELLS.day, String(d.getDate()));
+  xml = setCell(xml, CELLS.month, MONTHS_GENITIVE[d.getMonth()]);
+  xml = setCell(xml, CELLS.year, String(d.getFullYear()));
+  xml = setCell(xml, CELLS.organization, organization || order.plantName);
+  xml = setCell(xml, CELLS.mixerName, order.mixerName);
+  xml = setCell(xml, CELLS.mixerPlate, order.mixerPlate || '');
+  xml = setCell(xml, CELLS.driverName, order.driverName || '');
+  xml = setCell(xml, CELLS.driverLicenseNumber, order.driverLicenseNumber || '');
+  xml = setCell(xml, CELLS.task, 'Бетон, ' + formatNum(order.distanceKm, 1) + ' км в одну сторону, ' + order.tripCount + ' рейс(ов)');
+  xml = setCell(xml, CELLS.notesLine1, 'Расч. расход топлива по норме: ' + formatNum(totalLiters, 1) + ' л');
+  xml = setCell(xml, CELLS.notesLine2, '(' + order.tripCount + ' рейс, ' + formatNum(totalDistanceKm, 0) + ' км)');
+  return xml;
+}
+
+async function buildOrderWorkbook(order, organization) {
+  var buf = fs.readFileSync(TEMPLATE_PATH);
+  var zip = await JSZip.loadAsync(buf);
+  var sheetXml = await zip.file(SHEET_PATH).async('string');
+  zip.file(SHEET_PATH, buildOrderXml(sheetXml, order, organization));
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+function waybillFileName(order) {
+  var date = new Date(order.createdAt).toISOString().slice(0, 10);
+  return 'putevoy-list-' + date + '-' + order.id + '.xlsx';
+}
+
+// Несколько заказов — .xlsx для Excel это одна книга, а не "страницы", поэтому
+// пачкой отдаём zip-архив с отдельным файлом на каждый заказ, а не пытаемся
+// склеить их в один файл.
+async function buildWaybillsZip(orders, organization) {
+  var archive = new JSZip();
+  for (var i = 0; i < orders.length; i++) {
+    var buf = await buildOrderWorkbook(orders[i], organization);
+    archive.file(waybillFileName(orders[i]), buf);
+  }
+  return archive.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+module.exports = { buildOrderWorkbook, buildWaybillsZip, waybillFileName };

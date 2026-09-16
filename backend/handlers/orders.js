@@ -10,6 +10,9 @@ const ORDER_COLUMNS = [
   ['created_at', 'createdAt'],
   ['recipe_name', 'recipeName'],
   ['mixer_name', 'mixerName'],
+  ['mixer_plate', 'mixerPlate'],
+  ['driver_name', 'driverName'],
+  ['driver_license_number', 'driverLicenseNumber'],
   ['sale_volume', 'saleVolume'],
   ['distance_km', 'distanceKm'],
   ['fuel_price_per_liter', 'fuelPricePerLiter'],
@@ -65,6 +68,9 @@ function sanitize(body) {
     plantName: str(body.plantName, 'plantName'),
     recipeName: str(body.recipeName, 'recipeName'),
     mixerName: str(body.mixerName, 'mixerName'),
+    mixerPlate: (body.mixerPlate || '').trim(),
+    driverName: (body.driverName || '').trim(),
+    driverLicenseNumber: (body.driverLicenseNumber || '').trim(),
     saleVolume: num(body.saleVolume, 'saleVolume'),
     distanceKm: num(body.distanceKm, 'distanceKm'),
     fuelPricePerLiter: num(body.fuelPricePerLiter, 'fuelPricePerLiter'),
@@ -101,7 +107,7 @@ function sanitize(body) {
   };
 }
 
-const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'recipe_name', 'mixer_name']);
+const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number']);
 
 function rowToOrder(row, materialRows) {
   const out = { id: row.id };
@@ -217,4 +223,18 @@ async function updateDate(id, createdAtRaw, plantIdRaw) {
   }
 }
 
-module.exports = { list, create, remove, updateDate, ORDER_COLUMNS };
+// Для печати путевых листов — сколько угодно заказов по их id одним запросом.
+async function getByIds(ids) {
+  if (!Array.isArray(ids) || !ids.length) return [];
+  const client = await db.pool.connect();
+  try {
+    const { rows } = await client.query('SELECT * FROM orders WHERE id = ANY($1) ORDER BY created_at', [ids]);
+    const result = [];
+    for (const row of rows) result.push(rowToOrder(row, await fetchMaterials(client, row.id)));
+    return result;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { list, create, remove, updateDate, getByIds, ORDER_COLUMNS };

@@ -2,8 +2,8 @@ const db = require('../db');
 
 // Публичная агрегированная сумма ФОТ по заводам — нужна для расчёта
 // себестоимости на Главной (доступна всем, включая незалогиненных
-// работников), но при этом зарплаты конкретных сотрудников
-// (GET /api/employees) остаются доступны только админу.
+// работников), но при этом зарплаты конкретных сотрудников (GET
+// /api/employees) полностью отдаются только админу — см. employees.list().
 async function get() {
   const { rows } = await db.pool.query(
     `SELECT plant_id, COALESCE(SUM(salary), 0)::float8 AS total FROM employees GROUP BY plant_id`

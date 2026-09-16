@@ -205,6 +205,11 @@
           </div>
 
           <div class="field-group">
+            <label for="main-driver">Водитель</label>
+            <select class="select" id="main-driver"></select>
+          </div>
+
+          <div class="field-group">
             <label for="dist">Расстояние (в одну сторону)</label>
             <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
           </div>
@@ -362,6 +367,7 @@
       <div class="card-head">
         <span class="num">02</span><h2>История заказов</h2>
         <button type="button" class="ghost-btn" id="export-orders-btn" disabled>Экспорт в Excel</button>
+        <button type="button" class="ghost-btn" id="print-waybills-btn" disabled>Путевые листы</button>
       </div>
       <div class="orders-filters">
         <select class="select orders-plant-filter" id="orders-plant-filter" hidden></select>
@@ -489,6 +495,14 @@
       </div>
     </section>
 
+    <section class="card compact">
+      <div class="card-head"><span class="num">06</span><h2>Реквизиты организации</h2></div>
+      <p class="hint">Строка «Организация» на путевом листе (форма №4-П) — название, адрес и телефон одной строкой. Общие на все заводы. Если не заполнено, подставляется просто название завода.</p>
+      <div class="field-group">
+        <div class="field"><input type="text" id="company-requisites" placeholder="ООО «Компания», г. Черкесск, ул. Примерная, 1, тел. +7 900 000-00-00"></div>
+      </div>
+    </section>
+
   </section>
 
 </div>
@@ -525,6 +539,14 @@
     <div class="field-group">
       <label for="employee-salary">Оклад</label>
       <div class="field"><input type="text" id="employee-salary" inputmode="decimal" required><span class="unit">₽/мес</span></div>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="employee-is-driver">
+      <label for="employee-is-driver">Может быть водителем (появится в выборе на Главной)</label>
+    </div>
+    <div class="field-group" id="employee-license-group" hidden>
+      <label for="employee-license-number">Номер водительского удостоверения</label>
+      <div class="field"><input type="text" id="employee-license-number"></div>
     </div>
     <p class="dialog-error" id="employee-dialog-error" hidden></p>
     <div class="dialog-actions">
@@ -662,6 +684,10 @@
       <div class="field"><input type="text" id="mixer-name" required></div>
     </div>
     <div class="field-group">
+      <label for="mixer-plate">Гос. номер</label>
+      <div class="field"><input type="text" id="mixer-plate" placeholder="А 123 ВС 123" autocomplete="off"></div>
+    </div>
+    <div class="field-group">
       <label for="mixer-capacity">Объём кузова (обычно до 10 м³)</label>
       <div class="field"><input type="number" id="mixer-capacity" min="0" step="any" required><span class="unit">м³</span></div>
     </div>
@@ -779,6 +805,7 @@
   </form>
 </dialog>
 
+
 <template id="recipe-item-row-template">
   <div class="recipe-item-row">
     <select class="select recipe-item-material"></select>
@@ -790,9 +817,11 @@
 
 <script src="/js/format.js"></script>
 <script src="/js/numeric-input.js"></script>
+<script src="/js/plate-input.js"></script>
 <script src="/js/calc.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/plant.js"></script>
+<script src="/js/waybill.js"></script>
 <script src="/js/state.js"></script>
 <script src="/js/auth.js"></script>
 <script src="/js/plant-switcher.js"></script>

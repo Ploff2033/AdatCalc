@@ -13,6 +13,7 @@ const orders = require('./handlers/orders');
 const plants = require('./handlers/plants');
 const config = require('./handlers/config');
 const auth = require('./handlers/auth');
+const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
 
 const ROLE_RANK = { manager: 1, admin: 2 };
 
@@ -158,9 +159,10 @@ const routes = [
     handler: async (req, res, m) => sendJson(res, 200, await plants.reissueToken(decodeURIComponent(m[1])))
   },
 
-  // Сотрудники — зарплаты видит только админ. list() принимает ?plantId=
-  // и отдаёт сотрудников этого завода + общих.
-  ...crudRoutes('/api/employees', employees, { read: 'admin', write: 'admin' }),
+  // Сотрудники — список с зарплатами видит только админ (list() сам решает
+  // по role: админу — полные карточки, остальным — только отмеченные
+  // "водитель", без зарплаты, для выбора на Главной). Менять — только админ.
+  ...crudRoutes('/api/employees', employees, { read: null, write: 'admin', scopeByToken: true }),
   { method: 'GET', pattern: /^\/api\/personnel-summary$/, handler: async (req, res) => sendJson(res, 200, await personnelSummary.get()) },
 
   // Материалы/рецепты — читать может кто угодно (нужно для расчёта на Главной),
@@ -190,6 +192,42 @@ const routes = [
     handler: async (req, res, m) => {
       const body = await readBody(req);
       sendJson(res, 200, await orders.updateDate(decodeURIComponent(m[1]), body.createdAt, body.plantId));
+    }
+  },
+
+  // Путевые листы по форме №4-П — заполняем реальный .xlsx-бланк (см.
+  // waybill-xlsx.js: правим значения прямо в XML внутри файла, не трогая
+  // остальное форматирование). Один заказ — сразу .xlsx, несколько — zip
+  // с файлом на каждый (это разные книги Excel, а не страницы одного PDF).
+  // Доступно менеджеру и выше; заказы без рейса (самовывоз) отбрасываются —
+  // заполнять нечего (нет ни техники, ни водителя).
+  {
+    method: 'POST',
+    pattern: /^\/api\/orders\/waybills\.xlsx$/,
+    role: 'manager',
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids : [];
+      const found = await orders.getByIds(ids);
+      const withTrips = found.filter((o) => o.tripCount > 0);
+      if (!withTrips.length) throw new HttpError(400, 'Нет заказов с рейсом для путевого листа');
+      const cfg = await config.get('admin');
+      const organization = cfg.companyRequisites;
+      if (withTrips.length === 1) {
+        const buf = await buildOrderWorkbook(withTrips[0], organization);
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': 'attachment; filename="' + waybillFileName(withTrips[0]) + '"'
+        });
+        res.end(buf);
+      } else {
+        const buf = await buildWaybillsZip(withTrips, organization);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': 'attachment; filename="putevye-listy.zip"'
+        });
+        res.end(buf);
+      }
     }
   },
 

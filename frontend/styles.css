@@ -845,7 +845,8 @@ section.card.compact{
   transform:rotate(180deg);
 }
 .order-card .del-btn,
-.order-card .edit-order-btn{
+.order-card .edit-order-btn,
+.order-card .waybill-btn{
   border:1px solid var(--border);
   background:var(--surface);
   color:var(--text-muted);
@@ -857,7 +858,8 @@ section.card.compact{
   flex-shrink:0;
 }
 .order-card .del-btn:hover{ color:var(--negative); border-color:var(--negative); }
-.order-card .edit-order-btn:hover{ color:var(--accent); border-color:var(--accent); }
+.order-card .edit-order-btn:hover,
+.order-card .waybill-btn:hover{ color:var(--accent); border-color:var(--accent); }
 .order-details{
   display:flex;
   flex-direction:column;
@@ -1135,3 +1137,4 @@ input:focus-visible{ outline:none; }
   text-align:right;
   padding-right:8px;
 }
+

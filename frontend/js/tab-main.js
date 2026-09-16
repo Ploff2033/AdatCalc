@@ -3,6 +3,7 @@
 
   var selectedRecipeId = '';
   var selectedMixerId = '';
+  var selectedDriverId = '';
   var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
   var vatGrossMode = false;
   var testPriceDirty = false;
@@ -96,6 +97,7 @@
     document.getElementById('main-plant-badge').textContent = plant ? plant.name : '';
     var recipeSelect = document.getElementById('main-recipe');
     var mixerSelect = document.getElementById('main-mixer');
+    var driverSelect = document.getElementById('main-driver');
     var distInput = document.getElementById('dist');
     var errorEl = document.getElementById('main-validation-error');
     var placeOrderBtn = document.getElementById('place-order-btn');
@@ -108,6 +110,7 @@
     // чтобы не создавать впечатление, что они всё ещё на что-то влияют.
     var selfPickup = document.getElementById('self-pickup').checked;
     mixerSelect.disabled = selfPickup;
+    driverSelect.disabled = selfPickup;
     distInput.disabled = selfPickup;
     nbCityInput.disabled = selfPickup;
     deliveryChargeInput.disabled = selfPickup;
@@ -119,9 +122,13 @@
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
+    var plantId = plant ? plant.id : null;
+    var plantDrivers = data.employees.filter(function (e) { return e.isDriver && (e.plantId === plantId || !e.plantId); });
+    selectedDriverId = populateSelect(driverSelect, plantDrivers, selectedDriverId || driverSelect.value);
 
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
+    var driver = plantDrivers.find(function (d) { return d.id === selectedDriverId; });
 
     var distField = distInput.closest('.field');
     var distRaw = distInput.value;
@@ -147,23 +154,25 @@
     var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
     document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
 
-    // Марка/рецепт нужна для любого расчёта. Миксер/расстояние нужны только
-    // для доставки — без них уже можно посмотреть себестоимость и прибыль по
-    // смеси (быстрая проверка цены без лишних кликов).
+    // Марка/рецепт нужна для любого расчёта. Миксер/водитель/расстояние нужны
+    // только для доставки — без них уже можно посмотреть себестоимость и
+    // прибыль по смеси (быстрая проверка цены без лишних кликов). Водитель
+    // нужен для путевого листа (см. Waybill) — без него рейс не оформить.
     var missingDelivery = [];
     if (!selfPickup && !mixer) missingDelivery.push(mixerSelect);
+    if (!selfPickup && !driver) missingDelivery.push(driverSelect);
     if (distMissing) missingDelivery.push(distField);
     var missing = recipe ? missingDelivery : [recipeSelect].concat(missingDelivery);
 
     // Баннер и красная обводка — только после попытки оформить заказ с
     // незаполненными полями, а не сразу при открытии формы: иначе баннер
     // занимает место и вёрстка прыгает при каждом вводе.
-    [recipeSelect, mixerSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
+    [recipeSelect, mixerSelect, driverSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
     if (submitAttempted && missing.length) {
       missing.forEach(function (el) { el.classList.add('invalid'); });
       errorEl.textContent = selfPickup
         ? 'Заполните обязательное поле: марка/рецепт — оно выделено красным.'
-        : 'Заполните обязательные поля: марка/рецепт, миксер и расстояние — они выделены красным.';
+        : 'Заполните обязательные поля: марка/рецепт, миксер, водитель и расстояние — они выделены красным.';
       errorEl.hidden = false;
     } else {
       errorEl.hidden = true;
@@ -231,7 +240,7 @@
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
 
-    var deliveryReady = selfPickup || (!!mixer && !distMissing);
+    var deliveryReady = selfPickup || (!!mixer && !!driver && !distMissing);
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
       surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0,
       deliveryProfit = 0, deliveryMarginPercent = 0;
@@ -329,6 +338,9 @@
       recipeName: recipe.name,
       materials: materialsBreakdown,
       mixerName: selfPickup ? 'Самовывоз' : mixer.name,
+      mixerPlate: selfPickup ? '' : (mixer.licensePlate || ''),
+      driverName: selfPickup ? '' : driver.name,
+      driverLicenseNumber: selfPickup ? '' : (driver.licenseNumber || ''),
       saleVolume: saleVolume,
       distanceKm: selfPickup ? 0 : dist,
       fuelPricePerLiter: fuelPrice,
@@ -482,6 +494,10 @@
     });
     document.getElementById('main-mixer').addEventListener('change', function () {
       selectedMixerId = this.value;
+      recalc();
+    });
+    document.getElementById('main-driver').addEventListener('change', function () {
+      selectedDriverId = this.value;
       recalc();
     });
 

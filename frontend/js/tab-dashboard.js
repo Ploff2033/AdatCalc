@@ -181,6 +181,28 @@
     };
   }
 
+  var requisitesInput = document.getElementById('company-requisites');
+  var requisitesSaveTimer = null;
+
+  function scheduleRequisitesSave() {
+    clearTimeout(requisitesSaveTimer);
+    requisitesSaveTimer = setTimeout(saveRequisites, 500);
+  }
+
+  async function saveRequisites() {
+    try {
+      await Api.put('/config', { companyRequisites: requisitesInput.value });
+      await State.loadAll();
+    } catch (err) {
+      alert('Не удалось сохранить реквизиты: ' + err.message);
+    }
+  }
+
+  function renderRequisites() {
+    if (document.activeElement === requisitesInput) return;
+    requisitesInput.value = (State.data.config && State.data.config.companyRequisites) || '';
+  }
+
   function renderPlantTable() {
     var tbody = document.getElementById('dash-plant-table-body');
     tbody.innerHTML = '';
@@ -445,6 +467,7 @@
     document.getElementById('universal-token-reissue-btn').addEventListener('click', function (e) {
       reissueUniversalToken(e.target);
     });
+    requisitesInput.addEventListener('input', scheduleRequisitesSave);
     populateBreakevenMonthOptions();
     document.getElementById('dash-breakeven-month').addEventListener('change', function () {
       breakevenMonthValue = this.value;
@@ -463,6 +486,7 @@
     renderPlantTable();
     renderBreakeven();
     renderUniversalToken();
+    renderRequisites();
   }
 
   window.DashboardTab = { init: init, render: render };

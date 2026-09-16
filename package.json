@@ -8,6 +8,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "jszip": "^3.10.2",
     "pg": "^8.23.0"
   }
 }

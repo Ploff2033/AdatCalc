@@ -10,13 +10,14 @@ const { genToken } = require('../tokens');
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT fuel_price_default, urea_price_default, neighbor_city_surcharge, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
+    'SELECT fuel_price_default, urea_price_default, neighbor_city_surcharge, company_requisites, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
     fuelPriceDefault: Number(row.fuel_price_default),
     ureaPriceDefault: Number(row.urea_price_default),
-    neighborCitySurcharge: Number(row.neighbor_city_surcharge)
+    neighborCitySurcharge: Number(row.neighbor_city_surcharge),
+    companyRequisites: row.company_requisites || ''
   };
   if (role === 'admin') {
     out.universalWorkerToken = row.universal_worker_token;
@@ -40,6 +41,10 @@ async function update(body, role) {
   if (body.neighborCitySurcharge !== undefined) {
     values.push(num(body.neighborCitySurcharge, 'neighborCitySurcharge'));
     sets.push(`neighbor_city_surcharge = $${values.length}`);
+  }
+  if (body.companyRequisites !== undefined) {
+    values.push(String(body.companyRequisites).trim());
+    sets.push(`company_requisites = $${values.length}`);
   }
   if (sets.length) {
     await db.pool.query(`UPDATE config SET ${sets.join(', ')} WHERE id = 1`, values);

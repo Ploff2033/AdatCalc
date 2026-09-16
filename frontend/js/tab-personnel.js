@@ -7,7 +7,14 @@
   var nameInput = document.getElementById('employee-name');
   var positionInput = document.getElementById('employee-position');
   var salaryInput = document.getElementById('employee-salary');
+  var isDriverInput = document.getElementById('employee-is-driver');
+  var licenseGroup = document.getElementById('employee-license-group');
+  var licenseNumberInput = document.getElementById('employee-license-number');
   var draftPlantId = null; // '' (общий) или id завода — решается кнопкой "+ Добавить..."
+
+  function updateLicenseGroupVisibility() {
+    licenseGroup.hidden = !isDriverInput.checked;
+  }
 
   var configIds = ['cfg-target-output', 'cfg-utilities', 'cfg-depr-balance', 'cfg-depr-residual', 'cfg-depr-lifespan'];
   var moneyConfigIds = ['cfg-utilities', 'cfg-depr-balance', 'cfg-depr-residual'];
@@ -20,6 +27,9 @@
     nameInput.value = '';
     positionInput.value = '';
     salaryInput.value = '';
+    isDriverInput.checked = false;
+    licenseNumberInput.value = '';
+    updateLicenseGroupVisibility();
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -31,6 +41,9 @@
     nameInput.value = emp.name;
     positionInput.value = emp.position;
     NumericInput.setFormattedValue(salaryInput, emp.salary);
+    isDriverInput.checked = !!emp.isDriver;
+    licenseNumberInput.value = emp.licenseNumber || '';
+    updateLicenseGroupVisibility();
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -42,6 +55,8 @@
       name: nameInput.value,
       position: positionInput.value,
       salary: NumericInput.parseNumber(salaryInput.value),
+      isDriver: isDriverInput.checked,
+      licenseNumber: licenseNumberInput.value,
       plantId: draftPlantId || null
     };
     try {
@@ -77,7 +92,7 @@
       '<div class="tile-value"></div>' +
       '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="danger del-btn">Удалить</button></div>';
     tile.querySelector('.tile-title').textContent = emp.name;
-    tile.querySelector('.tile-sub').textContent = emp.position;
+    tile.querySelector('.tile-sub').textContent = emp.position + (emp.isDriver ? ' · водитель' : '');
     tile.querySelector('.tile-value').textContent = Format.fmt(emp.salary, 0) + '/мес';
     tile.querySelector('.edit-btn').addEventListener('click', function () { openForEdit(emp); });
     tile.querySelector('.del-btn').addEventListener('click', function () { handleDelete(emp); });
@@ -166,6 +181,8 @@
       btn.addEventListener('click', function () { dialog.close(); });
     });
     NumericInput.attach(salaryInput);
+    isDriverInput.addEventListener('change', updateLicenseGroupVisibility);
+
     moneyConfigIds.forEach(function (id) {
       NumericInput.attach(document.getElementById(id));
     });

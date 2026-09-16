@@ -6,6 +6,7 @@
   var titleEl = document.getElementById('mixer-dialog-title');
   var idInput = document.getElementById('mixer-id');
   var nameInput = document.getElementById('mixer-name');
+  var plateInput = document.getElementById('mixer-plate');
   var capacityInput = document.getElementById('mixer-capacity');
   var balanceInput = document.getElementById('mixer-balance');
   var residualInput = document.getElementById('mixer-residual');
@@ -18,6 +19,7 @@
     titleEl.textContent = 'Новый миксер';
     idInput.value = '';
     nameInput.value = '';
+    plateInput.value = '';
     capacityInput.value = '';
     balanceInput.value = '';
     residualInput.value = '';
@@ -33,6 +35,7 @@
     titleEl.textContent = duplicate ? 'Копия миксера' : 'Изменить миксер';
     idInput.value = duplicate ? '' : mixer.id;
     nameInput.value = duplicate ? (mixer.name + ' (копия)') : mixer.name;
+    PlateInput.setValue(plateInput, duplicate ? '' : (mixer.licensePlate || ''));
     capacityInput.value = mixer.capacity;
     NumericInput.setFormattedValue(balanceInput, mixer.balance);
     NumericInput.setFormattedValue(residualInput, mixer.residual);
@@ -52,6 +55,7 @@
     errorEl.hidden = true;
     var payload = {
       name: nameInput.value,
+      licensePlate: plateInput.value,
       capacity: parseFloat(capacityInput.value),
       balance: NumericInput.parseNumber(balanceInput.value),
       residual: NumericInput.parseNumber(residualInput.value),
@@ -96,7 +100,7 @@
         '<div class="tile-meta"></div>' +
         '<div class="tile-value"></div>' +
         '<div class="tile-actions"><button type="button" class="edit-btn">Изменить</button><button type="button" class="copy-btn">Копировать</button><button type="button" class="danger del-btn">Удалить</button></div>';
-      tile.querySelector('.tile-title').textContent = mixer.name;
+      tile.querySelector('.tile-title').textContent = mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
       tile.querySelector('.tile-meta').textContent = Format.fmtNum(mixer.capacity, 1, 'м³') + ' · ' + Format.fmtNum(mixer.fuelRate, 1, 'л/100км')
         + (mixer.ureaRate ? ' · мочевина ' + Format.fmtNum(mixer.ureaRate, 1, 'л/100км') : '')
         + (mixer.platonRatePerKm ? ' · Платон ' + Format.fmt(mixer.platonRatePerKm, 2) + '/км' : '');
@@ -296,6 +300,7 @@
     });
     NumericInput.attach(balanceInput);
     NumericInput.attach(residualInput);
+    PlateInput.attach(plateInput);
 
     document.getElementById('add-aggregate-truck-btn').addEventListener('click', openTruckForCreate);
     atForm.addEventListener('submit', handleTruckSubmit);

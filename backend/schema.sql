@@ -16,12 +16,17 @@ CREATE TABLE IF NOT EXISTS plants (
 );
 
 -- Сотрудники: plant_id = NULL значит "общий" (на все заводы сразу).
+-- is_driver — отметка "может быть водителем", без отдельного справочника:
+-- такой сотрудник появляется в выборе водителя при оформлении заказа/рейса
+-- на Главной (см. путевой лист).
 CREATE TABLE IF NOT EXISTS employees (
   id TEXT PRIMARY KEY,
   plant_id TEXT REFERENCES plants(id) ON DELETE RESTRICT,
   name TEXT NOT NULL,
   position TEXT NOT NULL,
-  salary NUMERIC NOT NULL
+  salary NUMERIC NOT NULL,
+  is_driver BOOLEAN NOT NULL DEFAULT FALSE,
+  license_number TEXT NOT NULL DEFAULT ''
 );
 
 -- Техника — общая на все заводы.
@@ -150,7 +155,8 @@ CREATE TABLE IF NOT EXISTS config (
   manager_hash TEXT NOT NULL,
   universal_worker_token TEXT,
   universal_token_last_used_at TIMESTAMPTZ,
-  universal_token_last_used_ip TEXT
+  universal_token_last_used_ip TEXT,
+  company_requisites TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -195,3 +201,16 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS urea_cost_per_trip NUMERIC NOT NULL 
 ALTER TABLE config ADD COLUMN IF NOT EXISTS urea_price_default NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE mixers ADD COLUMN IF NOT EXISTS platon_rate_per_km NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS platon_cost_per_trip NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE mixers ADD COLUMN IF NOT EXISTS license_plate TEXT NOT NULL DEFAULT '';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_driver BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS license_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_license_number TEXT NOT NULL DEFAULT '';
+-- Снимки на момент заказа (см. комментарий у orders выше) — нужны путевому
+-- листу: водитель и гос. номер миксера на момент рейса, а не текущие (могут
+-- измениться в справочниках позже).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS mixer_plate TEXT NOT NULL DEFAULT '';
+-- Реквизиты организации для путевого листа (строка "Организация (наименование,
+-- адрес и номер телефона)" на бланке 4-П) — общие на все заводы, не название
+-- конкретного завода, поэтому в config, а не в plants.
+ALTER TABLE config ADD COLUMN IF NOT EXISTS company_requisites TEXT NOT NULL DEFAULT '';
