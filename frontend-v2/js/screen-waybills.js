@@ -48,33 +48,15 @@
 
   var selectedEntryIds = {};
 
-  function cfgLimits() {
-    var c = State.data.config || {};
-    return { driverShiftHours: c.driverShiftHours || 0, vehicleShiftHours: c.vehicleShiftHours || 0, avgSpeedKmh: c.avgSpeedKmh || 0, unloadMinutes: c.unloadMinutes || 0 };
-  }
-  function tripHours(distanceKm, cfg) {
-    var roundTrip = (distanceKm || 0) * 2;
-    var drivingHours = cfg.avgSpeedKmh > 0 ? roundTrip / cfg.avgSpeedKmh : 0;
-    return drivingHours + (cfg.unloadMinutes || 0) / 60;
-  }
-  function entriesForOrder(orderId) { return (State.data.waybillEntries || []).filter(function (e) { return e.orderId === orderId; }); }
-  function allocatedForOrder(orderId) { return entriesForOrder(orderId).reduce(function (s, e) { return s + e.tripCount; }, 0); }
-  function remainingForOrder(order) { return Math.max(0, (order.tripCount || 0) - allocatedForOrder(order.id)); }
-  function deliveryOrders() { return (State.data.orders || []).filter(function (o) { return o.tripCount > 0; }); }
-  function unallocatedOrders() {
-    return deliveryOrders().filter(function (o) { return remainingForOrder(o) > 0; })
-      .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
-  }
-  function driverUsedHours(driverId, date, excludeId) {
-    var cfg = cfgLimits();
-    return (State.data.waybillEntries || []).filter(function (e) { return e.driverId === driverId && e.tripDate === date && e.id !== excludeId; })
-      .reduce(function (s, e) { return s + e.tripCount * tripHours(e.distanceKm, cfg); }, 0);
-  }
-  function mixerUsedHours(mixerId, date, excludeId) {
-    var cfg = cfgLimits();
-    return (State.data.waybillEntries || []).filter(function (e) { return e.mixerId === mixerId && e.tripDate === date && e.id !== excludeId; })
-      .reduce(function (s, e) { return s + e.tripCount * tripHours(e.distanceKm, cfg); }, 0);
-  }
+  function entries() { return State.data.waybillEntries || []; }
+  function cfgLimits() { return WaybillCalc.cfgLimits(State.data.config); }
+  function tripHours(distanceKm, cfg) { return WaybillCalc.tripHours(distanceKm, cfg); }
+  function allocatedForOrder(orderId) { return WaybillCalc.allocatedForOrder(entries(), orderId); }
+  function remainingForOrder(order) { return WaybillCalc.remainingForOrder(entries(), order); }
+  function deliveryOrders() { return WaybillCalc.deliveryOrders(State.data.orders || []); }
+  function unallocatedOrders() { return WaybillCalc.unallocatedOrders(State.data.orders || [], entries()); }
+  function driverUsedHours(driverId, date, excludeId) { return WaybillCalc.driverUsedHours(entries(), State.data.config, driverId, date, excludeId); }
+  function mixerUsedHours(mixerId, date, excludeId) { return WaybillCalc.mixerUsedHours(entries(), State.data.config, mixerId, date, excludeId); }
 
   function renderQueue() {
     var orders = unallocatedOrders();
@@ -160,17 +142,10 @@
       errorEl.hidden = false;
       return;
     }
-    var cfg = cfgLimits();
-    var perTripHours = tripHours(order.distanceKm, cfg);
-    var remaining = remainingForOrder(order);
-    var driverLeft = cfg.driverShiftHours - driverUsedHours(driverId, date, null);
-    var mixerLeft = cfg.vehicleShiftHours - mixerUsedHours(mixerId, date, null);
-    var maxByDriver = perTripHours > 0 ? Math.floor(driverLeft / perTripHours + 1e-9) : remaining;
-    var maxByMixer = perTripHours > 0 ? Math.floor(mixerLeft / perTripHours + 1e-9) : remaining;
-    var max = Math.max(0, Math.min(remaining, maxByDriver, maxByMixer));
-    document.getElementById('wb-trips').value = max || '';
-    if (max === 0) {
-      var reason = remaining === 0 ? 'по заказу больше не осталось рейсов' : (maxByDriver <= 0 ? 'у водителя не осталось времени в этот день' : 'у машины не осталось времени в этот день');
+    var r = WaybillCalc.maxTrips(order, entries(), State.data.config, driverId, mixerId, date);
+    document.getElementById('wb-trips').value = r.max || '';
+    if (r.max === 0) {
+      var reason = r.remaining === 0 ? 'по заказу больше не осталось рейсов' : (r.maxByDriver <= 0 ? 'у водителя не осталось времени в этот день' : 'у машины не осталось времени в этот день');
       errorEl.textContent = 'MAX = 0 — ' + reason + '.';
       errorEl.hidden = false;
     }
@@ -285,7 +260,6 @@
     renderHint();
   }
 
-  var initialized = false;
   function init() {
     document.getElementById('page-waybills').innerHTML = HTML;
     document.getElementById('wb-add-form').addEventListener('submit', handleSubmit);
@@ -298,11 +272,17 @@
       renderEntries();
     });
     document.getElementById('wb-download-btn').addEventListener('click', handleDownload);
-    initialized = true;
   }
 
+  // renderedMode: см. комментарий в screen-main.js.
+  var renderedMode = null;
   function show() {
-    if (!initialized) init();
+    if (window.Viewport && Viewport.isMobile()) {
+      if (renderedMode !== 'mobile') { MobileWaybillsScreen.init(); renderedMode = 'mobile'; }
+      MobileWaybillsScreen.render();
+      return;
+    }
+    if (renderedMode !== 'desktop') { init(); renderedMode = 'desktop'; }
     render();
   }
 

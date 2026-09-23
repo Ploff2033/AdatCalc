@@ -217,60 +217,29 @@
       return;
     }
 
-    var materialsCost = Calc.materialsCostPerM3(recipe, data.materials, data.aggregateTrucks);
-    var payroll = Calc.payrollPerM3(plant, data.plants, data.personnelSummary);
-    var depr = Calc.plantDeprPerM3(plant);
-    var utilities = Calc.utilitiesPerM3(plant);
-    var costPerM3 = materialsCost + payroll + depr + utilities;
-
     var saleVolume = parseFloat(document.getElementById('m-volume').value) || 0;
     document.getElementById('m-mix-vol').textContent = Format.fmtNum(saleVolume, 1, 'м³');
-
-    var materialsById = {};
-    data.materials.forEach(function (m) { materialsById[m.id] = m; });
-    var materialsBreakdown = recipe.items.map(function (item) {
-      var mat = materialsById[item.materialId];
-      return { name: mat ? mat.name : 'Неизвестный материал', unit: mat ? mat.unit : '', qty: item.qty * saleVolume };
-    });
 
     var salePrice = recipe.salePrice || 0;
     var priceInput = document.getElementById('m-price');
     var priceNet = priceDirty ? priceNetStored : salePrice;
     displayVatField(priceInput, priceNet);
 
-    var mixRevenue = priceNet * saleVolume;
-    var mixRevenueGross = priceNet * VAT_MULT * saleVolume;
-    var mixCost = costPerM3 * saleVolume;
-    var mixProfit = mixRevenue - mixCost;
-    var mixMarginPercent = Calc.marginPercent(mixProfit, mixRevenue);
-
     var priceHint = document.getElementById('m-price-hint');
     priceHint.textContent = vatGrossMode ? 'В прибыль идёт цена без НДС: ' + Format.fmt(priceNet, 2) + ' за м³.' : '';
-
-    var deliveryReady = selfPickup || (!!mixer && !distMissing && !addressMissing);
-    var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
-      surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0, deliveryProfit = 0, deliveryMarginPercent = 0;
 
     var deliveryChargeInput = document.getElementById('m-delivery-charge');
     deliveryChargeInput.disabled = selfPickup;
 
-    if (deliveryReady && !selfPickup) {
-      trips = Calc.tripsForVolume(mixer, saleVolume);
-      roundTrip = dist * 2;
-      var amortPerKm = Calc.amortPerKm(mixer);
-      fuelCostPerTrip = roundTrip * ((mixer.fuelRate || 0) / 100) * fuelPrice;
-      ureaCostPerTrip = roundTrip * ((mixer.ureaRate || 0) / 100) * ureaPrice;
-      platonCostPerTrip = roundTrip * (mixer.platonRatePerKm || 0);
-      amortCostPerTrip = roundTrip * amortPerKm;
-      neighborCity = nbCityInput.checked;
-      surchargePerTrip = neighborCity ? neighborCitySurcharge : 0;
-      deliveryCostTotal = (fuelCostPerTrip + ureaCostPerTrip + platonCostPerTrip + amortCostPerTrip + surchargePerTrip) * trips;
-      deliveryChargePerM3 = NumericInput.parseNumber(deliveryChargeInput.value) || 0;
-      deliveryRevenue = deliveryChargePerM3 * saleVolume;
-      deliveryProfit = deliveryRevenue - deliveryCostTotal;
-      deliveryMarginPercent = Calc.marginPercent(deliveryProfit, deliveryRevenue);
+    var calc = OrderCalc.run({
+      plant: plant, recipe: recipe, mixer: mixer, data: data, selfPickup: selfPickup, saleVolume: saleVolume,
+      dist: dist, addressFilled: !addressMissing, priceNet: priceNet, vatGrossMode: vatGrossMode,
+      nbCity: nbCityInput.checked, fuelPrice: fuelPrice, ureaPrice: ureaPrice,
+      deliveryChargePerM3: NumericInput.parseNumber(deliveryChargeInput.value) || 0
+    });
 
-      document.getElementById('m-trip-count').textContent = Format.fmtNum(trips, 0);
+    if (calc.deliveryReady && !selfPickup) {
+      document.getElementById('m-trip-count').textContent = Format.fmtNum(calc.trips, 0);
       document.getElementById('m-delivery-box').style.display = '';
     } else if (!selfPickup) {
       document.getElementById('m-trip-count').textContent = '—';
@@ -278,77 +247,56 @@
       document.getElementById('m-trip-count').textContent = '0';
     }
 
-    var totalRevenueNet = mixRevenue + deliveryRevenue;
-    var totalRevenueGross = mixRevenueGross + deliveryRevenue;
-    var totalRevenueDisplayed = vatGrossMode ? totalRevenueGross : totalRevenueNet;
-    var totalProfit = mixProfit + deliveryProfit;
-    var profitPerM3Total = saleVolume > 0 ? totalProfit / saleVolume : 0;
-    var marginTotal = Calc.marginPercent(totalProfit, totalRevenueNet);
+    document.getElementById('m-pay-total').textContent = Format.fmt(calc.totalRevenueDisplayed, 2);
+    document.getElementById('m-pay-vat-note').textContent = calc.vatAmount > 0 ? 'в т.ч. НДС ' + Format.fmt(calc.vatAmount, 2) : '';
 
-    document.getElementById('m-pay-total').textContent = Format.fmt(totalRevenueDisplayed, 2);
-    var vatNoteEl = document.getElementById('m-pay-vat-note');
-    if (vatGrossMode && mixRevenue > 0) {
-      vatNoteEl.textContent = 'в т.ч. НДС ' + Format.fmt(mixRevenueGross - mixRevenue, 2);
-    } else {
-      vatNoteEl.textContent = '';
-    }
-
-    document.getElementById('m-net-profit').textContent = Format.fmt(totalProfit, 2);
-    document.getElementById('m-net-margin').textContent = Format.fmtNum(marginTotal, 1, '% рентабельность');
-    document.getElementById('m-profit-per-m3').textContent = Format.fmt(profitPerM3Total, 2);
-    var safetyMargin = priceNet - costPerM3;
-    document.getElementById('m-safety-margin').textContent = Format.fmt(safetyMargin, 2);
-    document.getElementById('m-safety-margin-pct').textContent = Format.fmtNum(priceNet > 0 ? (safetyMargin / priceNet) * 100 : 0, 1, '% до безубыточной цены');
+    document.getElementById('m-net-profit').textContent = Format.fmt(calc.totalProfit, 2);
+    document.getElementById('m-net-margin').textContent = Format.fmtNum(calc.totalMarginPercent, 1, '% рентабельность');
+    document.getElementById('m-profit-per-m3').textContent = Format.fmt(calc.profitPerM3, 2);
+    document.getElementById('m-safety-margin').textContent = Format.fmt(calc.safetyMargin, 2);
+    document.getElementById('m-safety-margin-pct').textContent = Format.fmtNum(calc.safetyMarginPercent, 1, '% до безубыточной цены');
 
     // Разбивка видна только залогиненным (менеджер/админ) — работник по
     // анонимной ссылке в v2 вообще не бывает (см. app.js), но проверка на
     // всякий случай остаётся тем же принципом, что и в v1.
     var breakdown = document.getElementById('m-breakdown');
     breakdown.hidden = false;
-    var mixShare = totalProfit !== 0 ? Math.max(0, mixProfit / (Math.abs(mixProfit) + Math.abs(deliveryProfit) || 1)) : 0.5;
+    var mixShare = calc.totalProfit !== 0 ? Math.max(0, calc.mixProfit / (Math.abs(calc.mixProfit) + Math.abs(calc.deliveryProfit) || 1)) : 0.5;
     document.getElementById('m-split-mix').style.width = Math.round(mixShare * 100) + '%';
     document.getElementById('m-split-delivery').style.width = (100 - Math.round(mixShare * 100)) + '%';
 
-    document.getElementById('m-mix-revenue').textContent = Format.fmt(mixRevenue, 0);
-    document.getElementById('m-mix-cost').textContent = Format.fmt(mixCost, 0);
-    document.getElementById('m-mix-materials').textContent = Format.fmt(materialsCost * saleVolume, 0);
-    document.getElementById('m-mix-payroll').textContent = Format.fmt(payroll * saleVolume, 0);
-    document.getElementById('m-mix-depr').textContent = Format.fmt(depr * saleVolume, 0);
-    document.getElementById('m-mix-utilities').textContent = Format.fmt(utilities * saleVolume, 0);
-    document.getElementById('m-mix-profit').textContent = Format.fmt(mixProfit, 0);
-    document.getElementById('m-mix-margin').textContent = Format.fmtNum(mixMarginPercent, 1, '%');
+    document.getElementById('m-mix-revenue').textContent = Format.fmt(calc.mixRevenue, 0);
+    document.getElementById('m-mix-cost').textContent = Format.fmt(calc.mixCost, 0);
+    document.getElementById('m-mix-materials').textContent = Format.fmt(calc.materialsCost * saleVolume, 0);
+    document.getElementById('m-mix-payroll').textContent = Format.fmt(calc.payroll * saleVolume, 0);
+    document.getElementById('m-mix-depr').textContent = Format.fmt(calc.depr * saleVolume, 0);
+    document.getElementById('m-mix-utilities').textContent = Format.fmt(calc.utilities * saleVolume, 0);
+    document.getElementById('m-mix-profit').textContent = Format.fmt(calc.mixProfit, 0);
+    document.getElementById('m-mix-margin').textContent = Format.fmtNum(calc.mixMarginPercent, 1, '%');
 
-    document.getElementById('m-delivery-trips-label').textContent = Format.fmtNum(trips, 0, 'рейс(ов)');
-    document.getElementById('m-delivery-revenue').textContent = Format.fmt(deliveryRevenue, 0);
-    document.getElementById('m-delivery-cost').textContent = Format.fmt(deliveryCostTotal, 0);
-    document.getElementById('m-delivery-fuel').textContent = Format.fmt(fuelCostPerTrip * trips, 0);
-    document.getElementById('m-delivery-urea').textContent = Format.fmt(ureaCostPerTrip * trips, 0);
-    document.getElementById('m-delivery-surcharge').textContent = Format.fmt((platonCostPerTrip + surchargePerTrip) * trips, 0);
-    document.getElementById('m-delivery-amort').textContent = Format.fmt(amortCostPerTrip * trips, 0);
-    document.getElementById('m-delivery-profit').textContent = Format.fmt(deliveryProfit, 0);
-    document.getElementById('m-delivery-margin').textContent = Format.fmtNum(deliveryMarginPercent, 1, '%');
+    document.getElementById('m-delivery-trips-label').textContent = Format.fmtNum(calc.trips, 0, 'рейс(ов)');
+    document.getElementById('m-delivery-revenue').textContent = Format.fmt(calc.deliveryRevenue, 0);
+    document.getElementById('m-delivery-cost').textContent = Format.fmt(calc.deliveryCostTotal, 0);
+    document.getElementById('m-delivery-fuel').textContent = Format.fmt(calc.fuelCostPerTrip * calc.trips, 0);
+    document.getElementById('m-delivery-urea').textContent = Format.fmt(calc.ureaCostPerTrip * calc.trips, 0);
+    document.getElementById('m-delivery-surcharge').textContent = Format.fmt((calc.platonCostPerTrip + calc.surchargePerTrip) * calc.trips, 0);
+    document.getElementById('m-delivery-amort').textContent = Format.fmt(calc.amortCostPerTrip * calc.trips, 0);
+    document.getElementById('m-delivery-profit').textContent = Format.fmt(calc.deliveryProfit, 0);
+    document.getElementById('m-delivery-margin').textContent = Format.fmtNum(calc.deliveryMarginPercent, 1, '%');
 
-    if (!deliveryReady) {
+    if (!calc.deliveryReady) {
       placeOrderBtn.disabled = true;
       lastCalc = null;
       return;
     }
 
     placeOrderBtn.disabled = false;
-    lastCalc = {
-      plantId: plant.id, plantName: plant.name, recipeName: recipe.name, materials: materialsBreakdown,
-      mixerName: selfPickup ? 'Самовывоз' : mixer.name, mixerPlate: selfPickup ? '' : (mixer.licensePlate || ''),
-      driverName: '', driverLicenseNumber: '', saleVolume: saleVolume, distanceKm: selfPickup ? 0 : dist,
-      address: selfPickup ? '' : addressInput.value.trim(), fuelPricePerLiter: fuelPrice, ureaPricePerLiter: ureaPrice,
-      ureaCostPerTrip: ureaCostPerTrip, platonCostPerTrip: platonCostPerTrip, neighborCity: neighborCity,
-      surchargePerTrip: surchargePerTrip, tripCount: trips, roundTripKm: roundTrip, fuelCostPerTrip: fuelCostPerTrip,
-      amortCostPerTrip: amortCostPerTrip, deliveryCostTotal: deliveryCostTotal, deliveryChargePerM3: deliveryChargePerM3,
-      deliveryRevenue: deliveryRevenue, deliveryProfit: deliveryProfit, deliveryMarginPercent: deliveryMarginPercent,
-      materialsCost: materialsCost, payrollCost: payroll, deprCost: depr, utilitiesCost: utilities, costPerM3: costPerM3,
-      salePrice: priceNet, mixRevenue: mixRevenue, mixCost: mixCost, mixProfit: mixProfit, mixMarginPercent: mixMarginPercent,
-      totalRevenue: totalRevenueDisplayed, totalProfit: totalProfit, profitPerM3: profitPerM3Total, totalMarginPercent: marginTotal,
-      vatApplied: vatGrossMode
-    };
+    lastCalc = OrderCalc.toOrderPayload({
+      plant: plant, recipe: recipe, mixer: mixer, selfPickup: selfPickup, saleVolume: saleVolume, dist: dist,
+      address: addressInput.value.trim(), fuelPrice: fuelPrice, ureaPrice: ureaPrice, nbCity: nbCityInput.checked,
+      vatGrossMode: vatGrossMode
+    }, calc);
+    delete lastCalc.createdAt; // проставляется заново в момент нажатия «Оформить», а не на каждый пересчёт
   }
 
   function resetOrderForm() {
@@ -388,7 +336,6 @@
     }
   }
 
-  var initialized = false;
   function init() {
     document.getElementById('page-main').innerHTML = HTML;
 
@@ -425,12 +372,23 @@
     document.getElementById('m-mixer').addEventListener('change', function () { selectedMixerId = this.value; recalc(); });
     document.getElementById('m-place-order-btn').addEventListener('click', handlePlaceOrder);
     document.getElementById('m-reset-btn').addEventListener('click', function () { resetOrderForm(); recalc(); });
-
-    initialized = true;
   }
 
+  // На узких экранах — отдельный мобильный макет (mobile-calc.js), не
+  // адаптив этого же шаблона (см. решение по мобильным экранам). renderedMode
+  // — не просто "инициализирован ли я", а "чья разметка сейчас реально в
+  // контейнере": пересобираем DOM только при первом show() и при переходе
+  // через брейкпоинт, а не на каждый вызов (State.onChange дёргает show()
+  // при любом фоновом обновлении данных — полная пересборка на каждый такой
+  // вызов стирала бы то, что менеджер ещё печатает в форме).
+  var renderedMode = null;
   function show() {
-    if (!initialized) init();
+    if (window.Viewport && Viewport.isMobile()) {
+      if (renderedMode !== 'mobile') { MobileCalcScreen.init(); renderedMode = 'mobile'; }
+      MobileCalcScreen.render();
+      return;
+    }
+    if (renderedMode !== 'desktop') { init(); renderedMode = 'desktop'; }
     recalc();
   }
 

@@ -155,16 +155,23 @@
     });
   }
 
-  var initialized = false;
   function init() {
     document.getElementById('page-orders').innerHTML = HTML;
     document.getElementById('o-export-btn').addEventListener('click', exportToExcel);
     document.getElementById('o-plant-filter').addEventListener('change', function () { plantFilterValue = this.value; render(); });
-    initialized = true;
   }
 
+  // renderedMode: см. комментарий в screen-main.js — desktop-контроллер сам
+  // решает, чья разметка (своя или mobile-orders.js) сейчас в #page-orders,
+  // и пересобирает DOM только при первом показе/переходе через брейкпоинт.
+  var renderedMode = null;
   function show() {
-    if (!initialized) init();
+    if (window.Viewport && Viewport.isMobile()) {
+      if (renderedMode !== 'mobile') { MobileOrdersScreen.init(); renderedMode = 'mobile'; }
+      MobileOrdersScreen.render();
+      return;
+    }
+    if (renderedMode !== 'desktop') { init(); renderedMode = 'desktop'; }
     render();
   }
 

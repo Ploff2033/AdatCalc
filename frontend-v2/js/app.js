@@ -51,6 +51,7 @@
     showApp();
     Shell.init();
     Shell.render();
+    Viewport.init();
     Router.init();
 
     State.onChange(function () {
