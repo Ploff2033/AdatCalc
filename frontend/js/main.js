@@ -35,8 +35,8 @@
 
   async function boot() {
     initTheme();
-    Auth.init();
-    await Auth.refreshMe();
+    AuthUI.init();
+    await AuthUI.refreshMe();
 
     var plants;
     try {

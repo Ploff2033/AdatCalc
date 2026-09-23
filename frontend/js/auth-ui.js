@@ -1,21 +1,17 @@
 (function () {
-  var role = null; // null (незалогиненный работник) | 'manager' | 'admin'
-  var RANK = { manager: 1, admin: 2 };
-
-  function isAtLeast(minRole) {
-    return (RANK[role] || 0) >= RANK[minRole];
-  }
-
+  // DOM-часть авторизации для v1 (диалог входа, кнопка в шапке, видимость
+  // вкладок по роли) — сама роль и запросы к /api/auth/* теперь в
+  // frontend/js/shared/auth.js (общее ядро для v1 и v2).
   function tabButton(name) {
     return document.querySelector('.tab-btn[data-tab="' + name + '"]');
   }
 
   function applyRoleVisibility() {
-    tabButton('personnel').hidden = !isAtLeast('admin');
-    tabButton('equipment').hidden = !isAtLeast('manager');
-    tabButton('materials').hidden = !isAtLeast('manager');
-    tabButton('dashboard').hidden = !isAtLeast('admin');
-    tabButton('waybills').hidden = !isAtLeast('manager');
+    tabButton('personnel').hidden = !Auth.isAtLeast('admin');
+    tabButton('equipment').hidden = !Auth.isAtLeast('manager');
+    tabButton('materials').hidden = !Auth.isAtLeast('manager');
+    tabButton('dashboard').hidden = !Auth.isAtLeast('admin');
+    tabButton('waybills').hidden = !Auth.isAtLeast('manager');
 
     var activeBtn = document.querySelector('.tab-btn[aria-selected="true"]');
     if (activeBtn && activeBtn.hidden && window.Tabs) {
@@ -26,6 +22,7 @@
 
   function updateAuthButton() {
     var btn = document.getElementById('auth-btn');
+    var role = Auth.getRole();
     if (role === 'admin') {
       btn.textContent = 'Админ · Выйти';
       btn.title = 'Выйти';
@@ -39,30 +36,8 @@
   }
 
   async function refreshMe() {
-    try {
-      var res = await Api.get('/auth/me');
-      role = res.role;
-    } catch (err) {
-      role = null;
-    }
+    await Auth.refreshMe();
     applyRoleVisibility();
-  }
-
-  // После входа/выхода просто перезагружаем страницу — иначе если самая первая
-  // загрузка (ещё до входа) не смогла определить завод, boot() уже завершился
-  // досрочно и остаток приложения (вкладки, переключатель завода и т.д.)
-  // никогда не инициализируется, даже после успешного логина. Перезагрузка
-  // гарантированно прогоняет boot() заново уже с валидной сессией.
-  async function login(password) {
-    await Api.post('/auth/login', { password: password });
-    location.reload();
-  }
-
-  async function logout() {
-    try {
-      await Api.post('/auth/logout', {});
-    } catch (err) { /* cookie may already be gone — ignore */ }
-    location.reload();
   }
 
   function openLoginDialog() {
@@ -72,8 +47,8 @@
   }
 
   async function handleAuthBtnClick() {
-    if (role) {
-      await logout();
+    if (Auth.getRole()) {
+      await Auth.logout();
     } else {
       openLoginDialog();
     }
@@ -84,7 +59,7 @@
     var errorEl = document.getElementById('auth-dialog-error');
     errorEl.hidden = true;
     try {
-      await login(document.getElementById('auth-password').value);
+      await Auth.login(document.getElementById('auth-password').value);
       document.getElementById('auth-dialog').close();
     } catch (err) {
       errorEl.textContent = err.message;
@@ -100,9 +75,5 @@
     });
   }
 
-  function getRole() {
-    return role;
-  }
-
-  window.Auth = { init: init, refreshMe: refreshMe, isAtLeast: isAtLeast, getRole: getRole };
+  window.AuthUI = { init: init, refreshMe: refreshMe };
 })();
