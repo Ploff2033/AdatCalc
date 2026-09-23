@@ -3,14 +3,22 @@
   // показ/скрытие панелей через hidden + history.replaceState), просто по
   // сайдбар-навигации вместо вкладок сверху. #/v2/... не нужен — весь v2
   // уже живёт под /v2/, хэш внутри него отвечает только за экран.
-  var SCREENS = {
-    main: window.MainScreen,
-    orders: window.OrdersScreen,
-    waybills: window.WaybillsScreen,
-    stock: window.StockScreen,
-    dashboard: window.DashboardScreen,
-    settings: window.SettingsScreen
-  };
+  // Важно: window.MainScreen/OrdersScreen/... присваиваются своими файлами,
+  // которые подключены ПОСЛЕ router.js (см. index.html) — если бы SCREENS
+  // был обычным объектом, собранным один раз здесь, на момент его создания
+  // все эти window.* ещё были бы undefined, и это undefined осталось бы
+  // навсегда (объект больше не перечитывается). Поэтому SCREENS — функция,
+  // вызываемая заново на каждый show(), когда все скрипты уже точно загружены.
+  function screens() {
+    return {
+      main: window.MainScreen,
+      orders: window.OrdersScreen,
+      waybills: window.WaybillsScreen,
+      stock: window.StockScreen,
+      dashboard: window.DashboardScreen,
+      settings: window.SettingsScreen
+    };
+  }
   var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager' };
   var current = null;
 
@@ -25,6 +33,7 @@
   }
 
   function show(route) {
+    var SCREENS = screens();
     if (!SCREENS[route] || !allowed(route)) route = 'main';
     Array.prototype.forEach.call(document.querySelectorAll('.page[data-route]'), function (el) {
       el.hidden = el.dataset.route !== route;
