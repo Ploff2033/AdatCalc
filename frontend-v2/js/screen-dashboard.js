@@ -7,7 +7,7 @@
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap" id="d-scope">Все заводы · только администратор</span><h1 id="d-title">Дашборд</h1></div>' +
-      '<div class="page-head-actions"><a href="/" class="btn ghost sm">Управление заводами</a></div>' +
+      '<div class="page-head-actions"><a href="/" target="_blank" rel="noopener" class="btn ghost sm">Управление заводами ↗</a></div>' +
     '</div>' +
     '<div class="grid-4" id="d-kpi"></div>' +
     '<div class="grid-2" id="d-plants" style="gap:16px"></div>';
@@ -93,7 +93,7 @@
           '<div class="stack" style="gap:2px"><span class="cap">ФОТ + аморт./мес</span><span class="num" style="font-size:17px">' + Format.fmt(fixed.total, 0) + '</span></div>' +
         '</div>' +
       '</section>';
-    }).join('') || '<p class="empty-state">Заводов ещё нет — создайте в <a href="/">прежнем интерфейсе</a>.</p>';
+    }).join('') || '<p class="empty-state">Заводов ещё нет — создайте в <a href="/" target="_blank" rel="noopener">прежнем интерфейсе</a>.</p>';
   }
 
   var initialized = false;

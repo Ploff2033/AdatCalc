@@ -27,7 +27,7 @@
           '<div class="field"><label for="s-requisites">Реквизиты (свободный текст — подставляются в путевые листы)</label><textarea id="s-requisites" class="inp" style="height:120px;padding:10px 12px;resize:vertical"></textarea></div>' +
         '</section>' +
         '<section id="s-plants" class="card sec">' +
-          '<div class="sec-h"><h2>Заводы · цены</h2><span class="hint">Полное редактирование заводов — в <a href="/">прежнем интерфейсе</a></span></div>' +
+          '<div class="sec-h"><h2>Заводы · цены</h2><span class="hint">Полное редактирование заводов — в <a href="/" target="_blank" rel="noopener">прежнем интерфейсе</a></span></div>' +
           '<div id="s-plants-list" class="stack g16"></div>' +
         '</section>' +
         '<section id="s-trips" class="card sec">' +
