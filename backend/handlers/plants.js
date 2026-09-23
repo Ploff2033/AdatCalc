@@ -18,6 +18,8 @@ function rowToPlant(row, includeToken) {
       lifespanMonths: Number(row.depr_lifespan_months)
     },
     utilitiesMonthly: Number(row.utilities_monthly),
+    fuelPrice: Number(row.fuel_price),
+    ureaPrice: Number(row.urea_price),
     plantLocation: row.location_lat != null ? { lat: row.location_lat, lng: row.location_lng } : null
   };
   if (includeToken) {
@@ -67,12 +69,14 @@ async function create(body) {
     lat = num(body.plantLocation.lat, 'plantLocation.lat');
     lng = num(body.plantLocation.lng, 'plantLocation.lng');
   }
+  const fuelPrice = body.fuelPrice !== undefined ? num(body.fuelPrice, 'fuelPrice') : 0;
+  const ureaPrice = body.ureaPrice !== undefined ? num(body.ureaPrice, 'ureaPrice') : 0;
 
   const id = db.genId('plant');
   await db.pool.query(
-    `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly, location_lat, location_lng, access_token)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, genToken()]
+    `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly, location_lat, location_lng, access_token, fuel_price, urea_price)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, genToken(), fuelPrice, ureaPrice]
   );
   return rowToPlant(await getRaw(db.pool, id), true);
 }
@@ -98,12 +102,26 @@ async function update(id, body) {
     lng = pl ? num(pl.lng, 'plantLocation.lng') : null;
   }
 
+  const fuelPrice = body.fuelPrice !== undefined ? num(body.fuelPrice, 'fuelPrice') : Number(current.fuel_price);
+  const ureaPrice = body.ureaPrice !== undefined ? num(body.ureaPrice, 'ureaPrice') : Number(current.urea_price);
+
   await db.pool.query(
-    `UPDATE plants SET name=$2, target_output=$3, depr_balance=$4, depr_residual=$5, depr_lifespan_months=$6, utilities_monthly=$7, location_lat=$8, location_lng=$9
+    `UPDATE plants SET name=$2, target_output=$3, depr_balance=$4, depr_residual=$5, depr_lifespan_months=$6, utilities_monthly=$7, location_lat=$8, location_lng=$9, fuel_price=$10, urea_price=$11
      WHERE id=$1`,
-    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng]
+    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, fuelPrice, ureaPrice]
   );
   return rowToPlant(await getRaw(db.pool, id), true);
+}
+
+// Цены топлива/мочевины правит и менеджер (раньше это были общие настройки
+// в config, доступные менеджеру), а полный update() выше — только админ.
+async function updatePrices(id, body) {
+  const fuelPrice = num(body.fuelPrice, 'fuelPrice');
+  const ureaPrice = num(body.ureaPrice, 'ureaPrice');
+  if (fuelPrice < 0 || ureaPrice < 0) throw new HttpError(400, 'Цена не может быть отрицательной');
+  const { rowCount } = await db.pool.query('UPDATE plants SET fuel_price=$2, urea_price=$3 WHERE id=$1', [id, fuelPrice, ureaPrice]);
+  if (!rowCount) throw new HttpError(404, 'Завод не найден');
+  return rowToPlant(await getRaw(db.pool, id), false);
 }
 
 async function remove(id) {
@@ -177,4 +195,4 @@ async function reissueToken(id) {
   return rowToPlant(await getRaw(db.pool, id), true);
 }
 
-module.exports = { list, create, update, remove, resolveToken, reissueToken };
+module.exports = { list, create, update, updatePrices, remove, resolveToken, reissueToken };

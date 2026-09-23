@@ -11,6 +11,7 @@ const JSZip = require('jszip');
 // талоны заказчика), стили, размеры — копируется из шаблона как есть.
 const TEMPLATE_PATH = path.join(__dirname, 'assets', 'waybill-4p-template.xlsx');
 const SHEET_PATH = 'xl/worksheets/sheet1.xml';
+const SHEET2_PATH = 'xl/worksheets/sheet2.xml';
 
 const MONTHS_GENITIVE = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -32,7 +33,11 @@ const CELLS = {
   driverLicenseNumber: 'O16',
   task: 'A31',
   notesLine1: 'EU32',
-  notesLine2: 'EU33'
+  notesLine2: 'EU33',
+  // Оборотная сторона (стр2, лист sheet2.xml) — поле "Маршрут движения
+  // (откуда-куда):" (метка в B11:AA12), пустая область для заполнения сразу
+  // после неё — AB11:BQ12 (снято по шаблону так же, как остальные CELLS).
+  route: 'AB11'
 };
 
 function xmlEscape(s) {
@@ -66,13 +71,32 @@ function setCell(xml, addr, value) {
 }
 
 // order.driverName/mixerPlate — снимок на момент рейса (см. handlers/orders.js).
+// order.routes — необязательный список маршрутов ОДНОГО путевого листа: когда
+// несколько записей путевых листов (handlers/waybill-entries.js) за один
+// день у одного и того же водителя и машины относятся к разным заказам/
+// расстояниям, роутер (router.js) группирует их в один order с несколькими
+// routes вместо нескольких файлов — кол-во путевых листов должно зависеть
+// от комбинаций водитель+машина за день, а не от кол-ва записей/заказов.
+// Каждый route — { distanceKm, tripCount, fuelCostPerTrip }. Если routes нет
+// (обычный заказ из handlers/orders.js), ведём себя как раньше — один
+// маршрут из distanceKm/tripCount/fuelCostPerTrip самого order.
 // organization — реквизиты организации (config.companyRequisites, см.
 // handlers/config.js); если не заданы админом, подставляется название завода.
 function buildOrderXml(sheetXml, order, organization) {
   var d = new Date(order.createdAt);
-  var litersPerTrip = order.fuelPricePerLiter > 0 ? order.fuelCostPerTrip / order.fuelPricePerLiter : 0;
-  var totalLiters = litersPerTrip * (order.tripCount || 0);
-  var totalDistanceKm = (order.roundTripKm || 0) * (order.tripCount || 0);
+  var routes = (order.routes && order.routes.length)
+    ? order.routes
+    : [{ distanceKm: order.distanceKm, tripCount: order.tripCount, fuelCostPerTrip: order.fuelCostPerTrip }];
+  var totalTripCount = routes.reduce(function (s, r) { return s + (r.tripCount || 0); }, 0);
+  var totalDistanceKm = routes.reduce(function (s, r) { return s + (r.distanceKm || 0) * 2 * (r.tripCount || 0); }, 0);
+  var totalLiters = order.fuelPricePerLiter > 0
+    ? routes.reduce(function (s, r) { return s + (r.tripCount || 0) * (r.fuelCostPerTrip || 0); }, 0) / order.fuelPricePerLiter
+    : 0;
+  var taskText = routes.length === 1
+    ? 'Бетон, ' + formatNum(routes[0].distanceKm, 1) + ' км в одну сторону, ' + routes[0].tripCount + ' рейс(ов)'
+    : 'Бетон: ' + routes.map(function (r) {
+        return formatNum(r.distanceKm, 1) + ' км — ' + r.tripCount + ' рейс(ов)';
+      }).join('; ');
 
   var xml = sheetXml;
   xml = setCell(xml, CELLS.day, String(d.getDate()));
@@ -83,10 +107,20 @@ function buildOrderXml(sheetXml, order, organization) {
   xml = setCell(xml, CELLS.mixerPlate, order.mixerPlate || '');
   xml = setCell(xml, CELLS.driverName, order.driverName || '');
   xml = setCell(xml, CELLS.driverLicenseNumber, order.driverLicenseNumber || '');
-  xml = setCell(xml, CELLS.task, 'Бетон, ' + formatNum(order.distanceKm, 1) + ' км в одну сторону, ' + order.tripCount + ' рейс(ов)');
+  xml = setCell(xml, CELLS.task, taskText);
   xml = setCell(xml, CELLS.notesLine1, 'Расч. расход топлива по норме: ' + formatNum(totalLiters, 1) + ' л');
-  xml = setCell(xml, CELLS.notesLine2, '(' + order.tripCount + ' рейс, ' + formatNum(totalDistanceKm, 0) + ' км)');
+  xml = setCell(xml, CELLS.notesLine2, '(' + totalTripCount + ' рейс, ' + formatNum(totalDistanceKm, 0) + ' км)');
   return xml;
+}
+
+// Оборотная сторона (стр2) — поле "Маршрут движения (откуда-куда)": печатаем
+// "Название завода → адрес доставки". Адрес у самовывоза/старых заказов без
+// адреса может быть пустым — тогда просто не трогаем ячейку (setCell
+// пропускает пустые значения), а не пишем "→ " в никуда.
+function buildRouteXml(sheet2Xml, order) {
+  if (!order.address) return sheet2Xml;
+  var routeText = (order.plantName || '') + ' → ' + order.address;
+  return setCell(sheet2Xml, CELLS.route, routeText);
 }
 
 async function buildOrderWorkbook(order, organization) {
@@ -94,6 +128,8 @@ async function buildOrderWorkbook(order, organization) {
   var zip = await JSZip.loadAsync(buf);
   var sheetXml = await zip.file(SHEET_PATH).async('string');
   zip.file(SHEET_PATH, buildOrderXml(sheetXml, order, organization));
+  var sheet2Xml = await zip.file(SHEET2_PATH).async('string');
+  zip.file(SHEET2_PATH, buildRouteXml(sheet2Xml, order));
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 

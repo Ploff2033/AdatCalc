@@ -14,6 +14,7 @@
   var fuelRateInput = document.getElementById('mixer-fuel-rate');
   var ureaRateInput = document.getElementById('mixer-urea-rate');
   var platonRateInput = document.getElementById('mixer-platon-rate');
+  var odometerBaselineInput = document.getElementById('mixer-odometer-baseline');
 
   function openForCreate() {
     titleEl.textContent = 'Новый миксер';
@@ -27,6 +28,7 @@
     fuelRateInput.value = '';
     ureaRateInput.value = '0';
     platonRateInput.value = '0';
+    odometerBaselineInput.value = '0';
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -43,6 +45,7 @@
     fuelRateInput.value = mixer.fuelRate;
     ureaRateInput.value = mixer.ureaRate || 0;
     platonRateInput.value = mixer.platonRatePerKm || 0;
+    odometerBaselineInput.value = mixer.odometerBaselineKm || 0;
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -62,7 +65,8 @@
       mileage: parseFloat(mileageInput.value),
       fuelRate: parseFloat(fuelRateInput.value),
       ureaRate: parseFloat(ureaRateInput.value) || 0,
-      platonRatePerKm: parseFloat(platonRateInput.value) || 0
+      platonRatePerKm: parseFloat(platonRateInput.value) || 0,
+      odometerBaselineKm: parseFloat(odometerBaselineInput.value) || 0
     };
     try {
       if (idInput.value) {
@@ -225,49 +229,43 @@
     });
   }
 
-  // ---- Общие настройки (цена топлива, надбавка за рейс в другой город) ----
-  var fuelPriceDefaultInput = document.getElementById('fuel-price-default');
-  var fuelPriceSaveTimer = null;
+  // ---- Цены топлива/мочевины — у каждого завода свои (текущий завод — из
+  // переключателя сверху), + общие настройки (надбавка за рейс) ниже ----
+  var fuelPriceInput = document.getElementById('fuel-price-default');
+  var ureaPriceInput = document.getElementById('urea-price-default');
+  var pricesSaveTimer = null;
+  var pricesSavePlantId = null;
 
-  function scheduleFuelPriceSave() {
-    clearTimeout(fuelPriceSaveTimer);
-    fuelPriceSaveTimer = setTimeout(saveFuelPriceDefault, 500);
+  function schedulePricesSave() {
+    var plant = State.currentPlant();
+    if (!plant) return;
+    // Запоминаем завод на момент ввода: если за 500мс до сохранения
+    // переключили завод, цена всё равно уйдёт тому, для кого её вводили.
+    pricesSavePlantId = plant.id;
+    clearTimeout(pricesSaveTimer);
+    pricesSaveTimer = setTimeout(savePrices, 500);
   }
 
-  async function saveFuelPriceDefault() {
+  async function savePrices() {
     try {
-      await Api.put('/config', { fuelPriceDefault: parseFloat(fuelPriceDefaultInput.value) || 0 });
+      await Api.put('/plants/' + pricesSavePlantId + '/prices', {
+        fuelPrice: parseFloat(fuelPriceInput.value) || 0,
+        ureaPrice: parseFloat(ureaPriceInput.value) || 0
+      });
       await State.loadAll();
     } catch (err) {
-      alert('Не удалось сохранить цену топлива: ' + err.message);
+      alert('Не удалось сохранить цены топлива/мочевины: ' + err.message);
     }
   }
 
-  function renderFuelPriceDefault() {
-    if (document.activeElement === fuelPriceDefaultInput) return;
-    fuelPriceDefaultInput.value = State.data.config.fuelPriceDefault || 0;
-  }
-
-  var ureaPriceDefaultInput = document.getElementById('urea-price-default');
-  var ureaPriceSaveTimer = null;
-
-  function scheduleUreaPriceSave() {
-    clearTimeout(ureaPriceSaveTimer);
-    ureaPriceSaveTimer = setTimeout(saveUreaPriceDefault, 500);
-  }
-
-  async function saveUreaPriceDefault() {
-    try {
-      await Api.put('/config', { ureaPriceDefault: parseFloat(ureaPriceDefaultInput.value) || 0 });
-      await State.loadAll();
-    } catch (err) {
-      alert('Не удалось сохранить цену мочевины: ' + err.message);
-    }
-  }
-
-  function renderUreaPriceDefault() {
-    if (document.activeElement === ureaPriceDefaultInput) return;
-    ureaPriceDefaultInput.value = State.data.config.ureaPriceDefault || 0;
+  function renderPrices() {
+    var plant = State.currentPlant();
+    var suffix = plant ? ' — ' + plant.name : '';
+    document.getElementById('fuel-price-default-label').textContent = 'Цена топлива' + suffix;
+    document.getElementById('urea-price-default-label').textContent = 'Цена мочевины (AdBlue)' + suffix;
+    if (!plant) return;
+    if (document.activeElement !== fuelPriceInput) fuelPriceInput.value = plant.fuelPrice || 0;
+    if (document.activeElement !== ureaPriceInput) ureaPriceInput.value = plant.ureaPrice || 0;
   }
 
   var neighborSurchargeInput = document.getElementById('neighbor-city-surcharge');
@@ -310,8 +308,8 @@
     NumericInput.attach(atBalanceInput);
     NumericInput.attach(atResidualInput);
 
-    fuelPriceDefaultInput.addEventListener('input', scheduleFuelPriceSave);
-    ureaPriceDefaultInput.addEventListener('input', scheduleUreaPriceSave);
+    fuelPriceInput.addEventListener('input', schedulePricesSave);
+    ureaPriceInput.addEventListener('input', schedulePricesSave);
     neighborSurchargeInput.addEventListener('input', scheduleNeighborSurchargeSave);
   }
 
@@ -324,8 +322,7 @@
   function render() {
     renderTiles();
     renderTruckTiles();
-    renderFuelPriceDefault();
-    renderUreaPriceDefault();
+    renderPrices();
     renderNeighborSurcharge();
     renderAdminOnlyCards();
   }

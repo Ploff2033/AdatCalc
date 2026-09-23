@@ -50,8 +50,8 @@ async function seedIfEmpty() {
 
     const plantId = 'plant_seed1';
     await client.query(
-      `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly)
-       VALUES ($1, 'Завод 1', 500, 1200000, 100000, 96, 40000)`,
+      `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly, fuel_price)
+       VALUES ($1, 'Завод 1', 500, 1200000, 100000, 96, 40000, 62)`,
       [plantId]
     );
 
@@ -65,8 +65,8 @@ async function seedIfEmpty() {
     const admin = hashPassword('AdatBetonAdmin');
     const manager = hashPassword('adatadat');
     await client.query(
-      `INSERT INTO config (id, fuel_price_default, neighbor_city_surcharge, admin_salt, admin_hash, manager_salt, manager_hash, universal_worker_token)
-       VALUES (1, 62, 1000, $1, $2, $3, $4, $5)`,
+      `INSERT INTO config (id, neighbor_city_surcharge, admin_salt, admin_hash, manager_salt, manager_hash, universal_worker_token)
+       VALUES (1, 1000, $1, $2, $3, $4, $5)`,
       [admin.salt, admin.hash, manager.salt, manager.hash, genToken()]
     );
 

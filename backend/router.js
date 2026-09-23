@@ -10,10 +10,13 @@ const recipes = require('./handlers/recipes');
 const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
 const orders = require('./handlers/orders');
+const waybillEntries = require('./handlers/waybill-entries');
 const plants = require('./handlers/plants');
 const config = require('./handlers/config');
 const auth = require('./handlers/auth');
+const db = require('./db');
 const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
+const waybillXlsx4s = require('./waybill-xlsx-4s');
 
 const ROLE_RANK = { manager: 1, admin: 2 };
 
@@ -140,6 +143,144 @@ function crudRoutes(base, mod, opts) {
   ];
 }
 
+const WAYBILL_4S_MAX_TRIPS = 3;
+
+// Путевые листы формы №4-С (аудиторы настаивают на ней вместо 4-П — см.
+// обсуждение с пользователем). Два правила разбиения на документы сразу:
+// 1. Кол-во документов зависит от комбинаций водитель+машина+день — как и
+//    раньше для 4-П, несколько записей на одного водителя/машину/день это
+//    один документ, а не несколько (см. историю обсуждения выше).
+// 2. НО в самом бланке 4-С под журнал поездок на обороте отведено только
+//    3 ездки (6 строк, см. waybill-xlsx-4s.js) — если за день у связки
+//    водитель+машина поездок больше, режем на несколько документов по
+//    WAYBILL_4S_MAX_TRIPS поездок в каждом (10 поездок = 4 документа:
+//    3+3+3+1, а не 3 — так и обсуждали с пользователем).
+//
+// Одометр — расчётный, не с реального прибора (см. mixers.odometer_baseline_km
+// в schema.sql: "план и факт совпадают всегда, потому что расход считаем по
+// норме" — решение пользователя). Чтобы вставка исторической записи задним
+// числом не портила уже посчитанные документы, одометр считается заново на
+// каждую выгрузку по ПОЛНОЙ истории записей машины (а не только по тем,
+// что выбраны сейчас), в хронологическом порядке: дата рейса, затем время
+// создания записи как тай-брейк (см. также обсуждение "план=факт" — время
+// суток в путевом не печатаем, но для порядка записей оно всё равно нужно).
+async function buildWaybill4sDocuments(entries) {
+  const mixerIds = Array.from(new Set(entries.map((e) => e.mixerId)));
+  if (!mixerIds.length) return [];
+
+  const { rows: mixerRows } = await db.pool.query(
+    'SELECT id, odometer_baseline_km FROM mixers WHERE id = ANY($1)',
+    [mixerIds]
+  );
+  const baselineByMixer = new Map(mixerRows.map((r) => [r.id, Number(r.odometer_baseline_km) || 0]));
+
+  const { rows: historyRows } = await db.pool.query(
+    'SELECT id, mixer_id, distance_km, trip_count, trip_date, created_at FROM waybill_entries WHERE mixer_id = ANY($1) ORDER BY mixer_id, trip_date, created_at, id',
+    [mixerIds]
+  );
+
+  // Одометр на НАЧАЛО каждой записи истории (не только выбранных сейчас на
+  // выгрузку) — нужно для корректного расчёта смещения даже если сама
+  // запись, предшествующая по времени, в эту выгрузку не попала.
+  const odometerStartByEntryId = new Map();
+  let currentMixer = null;
+  let running = 0;
+  for (const row of historyRows) {
+    if (row.mixer_id !== currentMixer) {
+      currentMixer = row.mixer_id;
+      running = baselineByMixer.get(row.mixer_id) || 0;
+    }
+    odometerStartByEntryId.set(row.id, running);
+    running += Number(row.distance_km) * 2 * Number(row.trip_count);
+  }
+
+  const groups = new Map();
+  for (const e of entries) {
+    const key = e.driverId + '|' + e.mixerId + '|' + e.tripDate;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+
+  const documents = [];
+  for (const [key, group] of groups) {
+    // Порядок должен совпадать с тем, что использовался при расчёте
+    // одометра (по времени создания записи) — иначе куски документа не
+    // совпадут с реальной последовательностью одометра этой машины.
+    group.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    const [y, m, d] = group[0].tripDate.split('-').map(Number);
+    const createdAt = new Date(y, m - 1, d, 12).toISOString();
+
+    let partIndex = 0;
+    let chunkRoutes = null;
+    let chunkLegs = null;
+    let chunkTrips = 0;
+    let chunkOdometerStart = 0;
+
+    const flushChunk = () => {
+      if (!chunkTrips) return;
+      partIndex += 1;
+      const odometerEnd = chunkOdometerStart + chunkLegs.reduce((s, l) => s + l.distanceKm * 2, 0);
+      documents.push({
+        id: key.replace(/\|/g, '-') + '-p' + partIndex,
+        createdAt,
+        driverName: group[0].driverName,
+        driverLicenseNumber: group[0].driverLicenseNumber,
+        mixerName: group[0].mixerName,
+        mixerPlate: group[0].mixerPlate,
+        fuelPricePerLiter: group[0].fuelPricePerLiter,
+        odometerStart: chunkOdometerStart,
+        odometerEnd,
+        routes: Array.from(chunkRoutes.values()),
+        legs: chunkLegs
+      });
+      chunkRoutes = null;
+      chunkLegs = null;
+      chunkTrips = 0;
+    };
+
+    for (const e of group) {
+      // На случай рассинхрона (запись есть в выборке, но почему-то не
+      // нашлась в истории — не должно случаться) — считаем от 0, лучше
+      // заниженный одометр, чем упавшая выгрузка.
+      const entryStart = odometerStartByEntryId.has(e.id) ? odometerStartByEntryId.get(e.id) : 0;
+      let remaining = e.tripCount;
+      let consumed = 0;
+      while (remaining > 0) {
+        if (chunkTrips === 0) {
+          chunkRoutes = new Map();
+          chunkLegs = [];
+          chunkOdometerStart = entryStart + consumed * e.distanceKm * 2;
+        }
+        const take = Math.min(remaining, WAYBILL_4S_MAX_TRIPS - chunkTrips);
+
+        const routeKey = e.distanceKm + '|' + e.address;
+        if (!chunkRoutes.has(routeKey)) {
+          chunkRoutes.set(routeKey, {
+            distanceKm: e.distanceKm,
+            address: e.address,
+            plantName: e.plantName,
+            tripCount: 0,
+            fuelCostPerTrip: e.fuelCostPerTrip
+          });
+        }
+        chunkRoutes.get(routeKey).tripCount += take;
+        for (let i = 0; i < take; i++) {
+          chunkLegs.push({ plantName: e.plantName, address: e.address, distanceKm: e.distanceKm });
+        }
+        chunkTrips += take;
+        consumed += take;
+        remaining -= take;
+
+        if (chunkTrips >= WAYBILL_4S_MAX_TRIPS) flushChunk();
+      }
+    }
+    flushChunk();
+  }
+
+  return documents;
+}
+
 const routes = [
   // Заводы — читать может кто угодно (нужно всем ролям), создавать/менять/удалять — только админ.
   ...crudRoutes('/api/plants', plants, { read: null, write: 'admin' }),
@@ -157,6 +298,17 @@ const routes = [
     pattern: /^\/api\/plants\/([^/]+)\/reissue-token$/,
     role: 'admin',
     handler: async (req, res, m) => sendJson(res, 200, await plants.reissueToken(decodeURIComponent(m[1])))
+  },
+  // Цены топлива/мочевины завода — доступны менеджеру (раньше это были общие
+  // настройки, которые он мог менять), в отличие от полного PUT /api/plants/:id.
+  {
+    method: 'PUT',
+    pattern: /^\/api\/plants\/([^/]+)\/prices$/,
+    role: 'manager',
+    handler: async (req, res, m) => {
+      const body = await readBody(req);
+      sendJson(res, 200, await plants.updatePrices(decodeURIComponent(m[1]), body));
+    }
   },
 
   // Сотрудники — список с зарплатами видит только админ (list() сам решает
@@ -222,6 +374,44 @@ const routes = [
         res.end(buf);
       } else {
         const buf = await buildWaybillsZip(withTrips, organization);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': 'attachment; filename="putevye-listy.zip"'
+        });
+        res.end(buf);
+      }
+    }
+  },
+
+  // Путевые листы для заказов, растянутых на несколько дней/машин/водителей —
+  // отдельный модуль (см. handlers/waybill-entries.js), не заменяет путевой
+  // лист прямо из заказа выше, а дополняет его для этого случая. Доступно
+  // только менеджеру и выше — это не рутинный ввод по анонимной ссылке.
+  ...crudRoutes('/api/waybill-entries', waybillEntries, { read: 'manager', write: 'manager' }),
+  {
+    method: 'POST',
+    pattern: /^\/api\/waybill-entries\/waybills\.xlsx$/,
+    role: 'manager',
+    handler: async (req, res) => {
+      const body = await readBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids : [];
+      const found = await waybillEntries.getByIds(ids);
+      const withTrips = found.filter((e) => e.tripCount > 0);
+      if (!withTrips.length) throw new HttpError(400, 'Нет записей с рейсами для путевого листа');
+      const cfg = await config.get('admin');
+      const organization = cfg.companyRequisites;
+      // Форма №4-С (не 4-П) — см. обсуждение перехода. Группировка и
+      // разбиение по 3 поездки на документ — в buildWaybill4sDocuments.
+      const shaped = await buildWaybill4sDocuments(withTrips);
+      if (shaped.length === 1) {
+        const buf = await waybillXlsx4s.buildDocumentWorkbook(shaped[0], organization);
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': 'attachment; filename="' + waybillXlsx4s.waybillFileName(shaped[0]) + '"'
+        });
+        res.end(buf);
+      } else {
+        const buf = await waybillXlsx4s.buildWaybillsZip(shaped, organization);
         res.writeHead(200, {
           'Content-Type': 'application/zip',
           'Content-Disposition': 'attachment; filename="putevye-listy.zip"'

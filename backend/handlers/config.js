@@ -2,22 +2,24 @@ const db = require('../db');
 const { num } = require('../validate');
 const { genToken } = require('../tokens');
 
-// Осталось только общее для всех заводов: цена топлива и надбавка (техника
-// общая). Выработка/амортизация/коммуналка теперь у каждого завода свои —
-// см. handlers/plants.js. Auth-хэши в этой же таблице, но наружу не отдаются.
+// Общие для всех заводов настройки (надбавка за рейс, реквизиты, лимиты смен).
+// Цены топлива/мочевины и выработка/амортизация/коммуналка — у каждого завода
+// свои, см. handlers/plants.js. Auth-хэши в этой же таблице, но наружу не отдаются.
 // Общий токен подмены (universal_worker_token) отдаётся только admin — как и
 // access_token у заводов, это чувствительный секрет, дающий доступ ко всем
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT fuel_price_default, urea_price_default, neighbor_city_surcharge, company_requisites, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
+    'SELECT neighbor_city_surcharge, company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
-    fuelPriceDefault: Number(row.fuel_price_default),
-    ureaPriceDefault: Number(row.urea_price_default),
     neighborCitySurcharge: Number(row.neighbor_city_surcharge),
-    companyRequisites: row.company_requisites || ''
+    companyRequisites: row.company_requisites || '',
+    driverShiftHours: Number(row.driver_shift_hours),
+    vehicleShiftHours: Number(row.vehicle_shift_hours),
+    avgSpeedKmh: Number(row.avg_speed_kmh),
+    unloadMinutes: Number(row.unload_minutes)
   };
   if (role === 'admin') {
     out.universalWorkerToken = row.universal_worker_token;
@@ -30,14 +32,6 @@ async function get(role) {
 async function update(body, role) {
   const sets = [];
   const values = [];
-  if (body.fuelPriceDefault !== undefined) {
-    values.push(num(body.fuelPriceDefault, 'fuelPriceDefault'));
-    sets.push(`fuel_price_default = $${values.length}`);
-  }
-  if (body.ureaPriceDefault !== undefined) {
-    values.push(num(body.ureaPriceDefault, 'ureaPriceDefault'));
-    sets.push(`urea_price_default = $${values.length}`);
-  }
   if (body.neighborCitySurcharge !== undefined) {
     values.push(num(body.neighborCitySurcharge, 'neighborCitySurcharge'));
     sets.push(`neighbor_city_surcharge = $${values.length}`);
@@ -45,6 +39,22 @@ async function update(body, role) {
   if (body.companyRequisites !== undefined) {
     values.push(String(body.companyRequisites).trim());
     sets.push(`company_requisites = $${values.length}`);
+  }
+  if (body.driverShiftHours !== undefined) {
+    values.push(num(body.driverShiftHours, 'driverShiftHours'));
+    sets.push(`driver_shift_hours = $${values.length}`);
+  }
+  if (body.vehicleShiftHours !== undefined) {
+    values.push(num(body.vehicleShiftHours, 'vehicleShiftHours'));
+    sets.push(`vehicle_shift_hours = $${values.length}`);
+  }
+  if (body.avgSpeedKmh !== undefined) {
+    values.push(num(body.avgSpeedKmh, 'avgSpeedKmh'));
+    sets.push(`avg_speed_kmh = $${values.length}`);
+  }
+  if (body.unloadMinutes !== undefined) {
+    values.push(num(body.unloadMinutes, 'unloadMinutes'));
+    sets.push(`unload_minutes = $${values.length}`);
   }
   if (sets.length) {
     await db.pool.query(`UPDATE config SET ${sets.join(', ')} WHERE id = 1`, values);

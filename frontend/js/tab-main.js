@@ -3,13 +3,13 @@
 
   var selectedRecipeId = '';
   var selectedMixerId = '';
-  var selectedDriverId = '';
   var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
   var vatGrossMode = false;
   var testPriceDirty = false;
   var testPriceNetStored = 0;
   var fuelPriceDirty = false;
   var ureaPriceDirty = false;
+  var lastPricePlantId = null;
   var submitAttempted = false;
   var lastCalc = null;
 
@@ -97,8 +97,8 @@
     document.getElementById('main-plant-badge').textContent = plant ? plant.name : '';
     var recipeSelect = document.getElementById('main-recipe');
     var mixerSelect = document.getElementById('main-mixer');
-    var driverSelect = document.getElementById('main-driver');
     var distInput = document.getElementById('dist');
+    var addressInput = document.getElementById('delivery-address');
     var errorEl = document.getElementById('main-validation-error');
     var placeOrderBtn = document.getElementById('place-order-btn');
     var nbCityInput = document.getElementById('nb-city');
@@ -110,8 +110,8 @@
     // чтобы не создавать впечатление, что они всё ещё на что-то влияют.
     var selfPickup = document.getElementById('self-pickup').checked;
     mixerSelect.disabled = selfPickup;
-    driverSelect.disabled = selfPickup;
     distInput.disabled = selfPickup;
+    addressInput.disabled = selfPickup;
     nbCityInput.disabled = selfPickup;
     deliveryChargeInput.disabled = selfPickup;
     document.getElementById('fuel-price').disabled = selfPickup;
@@ -123,29 +123,34 @@
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
     var plantId = plant ? plant.id : null;
-    var plantDrivers = data.employees.filter(function (e) { return e.isDriver && (e.plantId === plantId || !e.plantId); });
-    selectedDriverId = populateSelect(driverSelect, plantDrivers, selectedDriverId || driverSelect.value);
-
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
-    var driver = plantDrivers.find(function (d) { return d.id === selectedDriverId; });
 
     var distField = distInput.closest('.field');
     var distRaw = distInput.value;
     var dist = parseFloat(distRaw) || 0;
     var distMissing = !selfPickup && (distRaw.trim() === '' || !(dist > 0));
+    var addressField = addressInput.closest('.field');
+    var addressMissing = !selfPickup && !addressInput.value.trim();
 
-    // Цена топлива — предустановка из Техника → Общие настройки, но на Главной
-    // её можно переопределить под конкретный заказ (как с ценой смеси).
+    // Цена топлива — предустановка завода (Техника → цены), но на Главной её
+    // можно переопределить под конкретный заказ (как с ценой смеси). При смене
+    // завода переопределение сбрасывается — оно было под другой завод.
+    var pricePlantId = plant ? plant.id : null;
+    if (pricePlantId !== lastPricePlantId) {
+      fuelPriceDirty = false;
+      ureaPriceDirty = false;
+      lastPricePlantId = pricePlantId;
+    }
     var fuelPriceInput = document.getElementById('fuel-price');
-    var configFuelPrice = data.config.fuelPriceDefault || 0;
+    var configFuelPrice = (plant && plant.fuelPrice) || 0;
     if (!fuelPriceDirty) {
       NumericInput.setFormattedValue(fuelPriceInput, configFuelPrice);
     }
     var fuelPrice = NumericInput.parseNumber(fuelPriceInput.value) || 0;
 
     var ureaPriceInput = document.getElementById('urea-price');
-    var configUreaPrice = data.config.ureaPriceDefault || 0;
+    var configUreaPrice = (plant && plant.ureaPrice) || 0;
     if (!ureaPriceDirty) {
       NumericInput.setFormattedValue(ureaPriceInput, configUreaPrice);
     }
@@ -154,25 +159,27 @@
     var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
     document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
 
-    // Марка/рецепт нужна для любого расчёта. Миксер/водитель/расстояние нужны
-    // только для доставки — без них уже можно посмотреть себестоимость и
-    // прибыль по смеси (быстрая проверка цены без лишних кликов). Водитель
-    // нужен для путевого листа (см. Waybill) — без него рейс не оформить.
+    // Марка/рецепт нужна для любого расчёта. Миксер/расстояние нужны только
+    // для доставки — без них уже можно посмотреть себестоимость и прибыль по
+    // смеси (быстрая проверка цены без лишних кликов). Водитель у заказа
+    // больше не фиксируется — кто фактически повезёт и когда, назначается
+    // отдельно во вкладке «Путевые листы» (см. tab-waybills.js), т.к. рейсы
+    // одного заказа могут разъехаться по разным дням/водителям/машинам.
     var missingDelivery = [];
     if (!selfPickup && !mixer) missingDelivery.push(mixerSelect);
-    if (!selfPickup && !driver) missingDelivery.push(driverSelect);
     if (distMissing) missingDelivery.push(distField);
+    if (addressMissing) missingDelivery.push(addressField);
     var missing = recipe ? missingDelivery : [recipeSelect].concat(missingDelivery);
 
     // Баннер и красная обводка — только после попытки оформить заказ с
     // незаполненными полями, а не сразу при открытии формы: иначе баннер
     // занимает место и вёрстка прыгает при каждом вводе.
-    [recipeSelect, mixerSelect, driverSelect, distField].forEach(function (el) { el.classList.remove('invalid'); });
+    [recipeSelect, mixerSelect, distField, addressField].forEach(function (el) { el.classList.remove('invalid'); });
     if (submitAttempted && missing.length) {
       missing.forEach(function (el) { el.classList.add('invalid'); });
       errorEl.textContent = selfPickup
         ? 'Заполните обязательное поле: марка/рецепт — оно выделено красным.'
-        : 'Заполните обязательные поля: марка/рецепт, миксер, водитель и расстояние — они выделены красным.';
+        : 'Заполните обязательные поля: марка/рецепт, миксер, расстояние и адрес доставки — они выделены красным.';
       errorEl.hidden = false;
     } else {
       errorEl.hidden = true;
@@ -240,7 +247,7 @@
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
 
-    var deliveryReady = selfPickup || (!!mixer && !!driver && !distMissing);
+    var deliveryReady = selfPickup || (!!mixer && !distMissing && !addressMissing);
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0, neighborCity = false,
       surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0, deliveryRevenue = 0,
       deliveryProfit = 0, deliveryMarginPercent = 0;
@@ -339,10 +346,13 @@
       materials: materialsBreakdown,
       mixerName: selfPickup ? 'Самовывоз' : mixer.name,
       mixerPlate: selfPickup ? '' : (mixer.licensePlate || ''),
-      driverName: selfPickup ? '' : driver.name,
-      driverLicenseNumber: selfPickup ? '' : (driver.licenseNumber || ''),
+      // Водитель у заказа больше не фиксируется (см. комментарий выше) —
+      // поля остаются в схеме БД для старых заказов, но новые всегда пустые.
+      driverName: '',
+      driverLicenseNumber: '',
       saleVolume: saleVolume,
       distanceKm: selfPickup ? 0 : dist,
+      address: selfPickup ? '' : addressInput.value.trim(),
       fuelPricePerLiter: fuelPrice,
       ureaPricePerLiter: ureaPrice,
       ureaCostPerTrip: ureaCostPerTrip,
@@ -494,10 +504,6 @@
     });
     document.getElementById('main-mixer').addEventListener('change', function () {
       selectedMixerId = this.value;
-      recalc();
-    });
-    document.getElementById('main-driver').addEventListener('change', function () {
-      selectedDriverId = this.value;
       recalc();
     });
 

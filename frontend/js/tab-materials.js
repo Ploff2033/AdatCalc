@@ -37,10 +37,14 @@
     return validId;
   }
 
+  // Материал принадлежит текущему заводу — предустановки цен берём у него.
+  function plantFuelPrice() { var p = State.currentPlant(); return (p && p.fuelPrice) || ''; }
+  function plantUreaPrice() { var p = State.currentPlant(); return (p && p.ureaPrice) || ''; }
+
   function clearDeliveryFields() {
     matDeliveryDistanceInput.value = '';
-    matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
-    matDeliveryUreaPriceInput.value = State.data.config.ureaPriceDefault || '';
+    matDeliveryFuelPriceInput.value = plantFuelPrice();
+    matDeliveryUreaPriceInput.value = plantUreaPrice();
     matDeliverySurchargeInput.value = '';
   }
 
@@ -62,10 +66,10 @@
   function handleDeliveryTruckChange() {
     var truck = State.data.aggregateTrucks.find(function (t) { return t.id === matDeliveryTruckSelect.value; });
     if (truck && !matDeliveryFuelPriceInput.value) {
-      matDeliveryFuelPriceInput.value = State.data.config.fuelPriceDefault || '';
+      matDeliveryFuelPriceInput.value = plantFuelPrice();
     }
     if (truck && !matDeliveryUreaPriceInput.value) {
-      matDeliveryUreaPriceInput.value = State.data.config.ureaPriceDefault || '';
+      matDeliveryUreaPriceInput.value = plantUreaPrice();
     }
     updateMaterialDialogPricing();
   }

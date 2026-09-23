@@ -136,7 +136,6 @@
           '<div class="order-figure"><span class="order-figure-label">Рент-ть</span><span class="order-figure-value" data-f="totalMarginPercent">—</span></div>' +
         '</div>' +
         '<button type="button" class="edit-order-btn" hidden>Изменить</button>' +
-        '<button type="button" class="waybill-btn" hidden>Путевой лист</button>' +
         '<button type="button" class="danger del-btn">Удалить</button>' +
         '<button type="button" class="icon-btn toggle-btn" title="Развернуть">⌄</button>' +
       '</div>' +
@@ -207,6 +206,7 @@
       Format.fmtNum(order.distanceKm, 1, 'км')
     ];
     if (order.neighborCity) metaParts.push('рейс в соседний город');
+    if (order.address) metaParts.push(order.address);
     card.querySelector('.order-meta').textContent = metaParts.join(' · ');
 
     [
@@ -255,7 +255,7 @@
     var details = card.querySelector('.order-details');
     var toggleBtn = card.querySelector('.toggle-btn');
     head.addEventListener('click', function (e) {
-      if (e.target.closest('.del-btn') || e.target.closest('.edit-order-btn') || e.target.closest('.waybill-btn')) return;
+      if (e.target.closest('.del-btn') || e.target.closest('.edit-order-btn')) return;
       var willOpen = details.hidden;
       details.hidden = !willOpen;
       toggleBtn.classList.toggle('open', willOpen);
@@ -266,13 +266,6 @@
     var editOrderBtn = card.querySelector('.edit-order-btn');
     editOrderBtn.hidden = !(window.Auth && Auth.isAtLeast('manager'));
     editOrderBtn.addEventListener('click', function (e) { e.stopPropagation(); openEditDate(order); });
-
-    var waybillBtn = card.querySelector('.waybill-btn');
-    waybillBtn.hidden = !((window.Auth && Auth.isAtLeast('manager')) && order.tripCount > 0);
-    waybillBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      Waybill.download([order]).catch(function (err) { alert(err.message); });
-    });
 
     return card;
   }
@@ -398,14 +391,11 @@
     var container = document.getElementById('orders-list');
     var emptyHint = document.getElementById('orders-empty-hint');
     var exportBtn = document.getElementById('export-orders-btn');
-    var printBtn = document.getElementById('print-waybills-btn');
     var orders = filteredOrders();
     container.innerHTML = '';
     emptyHint.hidden = orders.length > 0;
     exportBtn.hidden = !(window.Auth && Auth.getRole());
     exportBtn.disabled = orders.length === 0;
-    printBtn.hidden = !(window.Auth && Auth.getRole());
-    printBtn.disabled = !orders.some(function (o) { return o.tripCount > 0; });
     var lastDayKey = null;
     orders.forEach(function (order) {
       var key = dayKey(order.createdAt);
@@ -441,7 +431,7 @@
     if (!orders.length) return;
 
     var headers = [
-      'Завод', 'Дата', 'Марка', 'Миксер', 'Объём (м³)', 'Расстояние (км)', 'Рейс в другой город',
+      'Завод', 'Дата', 'Марка', 'Миксер', 'Адрес доставки', 'Объём (м³)', 'Расстояние (км)', 'Рейс в другой город',
       'Материалы (₽/м³)', 'ФОТ (₽/м³)', 'Амортизация завода (₽/м³)', 'Коммуналка (₽/м³)', 'Себестоимость 1м³ (₽)',
       'Себестоимость смеси (₽)', 'Цена (₽/м³)', 'Выручка со смеси (₽)', 'Прибыль от смеси (₽)', 'Рентабельность смеси (%)',
       'Пробег за рейс (км)', 'Топливо за рейс (₽)', 'Амортизация техники за рейс (₽)', 'Доплата водителю (₽)', 'Рейсов',
@@ -459,7 +449,7 @@
       // выручка без наценки налога, извлекать из неё нечего.
       var ndsAmount = o.vatApplied ? (o.totalRevenue || 0) * 22 / 122 : 0;
       return [
-        o.plantName, formatDate(o.createdAt), o.recipeName, o.mixerName, csvNum(o.saleVolume), csvNum(o.distanceKm), o.neighborCity ? 'да' : 'нет',
+        o.plantName, formatDate(o.createdAt), o.recipeName, o.mixerName, o.address || '', csvNum(o.saleVolume), csvNum(o.distanceKm), o.neighborCity ? 'да' : 'нет',
         csvNum(o.materialsCost), csvNum(o.payrollCost), csvNum(o.deprCost), csvNum(o.utilitiesCost), csvNum(o.costPerM3),
         csvNum(o.mixCost), csvNum(o.salePrice), csvNum(o.mixRevenue), csvNum(o.mixProfit), csvNum(o.mixMarginPercent),
         csvNum(o.roundTripKm), csvNum(o.fuelCostPerTrip), csvNum(o.amortCostPerTrip), csvNum(o.surchargePerTrip), csvNum(o.tripCount),
@@ -484,16 +474,8 @@
     URL.revokeObjectURL(url);
   }
 
-  // Только рейсы (миксер реально ездил) — у самовывоза нет ни водителя, ни
-  // техники, путевой лист оформлять не на что.
-  function downloadFilteredWaybills() {
-    var orders = filteredOrders().filter(function (o) { return o.tripCount > 0; });
-    if (orders.length) Waybill.download(orders).catch(function (err) { alert(err.message); });
-  }
-
   function init() {
     document.getElementById('export-orders-btn').addEventListener('click', exportToExcel);
-    document.getElementById('print-waybills-btn').addEventListener('click', downloadFilteredWaybills);
     document.getElementById('order-date-form').addEventListener('submit', handleEditDateSubmit);
     Array.prototype.forEach.call(document.getElementById('order-date-dialog').querySelectorAll('[data-close-dialog]'), function (btn) {
       btn.addEventListener('click', function () { document.getElementById('order-date-dialog').close(); });

@@ -845,8 +845,7 @@ section.card.compact{
   transform:rotate(180deg);
 }
 .order-card .del-btn,
-.order-card .edit-order-btn,
-.order-card .waybill-btn{
+.order-card .edit-order-btn{
   border:1px solid var(--border);
   background:var(--surface);
   color:var(--text-muted);
@@ -858,8 +857,7 @@ section.card.compact{
   flex-shrink:0;
 }
 .order-card .del-btn:hover{ color:var(--negative); border-color:var(--negative); }
-.order-card .edit-order-btn:hover,
-.order-card .waybill-btn:hover{ color:var(--accent); border-color:var(--accent); }
+.order-card .edit-order-btn:hover{ color:var(--accent); border-color:var(--accent); }
 .order-details{
   display:flex;
   flex-direction:column;
@@ -1098,6 +1096,10 @@ input:focus-visible{ outline:none; }
   border-radius:8px;
   cursor:pointer;
 }
+.ghost-btn:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+}
 .dialog-error{
   margin:0;
   color:var(--negative);
@@ -1138,3 +1140,56 @@ input:focus-visible{ outline:none; }
   padding-right:8px;
 }
 
+/* ============ ПУТЕВЫЕ ЛИСТЫ (tab-waybills.js) ============ */
+.wb-add-row{
+  display:grid;
+  grid-template-columns:1.6fr 1fr 1.3fr 1.3fr .8fr auto;
+  gap:10px;
+  align-items:end;
+}
+.wb-add-actions{
+  gap:4px;
+}
+.wb-add-actions-row{
+  display:flex;
+  gap:8px;
+}
+.wb-add-actions-row .ghost-btn, .wb-add-actions-row .primary-btn{
+  white-space:nowrap;
+}
+@media (max-width: 900px){
+  .wb-add-row{
+    grid-template-columns:1fr 1fr;
+  }
+}
+.wb-row-del-btn{
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--text-muted);
+  font-size:12px;
+  font-weight:600;
+  padding:5px 10px;
+  border-radius:6px;
+  cursor:pointer;
+}
+.wb-row-del-btn:hover{
+  color:var(--negative);
+  border-color:var(--negative);
+}
+.dash-table input[type="checkbox"]{
+  width:16px;
+  height:16px;
+  accent-color:var(--accent);
+  vertical-align:middle;
+}
+.wb-goto-btn{
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--accent);
+  font-size:12px;
+  font-weight:600;
+  padding:5px 10px;
+  border-radius:6px;
+  cursor:pointer;
+  white-space:nowrap;
+}

@@ -32,6 +32,7 @@
     <button class="tab-btn" data-tab="main" role="tab" type="button">Главная</button>
     <button class="tab-btn" data-tab="orders" role="tab" type="button">Заказы</button>
     <button class="tab-btn" data-tab="dashboard" role="tab" type="button" hidden>Дашборд</button>
+    <button class="tab-btn" data-tab="waybills" role="tab" type="button" hidden>Путевые листы</button>
   </nav>
 
   <div id="load-error" class="load-error" hidden></div>
@@ -116,11 +117,11 @@
       <div class="card-head"><span class="num">01</span><h2>Общие настройки</h2></div>
       <div class="config-grid">
         <div class="field-group">
-          <label for="fuel-price-default">Цена топлива</label>
+          <label for="fuel-price-default" id="fuel-price-default-label">Цена топлива</label>
           <div class="field"><input type="number" id="fuel-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
         </div>
         <div class="field-group">
-          <label for="urea-price-default">Цена мочевины (AdBlue)</label>
+          <label for="urea-price-default" id="urea-price-default-label">Цена мочевины (AdBlue)</label>
           <div class="field"><input type="number" id="urea-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
         </div>
         <div class="field-group">
@@ -128,7 +129,7 @@
           <div class="field"><input type="number" id="neighbor-city-surcharge" min="0" step="any"><span class="unit">₽/рейс</span></div>
         </div>
       </div>
-      <p class="hint">Цена топлива и мочевины используется во всех расчётах доставки (бетона и инертных). Надбавка — доплата водителю за рейс в соседний город, применяется на Главной по чекбоксу.</p>
+      <p class="hint">Цена топлива и мочевины задаётся для завода, выбранного сверху, и используется в расчётах доставки этого завода (бетона и инертных). Надбавка — доплата водителю за рейс в соседний город, применяется на Главной по чекбоксу.</p>
     </section>
 
     <section class="card" id="mixers-card">
@@ -205,13 +206,13 @@
           </div>
 
           <div class="field-group">
-            <label for="main-driver">Водитель</label>
-            <select class="select" id="main-driver"></select>
+            <label for="dist">Расстояние (в одну сторону)</label>
+            <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
           </div>
 
           <div class="field-group">
-            <label for="dist">Расстояние (в одну сторону)</label>
-            <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
+            <label for="delivery-address">Адрес доставки</label>
+            <div class="field"><input type="text" id="delivery-address" placeholder="Город, улица, дом"></div>
           </div>
 
           <div class="checkbox-row">
@@ -367,7 +368,6 @@
       <div class="card-head">
         <span class="num">02</span><h2>История заказов</h2>
         <button type="button" class="ghost-btn" id="export-orders-btn" disabled>Экспорт в Excel</button>
-        <button type="button" class="ghost-btn" id="print-waybills-btn" disabled>Путевые листы</button>
       </div>
       <div class="orders-filters">
         <select class="select orders-plant-filter" id="orders-plant-filter" hidden></select>
@@ -501,6 +501,119 @@
       <div class="field-group">
         <div class="field"><input type="text" id="company-requisites" placeholder="ООО «Компания», г. Черкесск, ул. Примерная, 1, тел. +7 900 000-00-00"></div>
       </div>
+    </section>
+
+  </section>
+
+  <!-- ============ ПУТЕВЫЕ ЛИСТЫ ============ -->
+  <section class="tab-panel" id="tab-waybills" data-tab="waybills" hidden>
+
+    <section class="card compact">
+      <div class="card-head"><span class="num">01</span><h2>Настройки</h2></div>
+      <div class="config-grid">
+        <div class="field-group">
+          <label for="driver-shift-hours">Дневной лимит водителя</label>
+          <div class="field"><input type="number" id="driver-shift-hours" min="0" step="any"><span class="unit">ч/день</span></div>
+        </div>
+        <div class="field-group">
+          <label for="vehicle-shift-hours">Дневной лимит машины</label>
+          <div class="field"><input type="number" id="vehicle-shift-hours" min="0" step="any"><span class="unit">ч/день</span></div>
+        </div>
+        <div class="field-group">
+          <label for="avg-speed-kmh">Средняя скорость</label>
+          <div class="field"><input type="number" id="avg-speed-kmh" min="0" step="any"><span class="unit">км/ч</span></div>
+        </div>
+        <div class="field-group">
+          <label for="unload-minutes">Время разгрузки</label>
+          <div class="field"><input type="number" id="unload-minutes" min="0" step="any"><span class="unit">мин/рейс</span></div>
+        </div>
+      </div>
+      <p class="hint">Используется ниже для проверки дневных лимитов водителя/машины и кнопки MAX — время на рейс считается как (расстояние×2 ÷ скорость) + время разгрузки.</p>
+    </section>
+
+    <section class="card compact">
+      <div class="card-head"><span class="num">02</span><h2>Не распределено по путевым листам</h2></div>
+      <p class="hint">Олег заносит заказы как есть — здесь видно, у каких заказов ещё остались рейсы, на которые не заведён путевой лист.</p>
+      <p class="hint" id="wb-unallocated-empty-hint">Нераспределённых рейсов нет — по всем заказам с доставкой путевые листы заведены полностью.</p>
+      <div class="dash-table-wrap">
+        <table class="dash-table" id="wb-unallocated-table">
+          <thead>
+            <tr>
+              <th>Заказ</th>
+              <th>Завод</th>
+              <th>Всего рейсов</th>
+              <th>Разнесено</th>
+              <th>Осталось</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="wb-unallocated-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card compact">
+      <div class="card-head"><span class="num">03</span><h2>Разнести рейсы</h2></div>
+      <p class="hint">Кто, когда и на чём отвозил — по одной комбинации водитель+машина+день на строку. Кнопка MAX подставляет максимум рейсов для выбранных водителя и машины в этот день (не больше дневного лимита часов и того, что осталось по заказу) — дальше распределяйте остаток вручную по другим строкам, а не одной кнопкой на всё.</p>
+      <form class="wb-add-row" id="wb-add-form">
+        <div class="field-group">
+          <label for="wb-add-order">Заказ</label>
+          <select class="select" id="wb-add-order" required></select>
+        </div>
+        <div class="field-group">
+          <label for="wb-add-date">Дата</label>
+          <div class="field"><input type="date" id="wb-add-date" required></div>
+        </div>
+        <div class="field-group">
+          <label for="wb-add-driver">Водитель</label>
+          <select class="select" id="wb-add-driver" required></select>
+        </div>
+        <div class="field-group">
+          <label for="wb-add-mixer">Машина</label>
+          <select class="select" id="wb-add-mixer" required></select>
+        </div>
+        <div class="field-group">
+          <label for="wb-add-trips">Рейсов</label>
+          <div class="field"><input type="number" id="wb-add-trips" min="1" step="1" required></div>
+        </div>
+        <div class="field-group wb-add-actions">
+          <label>&nbsp;</label>
+          <div class="wb-add-actions-row">
+            <button type="button" class="ghost-btn" id="wb-add-max-btn">MAX</button>
+            <button type="submit" class="primary-btn">Добавить</button>
+          </div>
+        </div>
+      </form>
+      <p class="hint" id="wb-add-hint"></p>
+      <p class="dialog-error" id="wb-add-error" hidden></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span class="num">04</span><h2>Записи путевых листов</h2>
+        <button type="button" class="ghost-btn" id="wb-download-btn" disabled>Скачать путевые листы</button>
+      </div>
+      <p class="hint">Несколько строк с одним и тем же водителем, машиной и днём попадут в один путевой лист — количество файлов зависит от комбинаций водитель+машина за день, а не от числа строк.</p>
+      <p class="hint" id="wb-entries-empty-hint">Записей пока нет.</p>
+      <div class="dash-table-wrap">
+        <table class="dash-table" id="wb-entries-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="wb-select-all"></th>
+              <th>Дата</th>
+              <th>Завод / заказ</th>
+              <th>Водитель</th>
+              <th>Машина</th>
+              <th>Расстояние</th>
+              <th>Рейсов</th>
+              <th>Часы</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="wb-entries-table-body"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="wb-entries-summary"></p>
     </section>
 
   </section>
@@ -715,6 +828,10 @@
       <label for="mixer-platon-rate">Платон</label>
       <div class="field"><input type="number" id="mixer-platon-rate" min="0" step="any" value="0"><span class="unit">₽/км</span></div>
     </div>
+    <div class="field-group">
+      <label for="mixer-odometer-baseline">Начальный одометр (для путевых листов)</label>
+      <div class="field"><input type="number" id="mixer-odometer-baseline" min="0" step="any" value="0"><span class="unit">км</span></div>
+    </div>
     <p class="dialog-error" id="mixer-dialog-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="ghost-btn" data-close-dialog>Отмена</button>
@@ -833,6 +950,7 @@
 <script src="/js/tab-main.js"></script>
 <script src="/js/tab-orders.js"></script>
 <script src="/js/tab-dashboard.js"></script>
+<script src="/js/tab-waybills.js"></script>
 <script src="/js/main.js"></script>
 </body>
 </html>

@@ -29,6 +29,7 @@
     MainTab.render();
     OrdersTab.render();
     DashboardTab.render();
+    WaybillsTab.render();
     PlantSwitcher.render();
   }
 
@@ -65,6 +66,7 @@
     MainTab.init();
     OrdersTab.init();
     DashboardTab.init();
+    WaybillsTab.init();
     PlantSwitcher.init();
 
     renderAll();

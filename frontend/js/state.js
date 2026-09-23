@@ -3,12 +3,13 @@
     employees: [],
     personnelSummary: { byPlant: {}, sharedTotal: 0 },
     plants: [],
-    config: { fuelPriceDefault: 0, neighborCitySurcharge: 0 },
+    config: { neighborCitySurcharge: 0 },
     materials: [],
     recipes: [],
     mixers: [],
     aggregateTrucks: [],
-    orders: []
+    orders: [],
+    waybillEntries: []
   };
 
   var listeners = [];
@@ -62,7 +63,8 @@
       Api.get('/mixers'),
       Api.get('/aggregate-trucks'),
       Api.get(ordersPath),
-      Api.get('/plants')
+      Api.get('/plants'),
+      Api.get('/waybill-entries')
     ]);
     var allFailed = results.every(function (r) { return r.status === 'rejected'; });
     if (allFailed) throw results[0].reason;
@@ -76,6 +78,7 @@
     data.aggregateTrucks = results[6].status === 'fulfilled' ? results[6].value : [];
     data.orders = results[7].status === 'fulfilled' ? results[7].value : [];
     data.plants = results[8].status === 'fulfilled' ? results[8].value : [];
+    data.waybillEntries = results[9].status === 'fulfilled' ? results[9].value : [];
     notify();
   }
 

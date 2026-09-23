@@ -15,6 +15,7 @@
     tabButton('equipment').hidden = !isAtLeast('manager');
     tabButton('materials').hidden = !isAtLeast('manager');
     tabButton('dashboard').hidden = !isAtLeast('admin');
+    tabButton('waybills').hidden = !isAtLeast('manager');
 
     var activeBtn = document.querySelector('.tab-btn[aria-selected="true"]');
     if (activeBtn && activeBtn.hidden && window.Tabs) {

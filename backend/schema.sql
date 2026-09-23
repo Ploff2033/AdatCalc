@@ -214,3 +214,84 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS mixer_plate TEXT NOT NULL DEFAULT ''
 -- адрес и номер телефона)" на бланке 4-П) — общие на все заводы, не название
 -- конкретного завода, поэтому в config, а не в plants.
 ALTER TABLE config ADD COLUMN IF NOT EXISTS company_requisites TEXT NOT NULL DEFAULT '';
+
+-- Путевые листы (форма 4-П) для заказов, рейсы которых физически растянуты
+-- на несколько дней/машин/водителей — отдельно от заказа, потому что заказ
+-- (см. sanitize() в handlers/orders.js) это неизменяемый снимок расчёта на
+-- момент оформления с одним tripCount и одной датой, а по регламенту путевой
+-- лист нужен на каждый рабочий день+машину+водителя отдельно. order_id
+-- обязателен — рейсы всегда берутся из пула конкретного заказа (см.
+-- handlers/waybill-entries.js: "осталось разнести" = orders.trip_count минус
+-- сумма trip_count всех записей на этот заказ).
+-- trip_date — текст 'YYYY-MM-DD', а не DATE/TIMESTAMPTZ, чтобы день не мог
+-- сдвинуться при разборе часовым поясом (нужен только день, без времени).
+CREATE TABLE IF NOT EXISTS waybill_entries (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  plant_id TEXT NOT NULL,
+  plant_name TEXT NOT NULL,
+  trip_date TEXT NOT NULL,
+  driver_id TEXT NOT NULL,
+  driver_name TEXT NOT NULL,
+  driver_license_number TEXT NOT NULL DEFAULT '',
+  mixer_id TEXT NOT NULL,
+  mixer_name TEXT NOT NULL,
+  mixer_plate TEXT NOT NULL DEFAULT '',
+  distance_km NUMERIC NOT NULL,
+  trip_count NUMERIC NOT NULL,
+  fuel_price_per_liter NUMERIC NOT NULL DEFAULT 0,
+  fuel_cost_per_trip NUMERIC NOT NULL DEFAULT 0,
+  -- Снимок order.address на момент разнесения — тот же принцип, что и у
+  -- plant_id/plant_name выше: заказ мог позже измениться, путевой лист
+  -- должен остаться таким, каким был напечатан.
+  address TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_waybill_entries_order ON waybill_entries(order_id);
+CREATE INDEX IF NOT EXISTS idx_waybill_entries_driver_date ON waybill_entries(driver_id, trip_date);
+CREATE INDEX IF NOT EXISTS idx_waybill_entries_mixer_date ON waybill_entries(mixer_id, trip_date);
+
+-- Бюджеты времени для проверки путевых листов (см. handlers/waybill-entries.js):
+-- сколько часов в сутки может быть в рейсах водитель/машина, и параметры
+-- расчёта времени на рейс (расстояние туда-обратно / средняя скорость +
+-- время разгрузки; погрузка на заводе отдельно не считается).
+ALTER TABLE config ADD COLUMN IF NOT EXISTS driver_shift_hours NUMERIC NOT NULL DEFAULT 8;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS vehicle_shift_hours NUMERIC NOT NULL DEFAULT 16;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS avg_speed_kmh NUMERIC NOT NULL DEFAULT 60;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS unload_minutes NUMERIC NOT NULL DEFAULT 20;
+
+-- Адрес доставки клиенту — печатается в путевом листе (форма №4-П, стр2,
+-- поле "Маршрут движения") как "Название завода → адрес". У самовывоза
+-- всегда пусто — маршрута доставки нет.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
+
+-- Начальный одометр машины (км) — точка отсчёта для расчётного пробега в
+-- путевых листах формы №4-С (аудиторы требуют показания спидометра при
+-- выезде/возвращении, но реального прибора у нас нет — см. обсуждение с
+-- пользователем). НЕ мутируемый счётчик: значение вводится один раз вручную
+-- на карточке машины и остаётся неизменным, а фактический "текущий одометр"
+-- на любую дату всегда считается заново как
+-- odometer_baseline_km + сумма (расстояние туда-обратно × кол-во рейсов)
+-- по ВСЕМ путевым записям этой машины с датой/временем создания раньше —
+-- см. buildWaybill4sDocuments() в router.js. Такой расчёт (а не хранимый
+-- накопитель) не ломается при внесении исторических записей задним числом.
+ALTER TABLE mixers ADD COLUMN IF NOT EXISTS odometer_baseline_km NUMERIC NOT NULL DEFAULT 0;
+
+-- Цена топлива и мочевины — у каждого завода своя (раньше были общими в
+-- config.fuel_price_default/urea_price_default). Бэкфилл из старых общих
+-- значений выполняется ОДИН раз, в момент добавления колонок — иначе каждый
+-- запуск перезаписывал бы осознанно выставленные заводам значения. Старые
+-- колонки в config остаются в БД (не удаляем данные), но код их не читает.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema() AND table_name = 'plants' AND column_name = 'fuel_price'
+  ) THEN
+    ALTER TABLE plants ADD COLUMN fuel_price NUMERIC NOT NULL DEFAULT 0;
+    ALTER TABLE plants ADD COLUMN urea_price NUMERIC NOT NULL DEFAULT 0;
+    UPDATE plants SET
+      fuel_price = COALESCE((SELECT fuel_price_default FROM config WHERE id = 1), 0),
+      urea_price = COALESCE((SELECT urea_price_default FROM config WHERE id = 1), 0);
+  END IF;
+END $$;
