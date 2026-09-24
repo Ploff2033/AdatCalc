@@ -20,15 +20,15 @@
     titleEl.textContent = 'Новый миксер';
     idInput.value = '';
     nameInput.value = '';
-    plateInput.value = '';
+    PlateInput.setValue(plateInput, '');
     capacityInput.value = '';
     balanceInput.value = '';
     residualInput.value = '';
     mileageInput.value = '';
     fuelRateInput.value = '';
-    ureaRateInput.value = '0';
-    platonRateInput.value = '0';
-    odometerBaselineInput.value = '0';
+    NumericInput.setFormattedValue(ureaRateInput, 0);
+    NumericInput.setFormattedValue(platonRateInput, 0);
+    NumericInput.setFormattedValue(odometerBaselineInput, 0);
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -38,14 +38,14 @@
     idInput.value = duplicate ? '' : mixer.id;
     nameInput.value = duplicate ? (mixer.name + ' (копия)') : mixer.name;
     PlateInput.setValue(plateInput, duplicate ? '' : (mixer.licensePlate || ''));
-    capacityInput.value = mixer.capacity;
+    NumericInput.setFormattedValue(capacityInput, mixer.capacity);
     NumericInput.setFormattedValue(balanceInput, mixer.balance);
     NumericInput.setFormattedValue(residualInput, mixer.residual);
-    mileageInput.value = mixer.mileage;
-    fuelRateInput.value = mixer.fuelRate;
-    ureaRateInput.value = mixer.ureaRate || 0;
-    platonRateInput.value = mixer.platonRatePerKm || 0;
-    odometerBaselineInput.value = mixer.odometerBaselineKm || 0;
+    NumericInput.setFormattedValue(mileageInput, mixer.mileage);
+    NumericInput.setFormattedValue(fuelRateInput, mixer.fuelRate);
+    NumericInput.setFormattedValue(ureaRateInput, mixer.ureaRate || 0);
+    NumericInput.setFormattedValue(platonRateInput, mixer.platonRatePerKm || 0);
+    NumericInput.setFormattedValue(odometerBaselineInput, mixer.odometerBaselineKm || 0);
     errorEl.hidden = true;
     dialog.showModal();
   }
@@ -59,14 +59,14 @@
     var payload = {
       name: nameInput.value,
       licensePlate: plateInput.value,
-      capacity: parseFloat(capacityInput.value),
+      capacity: NumericInput.parseNumber(capacityInput.value),
       balance: NumericInput.parseNumber(balanceInput.value),
       residual: NumericInput.parseNumber(residualInput.value),
-      mileage: parseFloat(mileageInput.value),
-      fuelRate: parseFloat(fuelRateInput.value),
-      ureaRate: parseFloat(ureaRateInput.value) || 0,
-      platonRatePerKm: parseFloat(platonRateInput.value) || 0,
-      odometerBaselineKm: parseFloat(odometerBaselineInput.value) || 0
+      mileage: NumericInput.parseNumber(mileageInput.value),
+      fuelRate: NumericInput.parseNumber(fuelRateInput.value),
+      ureaRate: NumericInput.parseNumber(ureaRateInput.value) || 0,
+      platonRatePerKm: NumericInput.parseNumber(platonRateInput.value) || 0,
+      odometerBaselineKm: NumericInput.parseNumber(odometerBaselineInput.value) || 0
     };
     try {
       if (idInput.value) {
@@ -140,8 +140,8 @@
     atResidualInput.value = '';
     atMileageInput.value = '';
     atFuelRateInput.value = '';
-    atUreaRateInput.value = '0';
-    atPlatonRateInput.value = '0';
+    NumericInput.setFormattedValue(atUreaRateInput, 0);
+    NumericInput.setFormattedValue(atPlatonRateInput, 0);
     atErrorEl.hidden = true;
     atDialog.showModal();
   }
@@ -150,13 +150,13 @@
     atTitleEl.textContent = duplicate ? 'Копия техники' : 'Изменить технику';
     atIdInput.value = duplicate ? '' : truck.id;
     atNameInput.value = duplicate ? (truck.name + ' (копия)') : truck.name;
-    atCapacityInput.value = truck.capacity;
+    NumericInput.setFormattedValue(atCapacityInput, truck.capacity);
     NumericInput.setFormattedValue(atBalanceInput, truck.balance);
     NumericInput.setFormattedValue(atResidualInput, truck.residual);
-    atMileageInput.value = truck.mileage;
-    atFuelRateInput.value = truck.fuelRate;
-    atUreaRateInput.value = truck.ureaRate || 0;
-    atPlatonRateInput.value = truck.platonRatePerKm || 0;
+    NumericInput.setFormattedValue(atMileageInput, truck.mileage);
+    NumericInput.setFormattedValue(atFuelRateInput, truck.fuelRate);
+    NumericInput.setFormattedValue(atUreaRateInput, truck.ureaRate || 0);
+    NumericInput.setFormattedValue(atPlatonRateInput, truck.platonRatePerKm || 0);
     atErrorEl.hidden = true;
     atDialog.showModal();
   }
@@ -169,13 +169,13 @@
     atErrorEl.hidden = true;
     var payload = {
       name: atNameInput.value,
-      capacity: parseFloat(atCapacityInput.value),
+      capacity: NumericInput.parseNumber(atCapacityInput.value),
       balance: NumericInput.parseNumber(atBalanceInput.value),
       residual: NumericInput.parseNumber(atResidualInput.value),
-      mileage: parseFloat(atMileageInput.value),
-      fuelRate: parseFloat(atFuelRateInput.value),
-      ureaRate: parseFloat(atUreaRateInput.value) || 0,
-      platonRatePerKm: parseFloat(atPlatonRateInput.value) || 0
+      mileage: NumericInput.parseNumber(atMileageInput.value),
+      fuelRate: NumericInput.parseNumber(atFuelRateInput.value),
+      ureaRate: NumericInput.parseNumber(atUreaRateInput.value) || 0,
+      platonRatePerKm: NumericInput.parseNumber(atPlatonRateInput.value) || 0
     };
     try {
       if (atIdInput.value) {
@@ -249,8 +249,8 @@
   async function savePrices() {
     try {
       await Api.put('/plants/' + pricesSavePlantId + '/prices', {
-        fuelPrice: parseFloat(fuelPriceInput.value) || 0,
-        ureaPrice: parseFloat(ureaPriceInput.value) || 0
+        fuelPrice: NumericInput.parseNumber(fuelPriceInput.value) || 0,
+        ureaPrice: NumericInput.parseNumber(ureaPriceInput.value) || 0
       });
       await State.loadAll();
     } catch (err) {
@@ -264,8 +264,8 @@
     document.getElementById('fuel-price-default-label').textContent = 'Цена топлива' + suffix;
     document.getElementById('urea-price-default-label').textContent = 'Цена мочевины (AdBlue)' + suffix;
     if (!plant) return;
-    if (document.activeElement !== fuelPriceInput) fuelPriceInput.value = plant.fuelPrice || 0;
-    if (document.activeElement !== ureaPriceInput) ureaPriceInput.value = plant.ureaPrice || 0;
+    if (document.activeElement !== fuelPriceInput) NumericInput.setFormattedValue(fuelPriceInput, plant.fuelPrice || 0);
+    if (document.activeElement !== ureaPriceInput) NumericInput.setFormattedValue(ureaPriceInput, plant.ureaPrice || 0);
   }
 
   var neighborSurchargeInput = document.getElementById('neighbor-city-surcharge');
@@ -278,7 +278,7 @@
 
   async function saveNeighborSurcharge() {
     try {
-      await Api.put('/config', { neighborCitySurcharge: parseFloat(neighborSurchargeInput.value) || 0 });
+      await Api.put('/config', { neighborCitySurcharge: NumericInput.parseNumber(neighborSurchargeInput.value) || 0 });
       await State.loadAll();
     } catch (err) {
       alert('Не удалось сохранить надбавку за рейс в другой город: ' + err.message);
@@ -287,7 +287,7 @@
 
   function renderNeighborSurcharge() {
     if (document.activeElement === neighborSurchargeInput) return;
-    neighborSurchargeInput.value = State.data.config.neighborCitySurcharge || 0;
+    NumericInput.setFormattedValue(neighborSurchargeInput, State.data.config.neighborCitySurcharge || 0);
   }
 
   function init() {
@@ -296,8 +296,14 @@
     Array.prototype.forEach.call(dialog.querySelectorAll('[data-close-dialog]'), function (btn) {
       btn.addEventListener('click', function () { dialog.close(); });
     });
+    NumericInput.attach(capacityInput);
     NumericInput.attach(balanceInput);
     NumericInput.attach(residualInput);
+    NumericInput.attach(mileageInput);
+    NumericInput.attach(fuelRateInput);
+    NumericInput.attach(ureaRateInput);
+    NumericInput.attach(platonRateInput);
+    NumericInput.attach(odometerBaselineInput);
     PlateInput.attach(plateInput);
 
     document.getElementById('add-aggregate-truck-btn').addEventListener('click', openTruckForCreate);
@@ -305,9 +311,17 @@
     Array.prototype.forEach.call(atDialog.querySelectorAll('[data-close-dialog]'), function (btn) {
       btn.addEventListener('click', function () { atDialog.close(); });
     });
+    NumericInput.attach(atCapacityInput);
     NumericInput.attach(atBalanceInput);
     NumericInput.attach(atResidualInput);
+    NumericInput.attach(atMileageInput);
+    NumericInput.attach(atFuelRateInput);
+    NumericInput.attach(atUreaRateInput);
+    NumericInput.attach(atPlatonRateInput);
 
+    NumericInput.attach(fuelPriceInput);
+    NumericInput.attach(ureaPriceInput);
+    NumericInput.attach(neighborSurchargeInput);
     fuelPriceInput.addEventListener('input', schedulePricesSave);
     ureaPriceInput.addEventListener('input', schedulePricesSave);
     neighborSurchargeInput.addEventListener('input', scheduleNeighborSurchargeSave);

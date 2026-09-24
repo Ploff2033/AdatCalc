@@ -118,7 +118,11 @@
   var submitAttempted = false;
   var lastCalc = null;
 
-  function populateSelect(select, items, preferredId) {
+  function mixerLabel(mixer) {
+    return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
+  }
+
+  function populateSelect(select, items, preferredId, labelFn) {
     select.innerHTML = '';
     var placeholder = document.createElement('option');
     placeholder.value = '';
@@ -127,7 +131,7 @@
     items.forEach(function (item) {
       var opt = document.createElement('option');
       opt.value = item.id;
-      opt.textContent = item.name;
+      opt.textContent = labelFn ? labelFn(item) : item.name;
       select.appendChild(opt);
     });
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
@@ -220,12 +224,12 @@
     document.getElementById('m-delivery-section').style.opacity = selfPickup ? '.55' : '1';
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
-    selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
+    selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
     var distRaw = distInput.value;
-    var dist = parseFloat(distRaw) || 0;
+    var dist = NumericInput.parseNumber(distRaw) || 0;
     var distMissing = !selfPickup && (distRaw.trim() === '' || !(dist > 0));
     var addressMissing = !selfPickup && !addressInput.value.trim();
 
@@ -271,7 +275,7 @@
       return;
     }
 
-    var saleVolume = parseFloat(document.getElementById('m-volume').value) || 0;
+    var saleVolume = NumericInput.parseNumber(document.getElementById('m-volume').value) || 0;
     document.getElementById('m-mix-vol').textContent = Format.fmtNum(saleVolume, 1, 'м³');
     renderStockTable(recipe, saleVolume);
 
@@ -421,6 +425,8 @@
     document.getElementById('m-urea-reset').addEventListener('click', function () { ureaPriceDirty = false; recalc(); });
 
     NumericInput.attach(document.getElementById('m-delivery-charge'));
+    NumericInput.attach(document.getElementById('m-dist'));
+    NumericInput.attach(document.getElementById('m-volume'));
     document.getElementById('m-delivery-charge').addEventListener('input', recalc);
 
     document.getElementById('m-ship-date').value = new Date().toISOString().slice(0, 10);

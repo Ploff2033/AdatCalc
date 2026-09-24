@@ -73,12 +73,19 @@
       return '<div class="stack g10" data-plant-id="' + p.id + '" style="padding:14px;border:1px solid var(--border-soft);border-radius:6px">' +
         '<b>' + p.name + '</b>' +
         '<div class="grid-2">' +
-          '<div class="field"><label>Цена топлива</label><div class="unit"><input class="inp num s-fuel-price" inputmode="decimal" value="' + (p.fuelPrice || 0) + '"><span>₽/л</span></div></div>' +
-          '<div class="field"><label>Цена мочевины (AdBlue)</label><div class="unit"><input class="inp num s-urea-price" inputmode="decimal" value="' + (p.ureaPrice || 0) + '"><span>₽/л</span></div></div>' +
+          '<div class="field"><label>Цена топлива</label><div class="unit"><input class="inp num s-fuel-price" inputmode="decimal"><span>₽/л</span></div></div>' +
+          '<div class="field"><label>Цена мочевины (AdBlue)</label><div class="unit"><input class="inp num s-urea-price" inputmode="decimal"><span>₽/л</span></div></div>' +
         '</div>' +
       '</div>';
     }).join('') || '<p class="hint">Заводов ещё нет.</p>';
+    plants.forEach(function (p) {
+      var card = container.querySelector('[data-plant-id="' + p.id + '"]');
+      if (!card) return;
+      NumericInput.setFormattedValue(card.querySelector('.s-fuel-price'), p.fuelPrice || 0);
+      NumericInput.setFormattedValue(card.querySelector('.s-urea-price'), p.ureaPrice || 0);
+    });
     Array.prototype.forEach.call(container.querySelectorAll('.s-fuel-price, .s-urea-price'), function (input) {
+      NumericInput.attach(input);
       input.addEventListener('input', function () {
         var plantId = input.closest('[data-plant-id]').dataset.plantId;
         pricesDirty[plantId] = true;
@@ -92,13 +99,13 @@
     var map = { 's-nb-surcharge': c.neighborCitySurcharge, 's-driver-hours': c.driverShiftHours, 's-vehicle-hours': c.vehicleShiftHours, 's-avg-speed': c.avgSpeedKmh, 's-unload': c.unloadMinutes };
     Object.keys(map).forEach(function (id) {
       var el = document.getElementById(id);
-      if (document.activeElement !== el) el.value = map[id] || 0;
+      if (document.activeElement !== el) NumericInput.setFormattedValue(el, map[id] || 0);
     });
   }
 
   function renderRent() {
     var el = document.getElementById('s-rent-threshold');
-    if (document.activeElement !== el) el.value = (State.data.config && State.data.config.rentabilityThresholdPercent) || 0;
+    if (document.activeElement !== el) NumericInput.setFormattedValue(el, (State.data.config && State.data.config.rentabilityThresholdPercent) || 0);
   }
 
   function renderTelegram() {
@@ -190,12 +197,12 @@
     try {
       var configBody = {
         companyRequisites: document.getElementById('s-requisites').value,
-        neighborCitySurcharge: parseFloat(document.getElementById('s-nb-surcharge').value) || 0,
-        driverShiftHours: parseFloat(document.getElementById('s-driver-hours').value) || 0,
-        vehicleShiftHours: parseFloat(document.getElementById('s-vehicle-hours').value) || 0,
-        avgSpeedKmh: parseFloat(document.getElementById('s-avg-speed').value) || 0,
-        unloadMinutes: parseFloat(document.getElementById('s-unload').value) || 0,
-        rentabilityThresholdPercent: parseFloat(document.getElementById('s-rent-threshold').value) || 0
+        neighborCitySurcharge: NumericInput.parseNumber(document.getElementById('s-nb-surcharge').value) || 0,
+        driverShiftHours: NumericInput.parseNumber(document.getElementById('s-driver-hours').value) || 0,
+        vehicleShiftHours: NumericInput.parseNumber(document.getElementById('s-vehicle-hours').value) || 0,
+        avgSpeedKmh: NumericInput.parseNumber(document.getElementById('s-avg-speed').value) || 0,
+        unloadMinutes: NumericInput.parseNumber(document.getElementById('s-unload').value) || 0,
+        rentabilityThresholdPercent: NumericInput.parseNumber(document.getElementById('s-rent-threshold').value) || 0
       };
       // Поля Telegram есть в DOM только у admin (см. renderTelegram) — если
       // их нет, просто не отправляем (менеджерский PUT их и так проигнорирует
@@ -210,8 +217,8 @@
       var plantWrites = Object.keys(pricesDirty).map(function (plantId) {
         var card = document.querySelector('[data-plant-id="' + plantId + '"]');
         return Api.put('/plants/' + plantId + '/prices', {
-          fuelPrice: parseFloat(card.querySelector('.s-fuel-price').value) || 0,
-          ureaPrice: parseFloat(card.querySelector('.s-urea-price').value) || 0
+          fuelPrice: NumericInput.parseNumber(card.querySelector('.s-fuel-price').value) || 0,
+          ureaPrice: NumericInput.parseNumber(card.querySelector('.s-urea-price').value) || 0
         });
       });
       await Promise.all(plantWrites);
@@ -234,6 +241,7 @@
 
     ['s-requisites'].forEach(function (id) { document.getElementById(id).addEventListener('input', function () { markDirty('реквизиты'); }); });
     [['s-nb-surcharge', 'доплата за город'], ['s-driver-hours', 'смена водителя'], ['s-vehicle-hours', 'смена машины'], ['s-avg-speed', 'скорость'], ['s-unload', 'разгрузка'], ['s-rent-threshold', 'порог рентабельности']].forEach(function (pair) {
+      NumericInput.attach(document.getElementById(pair[0]));
       document.getElementById(pair[0]).addEventListener('input', function () { markDirty(pair[1]); });
     });
 

@@ -28,7 +28,7 @@
     positionInput.value = '';
     salaryInput.value = '';
     isDriverInput.checked = false;
-    licenseNumberInput.value = '';
+    LicenseInput.setValue(licenseNumberInput, '');
     updateLicenseGroupVisibility();
     errorEl.hidden = true;
     dialog.showModal();
@@ -42,7 +42,7 @@
     positionInput.value = emp.position;
     NumericInput.setFormattedValue(salaryInput, emp.salary);
     isDriverInput.checked = !!emp.isDriver;
-    licenseNumberInput.value = emp.licenseNumber || '';
+    LicenseInput.setValue(licenseNumberInput, emp.licenseNumber || '');
     updateLicenseGroupVisibility();
     errorEl.hidden = true;
     dialog.showModal();
@@ -181,6 +181,7 @@
       btn.addEventListener('click', function () { dialog.close(); });
     });
     NumericInput.attach(salaryInput);
+    LicenseInput.attach(licenseNumberInput);
     isDriverInput.addEventListener('change', updateLicenseGroupVisibility);
 
     moneyConfigIds.forEach(function (id) {

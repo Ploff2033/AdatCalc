@@ -24,7 +24,7 @@
   ];
   var totalOutputIds = ['revenue-total', 'profit-total', 'profit-per-m3', 'margin-total'];
 
-  function populateSelect(select, items, preferredId) {
+  function populateSelect(select, items, preferredId, labelFn) {
     select.innerHTML = '';
     var placeholder = document.createElement('option');
     placeholder.value = '';
@@ -33,12 +33,18 @@
     items.forEach(function (item) {
       var opt = document.createElement('option');
       opt.value = item.id;
-      opt.textContent = item.name;
+      opt.textContent = labelFn ? labelFn(item) : item.name;
       select.appendChild(opt);
     });
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
     select.value = validId;
     return validId;
+  }
+
+  // Гос. номер в списке — чтобы отличить одинаковые модели миксеров друг от
+  // друга при выборе (см. отзыв пользователя).
+  function mixerLabel(mixer) {
+    return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
   }
 
   function setProfitLine(valueEl, amount) {
@@ -121,14 +127,14 @@
     deliverySection.hidden = selfPickup;
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
-    selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
+    selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
     var plantId = plant ? plant.id : null;
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
     var distField = distInput.closest('.field');
     var distRaw = distInput.value;
-    var dist = parseFloat(distRaw) || 0;
+    var dist = NumericInput.parseNumber(distRaw) || 0;
     var distMissing = !selfPickup && (distRaw.trim() === '' || !(dist > 0));
     var addressField = addressInput.closest('.field');
     var addressMissing = !selfPickup && !addressInput.value.trim();
@@ -205,7 +211,7 @@
     document.getElementById('cost-utilities').textContent = Format.fmt(utilities, 2);
     document.getElementById('cost-per-m3').textContent = Format.fmt(costPerM3, 2);
 
-    var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
+    var saleVolume = NumericInput.parseNumber(document.getElementById('sale-volume').value) || 0;
 
     // Расход материалов на заказ (для истории/учёта инертов) — снимок:
     // название/ед. на момент заказа, не живая ссылка на материал (могли
@@ -464,6 +470,8 @@
 
     NumericInput.attach(document.getElementById('delivery-charge'));
     NumericInput.attach(document.getElementById('urea-price'));
+    NumericInput.attach(document.getElementById('dist'));
+    NumericInput.attach(document.getElementById('sale-volume'));
     inputIds.forEach(function (id) {
       document.getElementById(id).addEventListener('input', recalc);
     });

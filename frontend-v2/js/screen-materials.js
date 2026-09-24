@@ -121,12 +121,12 @@
   function readDeliveryFromForm() {
     var own = document.getElementById('mt-f-own-transport').classList.contains('on');
     if (!own) {
-      return { ownTransport: false, truckId: null, distanceKm: 0, fuelPricePerLiter: 0, ureaPricePerLiter: 0, driverSurcharge: 0, manualCostPerUnit: parseFloat(document.getElementById('mt-f-manual').value) || 0 };
+      return { ownTransport: false, truckId: null, distanceKm: 0, fuelPricePerLiter: 0, ureaPricePerLiter: 0, driverSurcharge: 0, manualCostPerUnit: NumericInput.parseNumber(document.getElementById('mt-f-manual').value) || 0 };
     }
     var plant = State.currentPlant();
     return {
       ownTransport: true, truckId: document.getElementById('mt-f-truck').value,
-      distanceKm: parseFloat(document.getElementById('mt-f-km').value) || 0,
+      distanceKm: NumericInput.parseNumber(document.getElementById('mt-f-km').value) || 0,
       fuelPricePerLiter: (plant && plant.fuelPrice) || 0, ureaPricePerLiter: (plant && plant.ureaPrice) || 0,
       driverSurcharge: 0, manualCostPerUnit: 0
     };
@@ -136,8 +136,8 @@
     var unit = document.getElementById('mt-f-unit').value;
     document.getElementById('mt-f-manual-unit').textContent = '₽/' + unit;
     var price = NumericInput.parseNumber(document.getElementById('mt-f-price').value) || 0;
-    var vatRate = parseFloat(document.getElementById('mt-f-vat').value) || 0;
-    var lossPercent = parseFloat(document.getElementById('mt-f-loss').value) || 0;
+    var vatRate = NumericInput.parseNumber(document.getElementById('mt-f-vat').value) || 0;
+    var lossPercent = NumericInput.parseNumber(document.getElementById('mt-f-loss').value) || 0;
     var delivery = readDeliveryFromForm();
     var fakeMaterial = { price: price, vatRate: vatRate, lossPercent: lossPercent, delivery: delivery };
     var trucks = State.data.aggregateTrucks || [];
@@ -161,13 +161,13 @@
     document.getElementById('mt-form-error').hidden = true;
     document.getElementById('mt-f-name').value = '';
     document.getElementById('mt-f-unit').value = 'т';
-    document.getElementById('mt-f-threshold').value = '0';
+    NumericInput.setFormattedValue(document.getElementById('mt-f-threshold'), 0);
     document.getElementById('mt-f-price').value = '';
-    document.getElementById('mt-f-vat').value = '0';
-    document.getElementById('mt-f-loss').value = '0';
+    NumericInput.setFormattedValue(document.getElementById('mt-f-vat'), 0);
+    NumericInput.setFormattedValue(document.getElementById('mt-f-loss'), 0);
     document.getElementById('mt-f-own-transport').classList.remove('on');
-    document.getElementById('mt-f-km').value = '0';
-    document.getElementById('mt-f-manual').value = '0';
+    NumericInput.setFormattedValue(document.getElementById('mt-f-km'), 0);
+    NumericInput.setFormattedValue(document.getElementById('mt-f-manual'), 0);
     buildTruckOptions('');
     applyDeliveryModeVisibility();
     updatePreview();
@@ -182,15 +182,15 @@
     document.getElementById('mt-form-error').hidden = true;
     document.getElementById('mt-f-name').value = mat.name;
     document.getElementById('mt-f-unit').value = mat.unit;
-    document.getElementById('mt-f-threshold').value = mat.stockThreshold || 0;
+    NumericInput.setFormattedValue(document.getElementById('mt-f-threshold'), mat.stockThreshold || 0);
     NumericInput.setFormattedValue(document.getElementById('mt-f-price'), mat.price);
-    document.getElementById('mt-f-vat').value = mat.vatRate || 0;
-    document.getElementById('mt-f-loss').value = mat.lossPercent || 0;
+    NumericInput.setFormattedValue(document.getElementById('mt-f-vat'), mat.vatRate || 0);
+    NumericInput.setFormattedValue(document.getElementById('mt-f-loss'), mat.lossPercent || 0);
     var d = mat.delivery || {};
     document.getElementById('mt-f-own-transport').classList.toggle('on', !!d.ownTransport);
     buildTruckOptions(d.truckId);
-    document.getElementById('mt-f-km').value = d.distanceKm || 0;
-    document.getElementById('mt-f-manual').value = d.manualCostPerUnit || 0;
+    NumericInput.setFormattedValue(document.getElementById('mt-f-km'), d.distanceKm || 0);
+    NumericInput.setFormattedValue(document.getElementById('mt-f-manual'), d.manualCostPerUnit || 0);
     applyDeliveryModeVisibility();
     updatePreview();
     document.getElementById('mt-drawer').hidden = false;
@@ -207,9 +207,9 @@
       name: document.getElementById('mt-f-name').value.trim(),
       unit: document.getElementById('mt-f-unit').value,
       price: NumericInput.parseNumber(document.getElementById('mt-f-price').value) || 0,
-      vatRate: parseFloat(document.getElementById('mt-f-vat').value) || 0,
-      lossPercent: parseFloat(document.getElementById('mt-f-loss').value) || 0,
-      stockThreshold: parseFloat(document.getElementById('mt-f-threshold').value) || 0,
+      vatRate: NumericInput.parseNumber(document.getElementById('mt-f-vat').value) || 0,
+      lossPercent: NumericInput.parseNumber(document.getElementById('mt-f-loss').value) || 0,
+      stockThreshold: NumericInput.parseNumber(document.getElementById('mt-f-threshold').value) || 0,
       delivery: readDeliveryFromForm()
     };
     if (!payload.name) { errorEl.textContent = 'Укажите название материала.'; errorEl.hidden = false; return; }
@@ -266,7 +266,9 @@
       document.getElementById(id).addEventListener('input', updatePreview);
       document.getElementById(id).addEventListener('change', updatePreview);
     });
-    NumericInput.attach(document.getElementById('mt-f-price'));
+    ['mt-f-threshold', 'mt-f-price', 'mt-f-vat', 'mt-f-loss', 'mt-f-km', 'mt-f-manual'].forEach(function (id) {
+      NumericInput.attach(document.getElementById(id));
+    });
     initialized = true;
   }
 

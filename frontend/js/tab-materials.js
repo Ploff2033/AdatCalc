@@ -42,10 +42,10 @@
   function plantUreaPrice() { var p = State.currentPlant(); return (p && p.ureaPrice) || ''; }
 
   function clearDeliveryFields() {
-    matDeliveryDistanceInput.value = '';
-    matDeliveryFuelPriceInput.value = plantFuelPrice();
-    matDeliveryUreaPriceInput.value = plantUreaPrice();
-    matDeliverySurchargeInput.value = '';
+    NumericInput.setFormattedValue(matDeliveryDistanceInput, '');
+    NumericInput.setFormattedValue(matDeliveryFuelPriceInput, plantFuelPrice());
+    NumericInput.setFormattedValue(matDeliveryUreaPriceInput, plantUreaPrice());
+    NumericInput.setFormattedValue(matDeliverySurchargeInput, '');
   }
 
   function applyDeliveryModeVisibility() {
@@ -66,10 +66,10 @@
   function handleDeliveryTruckChange() {
     var truck = State.data.aggregateTrucks.find(function (t) { return t.id === matDeliveryTruckSelect.value; });
     if (truck && !matDeliveryFuelPriceInput.value) {
-      matDeliveryFuelPriceInput.value = plantFuelPrice();
+      NumericInput.setFormattedValue(matDeliveryFuelPriceInput, plantFuelPrice());
     }
     if (truck && !matDeliveryUreaPriceInput.value) {
-      matDeliveryUreaPriceInput.value = plantUreaPrice();
+      NumericInput.setFormattedValue(matDeliveryUreaPriceInput, plantUreaPrice());
     }
     updateMaterialDialogPricing();
   }
@@ -84,16 +84,16 @@
         fuelPricePerLiter: 0,
         ureaPricePerLiter: 0,
         driverSurcharge: 0,
-        manualCostPerUnit: parseFloat(matDeliveryManualCostInput.value) || 0
+        manualCostPerUnit: NumericInput.parseNumber(matDeliveryManualCostInput.value) || 0
       };
     }
     return {
       ownTransport: true,
       truckId: matDeliveryTruckSelect.value,
-      distanceKm: parseFloat(matDeliveryDistanceInput.value) || 0,
-      fuelPricePerLiter: parseFloat(matDeliveryFuelPriceInput.value) || 0,
-      ureaPricePerLiter: parseFloat(matDeliveryUreaPriceInput.value) || 0,
-      driverSurcharge: parseFloat(matDeliverySurchargeInput.value) || 0,
+      distanceKm: NumericInput.parseNumber(matDeliveryDistanceInput.value) || 0,
+      fuelPricePerLiter: NumericInput.parseNumber(matDeliveryFuelPriceInput.value) || 0,
+      ureaPricePerLiter: NumericInput.parseNumber(matDeliveryUreaPriceInput.value) || 0,
+      driverSurcharge: NumericInput.parseNumber(matDeliverySurchargeInput.value) || 0,
       manualCostPerUnit: 0
     };
   }
@@ -130,12 +130,12 @@
     matNameInput.value = '';
     matUnitInput.value = '';
     matPriceInput.value = '';
-    matLossInput.value = '0';
+    NumericInput.setFormattedValue(matLossInput, 0);
     matErrorEl.hidden = true;
     matDeliveryOwnTransportCheckbox.checked = false;
     buildTruckOptions('');
     clearDeliveryFields();
-    matDeliveryManualCostInput.value = '0';
+    NumericInput.setFormattedValue(matDeliveryManualCostInput, 0);
     matDeliveryManualUnitEl.textContent = '₽/т';
     applyDeliveryModeVisibility();
     updateMaterialDialogPricing();
@@ -148,7 +148,7 @@
     matNameInput.value = duplicate ? (mat.name + ' (копия)') : mat.name;
     matUnitInput.value = mat.unit;
     NumericInput.setFormattedValue(matPriceInput, mat.price);
-    matLossInput.value = mat.lossPercent || 0;
+    NumericInput.setFormattedValue(matLossInput, mat.lossPercent || 0);
     matErrorEl.hidden = true;
 
     var delivery = mat.delivery;
@@ -156,14 +156,14 @@
     matDeliveryOwnTransportCheckbox.checked = ownTransport;
     buildTruckOptions(delivery ? delivery.truckId : '');
     if (ownTransport) {
-      matDeliveryDistanceInput.value = delivery.distanceKm;
-      matDeliveryFuelPriceInput.value = delivery.fuelPricePerLiter;
-      matDeliveryUreaPriceInput.value = delivery.ureaPricePerLiter;
-      matDeliverySurchargeInput.value = delivery.driverSurcharge;
-      matDeliveryManualCostInput.value = '0';
+      NumericInput.setFormattedValue(matDeliveryDistanceInput, delivery.distanceKm);
+      NumericInput.setFormattedValue(matDeliveryFuelPriceInput, delivery.fuelPricePerLiter);
+      NumericInput.setFormattedValue(matDeliveryUreaPriceInput, delivery.ureaPricePerLiter);
+      NumericInput.setFormattedValue(matDeliverySurchargeInput, delivery.driverSurcharge);
+      NumericInput.setFormattedValue(matDeliveryManualCostInput, 0);
     } else {
       clearDeliveryFields();
-      matDeliveryManualCostInput.value = (delivery && delivery.manualCostPerUnit) || 0;
+      NumericInput.setFormattedValue(matDeliveryManualCostInput, (delivery && delivery.manualCostPerUnit) || 0);
     }
     matDeliveryManualUnitEl.textContent = '₽/' + (mat.unit || 'т');
     applyDeliveryModeVisibility();
@@ -182,7 +182,7 @@
       name: matNameInput.value,
       unit: matUnitInput.value,
       price: NumericInput.parseNumber(matPriceInput.value),
-      lossPercent: parseFloat(matLossInput.value) || 0,
+      lossPercent: NumericInput.parseNumber(matLossInput.value) || 0,
       delivery: readDeliveryDraftFromForm()
     };
     try {
@@ -295,7 +295,8 @@
     var select = node.querySelector('.recipe-item-material');
     var qtyInput = node.querySelector('.recipe-item-qty');
     buildMaterialOptions(select, item ? item.materialId : (State.data.materials[0] && State.data.materials[0].id));
-    qtyInput.value = item ? item.qty : '';
+    NumericInput.attach(qtyInput);
+    NumericInput.setFormattedValue(qtyInput, item ? item.qty : '');
     select.addEventListener('change', updateRecipeDialogCost);
     qtyInput.addEventListener('input', updateRecipeDialogCost);
     node.querySelector('.recipe-item-remove').addEventListener('click', function () {
@@ -309,7 +310,7 @@
     return Array.prototype.map.call(recItemsContainer.querySelectorAll('.recipe-item-row'), function (row) {
       return {
         materialId: row.querySelector('.recipe-item-material').value,
-        qty: parseFloat(row.querySelector('.recipe-item-qty').value) || 0
+        qty: NumericInput.parseNumber(row.querySelector('.recipe-item-qty').value) || 0
       };
     });
   }
@@ -320,7 +321,7 @@
     var total = 0;
     Array.prototype.forEach.call(recItemsContainer.querySelectorAll('.recipe-item-row'), function (row) {
       var materialId = row.querySelector('.recipe-item-material').value;
-      var qty = parseFloat(row.querySelector('.recipe-item-qty').value) || 0;
+      var qty = NumericInput.parseNumber(row.querySelector('.recipe-item-qty').value) || 0;
       var mat = byId[materialId];
       var cost = mat ? qty * Calc.materialEffectivePrice(mat, State.data.aggregateTrucks) : 0;
       row.querySelector('.recipe-item-cost').textContent = Format.fmt(cost, 2);
@@ -430,12 +431,15 @@
     matForm.addEventListener('submit', handleMaterialSubmit);
     closeOnBackdropButtons(matDialog);
     NumericInput.attach(matPriceInput);
+    NumericInput.attach(matLossInput);
     matPriceInput.addEventListener('input', updateMaterialDialogPricing);
 
     matDeliveryOwnTransportCheckbox.addEventListener('change', handleOwnTransportToggle);
     matDeliveryTruckSelect.addEventListener('change', handleDeliveryTruckChange);
+    NumericInput.attach(matDeliveryManualCostInput);
     matDeliveryManualCostInput.addEventListener('input', updateMaterialDialogPricing);
     [matDeliveryDistanceInput, matDeliveryFuelPriceInput, matDeliveryUreaPriceInput, matDeliverySurchargeInput].forEach(function (input) {
+      NumericInput.attach(input);
       input.addEventListener('input', updateMaterialDialogPricing);
     });
 

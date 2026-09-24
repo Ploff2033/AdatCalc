@@ -101,14 +101,14 @@
 
   function updatePreview() {
     var fake = {
-      balance: parseFloat(document.getElementById('fl-f-balance').value) || 0,
-      residual: parseFloat(document.getElementById('fl-f-residual').value) || 0,
-      mileage: parseFloat(document.getElementById('fl-f-mileage').value) || 0
+      balance: NumericInput.parseNumber(document.getElementById('fl-f-balance').value) || 0,
+      residual: NumericInput.parseNumber(document.getElementById('fl-f-residual').value) || 0,
+      mileage: NumericInput.parseNumber(document.getElementById('fl-f-mileage').value) || 0
     };
     var amort = Calc.amortPerKm(fake);
     document.getElementById('fl-preview-amort').textContent = Format.fmt(amort, 2) + '/км';
     var plant = State.currentPlant();
-    var fuelRate = parseFloat(document.getElementById('fl-f-fuel').value) || 0;
+    var fuelRate = NumericInput.parseNumber(document.getElementById('fl-f-fuel').value) || 0;
     var fuelPrice = (plant && plant.fuelPrice) || 0;
     document.getElementById('fl-preview-fuel').textContent = Format.fmt((fuelRate / 100) * fuelPrice, 2) + '/км';
   }
@@ -121,8 +121,9 @@
     document.getElementById('fl-form-error').hidden = true;
     document.getElementById('fl-f-plate-field').hidden = !isMixer();
     document.getElementById('fl-f-odo-field').hidden = !isMixer();
-    ['fl-f-name', 'fl-f-plate'].forEach(function (id) { document.getElementById(id).value = ''; });
-    ['fl-f-cap', 'fl-f-odo', 'fl-f-balance', 'fl-f-residual', 'fl-f-mileage', 'fl-f-fuel', 'fl-f-urea', 'fl-f-platon'].forEach(function (id) { document.getElementById(id).value = '0'; });
+    document.getElementById('fl-f-name').value = '';
+    PlateInput.setValue(document.getElementById('fl-f-plate'), '');
+    ['fl-f-cap', 'fl-f-odo', 'fl-f-balance', 'fl-f-residual', 'fl-f-mileage', 'fl-f-fuel', 'fl-f-urea', 'fl-f-platon'].forEach(function (id) { NumericInput.setFormattedValue(document.getElementById(id), 0); });
     updatePreview();
     document.getElementById('fl-drawer').hidden = false;
   }
@@ -136,15 +137,15 @@
     document.getElementById('fl-f-plate-field').hidden = !isMixer();
     document.getElementById('fl-f-odo-field').hidden = !isMixer();
     document.getElementById('fl-f-name').value = t.name;
-    document.getElementById('fl-f-plate').value = t.licensePlate || '';
-    document.getElementById('fl-f-cap').value = t.capacity;
-    document.getElementById('fl-f-odo').value = t.odometerBaselineKm || 0;
-    document.getElementById('fl-f-balance').value = t.balance;
-    document.getElementById('fl-f-residual').value = t.residual;
-    document.getElementById('fl-f-mileage').value = t.mileage;
-    document.getElementById('fl-f-fuel').value = t.fuelRate;
-    document.getElementById('fl-f-urea').value = t.ureaRate;
-    document.getElementById('fl-f-platon').value = t.platonRatePerKm;
+    PlateInput.setValue(document.getElementById('fl-f-plate'), t.licensePlate || '');
+    NumericInput.setFormattedValue(document.getElementById('fl-f-cap'), t.capacity);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-odo'), t.odometerBaselineKm || 0);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-balance'), t.balance);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-residual'), t.residual);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-mileage'), t.mileage);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-fuel'), t.fuelRate);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-urea'), t.ureaRate);
+    NumericInput.setFormattedValue(document.getElementById('fl-f-platon'), t.platonRatePerKm);
     updatePreview();
     document.getElementById('fl-drawer').hidden = false;
   }
@@ -157,17 +158,17 @@
     errorEl.hidden = true;
     var payload = {
       name: document.getElementById('fl-f-name').value.trim(),
-      capacity: parseFloat(document.getElementById('fl-f-cap').value) || 0,
-      balance: parseFloat(document.getElementById('fl-f-balance').value) || 0,
-      residual: parseFloat(document.getElementById('fl-f-residual').value) || 0,
-      mileage: parseFloat(document.getElementById('fl-f-mileage').value) || 0,
-      fuelRate: parseFloat(document.getElementById('fl-f-fuel').value) || 0,
-      ureaRate: parseFloat(document.getElementById('fl-f-urea').value) || 0,
-      platonRatePerKm: parseFloat(document.getElementById('fl-f-platon').value) || 0
+      capacity: NumericInput.parseNumber(document.getElementById('fl-f-cap').value) || 0,
+      balance: NumericInput.parseNumber(document.getElementById('fl-f-balance').value) || 0,
+      residual: NumericInput.parseNumber(document.getElementById('fl-f-residual').value) || 0,
+      mileage: NumericInput.parseNumber(document.getElementById('fl-f-mileage').value) || 0,
+      fuelRate: NumericInput.parseNumber(document.getElementById('fl-f-fuel').value) || 0,
+      ureaRate: NumericInput.parseNumber(document.getElementById('fl-f-urea').value) || 0,
+      platonRatePerKm: NumericInput.parseNumber(document.getElementById('fl-f-platon').value) || 0
     };
     if (isMixer()) {
       payload.licensePlate = document.getElementById('fl-f-plate').value.trim();
-      payload.odometerBaselineKm = parseFloat(document.getElementById('fl-f-odo').value) || 0;
+      payload.odometerBaselineKm = NumericInput.parseNumber(document.getElementById('fl-f-odo').value) || 0;
     }
     if (!payload.name) { errorEl.textContent = 'Укажите название.'; errorEl.hidden = false; return; }
     try {
@@ -229,9 +230,11 @@
         render();
       });
     });
-    ['fl-f-balance', 'fl-f-residual', 'fl-f-mileage', 'fl-f-fuel'].forEach(function (id) {
+    ['fl-f-cap', 'fl-f-odo', 'fl-f-balance', 'fl-f-residual', 'fl-f-mileage', 'fl-f-fuel', 'fl-f-urea', 'fl-f-platon'].forEach(function (id) {
+      NumericInput.attach(document.getElementById(id));
       document.getElementById(id).addEventListener('input', updatePreview);
     });
+    PlateInput.attach(document.getElementById('fl-f-plate'));
     initialized = true;
   }
 

@@ -130,7 +130,7 @@
     document.getElementById('s-form-hint').textContent = kind === 'receipt'
       ? 'Увеличивает остаток на складе — привезли инертовозом.'
       : 'По итогам инвентаризации — можно и в минус, бронь не трогает.';
-    document.getElementById('s-form-qty').value = '';
+    NumericInput.setFormattedValue(document.getElementById('s-form-qty'), '');
     document.getElementById('s-form-note').value = '';
     document.getElementById('s-form-error').hidden = true;
     panel.hidden = false;
@@ -146,7 +146,7 @@
     var errorEl = document.getElementById('s-form-error');
     errorEl.hidden = true;
     var materialId = document.getElementById('s-form-material').value;
-    var qty = parseFloat(document.getElementById('s-form-qty').value);
+    var qty = NumericInput.parseNumber(document.getElementById('s-form-qty').value);
     var note = document.getElementById('s-form-note').value.trim();
     if (!materialId || !qty) {
       errorEl.textContent = 'Выберите материал и укажите ненулевое количество.';
@@ -177,6 +177,7 @@
     document.getElementById('s-form-close').addEventListener('click', closeForm);
     document.getElementById('s-form').addEventListener('submit', handleFormSubmit);
     document.getElementById('s-log-filter').addEventListener('change', function () { logFilterValue = this.value; loadLog(); });
+    NumericInput.attach(document.getElementById('s-form-qty'));
     initialized = true;
   }
 

@@ -1,17 +1,25 @@
 (function () {
+  // Ведущий минус (для полей вроде корректировки остатка — «может быть
+  // отрицательным») хранится отдельно от цифр, которые группируются по
+  // разрядам как обычно.
   function formatDisplay(raw) {
     if (!raw) return '';
+    var negative = raw.charAt(0) === '-';
+    if (negative) raw = raw.slice(1);
     var parts = raw.split(/[.,]/);
     var intPart = parts[0].replace(/\D/g, '').replace(/^0+(?=\d)/, '');
     var decPart = parts.length > 1 ? parts[1].replace(/\D/g, '').slice(0, 2) : null;
     var grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
     var result = grouped;
     if (decPart !== null) result += ',' + decPart;
+    if (negative) result = result ? '-' + result : '-';
     return result;
   }
 
   function toRawInputString(value) {
-    return value.replace(/[^\d,.]/g, '');
+    var negative = /^\s*-/.test(value);
+    var stripped = value.replace(/[^\d,.]/g, '');
+    return negative ? '-' + stripped : stripped;
   }
 
   function countDigitsBefore(str, pos) {

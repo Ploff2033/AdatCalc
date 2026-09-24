@@ -82,7 +82,11 @@
   var fuelPriceDirty = false, ureaPriceDirty = false, lastPricePlantId = null;
   var lastCalc = null;
 
-  function populateSelect(select, items, preferredId) {
+  function mixerLabel(mixer) {
+    return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
+  }
+
+  function populateSelect(select, items, preferredId, labelFn) {
     select.innerHTML = '';
     var placeholder = document.createElement('option');
     placeholder.value = '';
@@ -91,7 +95,7 @@
     items.forEach(function (item) {
       var opt = document.createElement('option');
       opt.value = item.id;
-      opt.textContent = item.name;
+      opt.textContent = labelFn ? labelFn(item) : item.name;
       select.appendChild(opt);
     });
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
@@ -124,7 +128,7 @@
     document.getElementById('mc-delivery-charge').disabled = selfPickup;
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
-    selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value);
+    selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
@@ -145,13 +149,13 @@
 
     document.getElementById('mc-recipe-price').textContent = Format.fmt(vatGrossMode ? (recipe.salePrice || 0) * VAT_MULT : (recipe.salePrice || 0), 0);
 
-    var saleVolume = parseFloat(document.getElementById('mc-volume').value) || 0;
+    var saleVolume = NumericInput.parseNumber(document.getElementById('mc-volume').value) || 0;
     var priceInput = document.getElementById('mc-price');
     var priceNet = priceDirty ? priceNetStored : (recipe.salePrice || 0);
     displayVatField(priceInput, priceNet);
 
     var distRaw = distInput.value;
-    var dist = parseFloat(distRaw) || 0;
+    var dist = NumericInput.parseNumber(distRaw) || 0;
     var addressFilled = selfPickup || !!addressInput.value.trim();
 
     var calc = OrderCalc.run({
@@ -280,6 +284,8 @@
     document.getElementById('mc-reset-price').addEventListener('click', function () { priceDirty = false; render(); });
 
     NumericInput.attach(document.getElementById('mc-delivery-charge'));
+    NumericInput.attach(document.getElementById('mc-dist'));
+    NumericInput.attach(document.getElementById('mc-volume'));
     document.getElementById('mc-delivery-charge').addEventListener('input', render);
     ['mc-dist', 'mc-address', 'mc-volume'].forEach(function (id) { document.getElementById(id).addEventListener('input', render); });
     document.getElementById('mc-nb-city').addEventListener('change', render);

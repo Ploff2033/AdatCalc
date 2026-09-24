@@ -101,26 +101,51 @@
     row.style.cssText = 'grid-template-columns:1.6fr 150px 110px 110px 36px;min-height:52px';
     row.innerHTML =
       '<select class="inp rc-item-material" style="height:36px">' + options + '</select>' +
-      '<div class="unit"><input class="inp num rc-item-qty" style="height:36px;text-align:right" value="' + (item.qty || '') + '"><span>' + (mat ? mat.unit : '') + '</span></div>' +
-      '<div class="r num hint">' + Format.fmt(cost, 2) + '</div>' +
-      '<div class="r num" style="font-weight:600">' + Format.fmt(sum, 2) + '</div>' +
+      '<div class="unit"><input class="inp num rc-item-qty" style="height:36px;text-align:right"><span>' + (mat ? mat.unit : '') + '</span></div>' +
+      '<div class="r num hint rc-item-cost">' + Format.fmt(cost, 2) + '</div>' +
+      '<div class="r num rc-item-sum" style="font-weight:600">' + Format.fmt(sum, 2) + '</div>' +
       '<button type="button" class="btn ghost rc-item-remove" style="width:32px;height:32px;padding:0;border-color:transparent;color:var(--muted)" aria-label="Убрать материал"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+    var qtyInput = row.querySelector('.rc-item-qty');
+    NumericInput.attach(qtyInput);
+    NumericInput.setFormattedValue(qtyInput, item.qty || '');
     row.querySelector('.rc-item-material').addEventListener('change', function () { items[index].materialId = this.value; renderItems(); });
-    row.querySelector('.rc-item-qty').addEventListener('input', function () { items[index].qty = parseFloat(this.value) || 0; renderItems(); });
+    // Не перерисовываем весь список на каждый ввод цифры (как раньше) — это
+    // пересоздавало DOM-узел инпута и сбрасывало фокус/курсор после первого
+    // же символа, из-за чего маска разрядов не смогла бы работать. Вместо
+    // этого точечно обновляем только цифры в этой строке и итоги.
+    qtyInput.addEventListener('input', function () {
+      items[index].qty = NumericInput.parseNumber(this.value) || 0;
+      updateItemRowTotals(row, item);
+      updateTotals();
+      updateSummary();
+    });
     row.querySelector('.rc-item-remove').addEventListener('click', function () { items.splice(index, 1); renderItems(); });
     return row;
   }
 
-  function renderItems() {
-    var container = document.getElementById('rc-items');
-    container.innerHTML = '';
-    items.forEach(function (item, i) { container.appendChild(renderItemRow(item, i)); });
+  function updateItemRowTotals(row, item) {
+    var byId = materialsById();
+    var mat = byId[item.materialId];
+    var cost = mat ? Calc.materialEffectivePrice(mat, State.data.aggregateTrucks) : 0;
+    var sum = cost * (item.qty || 0);
+    row.querySelector('.rc-item-cost').textContent = Format.fmt(cost, 2);
+    row.querySelector('.rc-item-sum').textContent = Format.fmt(sum, 2);
+  }
+
+  function updateTotals() {
     var byId = materialsById();
     var total = items.reduce(function (sum, item) {
       var mat = byId[item.materialId];
       return sum + (mat ? Calc.materialEffectivePrice(mat, State.data.aggregateTrucks) * (item.qty || 0) : 0);
     }, 0);
     document.getElementById('rc-items-total').textContent = Format.fmt(total, 2);
+  }
+
+  function renderItems() {
+    var container = document.getElementById('rc-items');
+    container.innerHTML = '';
+    items.forEach(function (item, i) { container.appendChild(renderItemRow(item, i)); });
+    updateTotals();
     updateSummary();
   }
 
