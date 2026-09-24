@@ -100,10 +100,22 @@
     return perTrip.total / truck.capacity;
   }
 
-  // "На заводе": закупочная цена + доставка (без НДС), до вычета потерь при хранении/дозировке.
+  // Входящий НДС по закупке сырья принимается к вычету — это не реальный
+  // расход, поэтому в себестоимости участвует цена БЕЗ него, а не то, что
+  // фактически уплачено поставщику. Ставка своя у каждого материала (разные
+  // поставщики/категории сырья), 0 по умолчанию — старые материалы без явно
+  // заданной ставки считаются как раньше, без изменений. ФОТ и амортизация
+  // завода в этой логике не участвуют — это не закупка.
+  function materialNetPrice(material) {
+    if (!material) return 0;
+    var rate = material.vatRate || 0;
+    return rate > 0 ? material.price / (1 + rate / 100) : material.price;
+  }
+
+  // "На заводе": закупочная цена без НДС + доставка, до вычета потерь при хранении/дозировке.
   function materialLandedPrice(material, trucks) {
     if (!material) return 0;
-    return material.price + materialDeliveryAdditionPerTon(material, trucks);
+    return materialNetPrice(material) + materialDeliveryAdditionPerTon(material, trucks);
   }
 
   function materialEffectivePrice(material, trucks) {
@@ -141,6 +153,7 @@
     orderContribution: orderContribution,
     materialEffectivePrice: materialEffectivePrice,
     materialLandedPrice: materialLandedPrice,
+    materialNetPrice: materialNetPrice,
     materialDeliveryAdditionPerTon: materialDeliveryAdditionPerTon,
     aggregateDeliveryPerTrip: aggregateDeliveryPerTrip,
     materialsCostPerM3: materialsCostPerM3,

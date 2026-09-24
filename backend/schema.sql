@@ -360,3 +360,15 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS rentability_threshold_percent NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+
+-- ==================== v2: справочники Материалы/Смеси/Техника ====================
+-- Ставка НДС закупки материала (0 по умолчанию = не меняет поведение уже
+-- заведённых материалов — расчёт остаётся как был, пока админ явно не
+-- укажет ставку). Входящий НДС по этой ставке принимается к вычету и не
+-- является реальным расходом, в отличие от исходящего НДС с продажи смеси,
+-- поэтому в себестоимости участвует цена БЕЗ него — см.
+-- Calc.materialNetPrice в frontend/js/shared/calc.js (эта же логика уже
+-- была сделана и проверена раньше в отдельной ветке fix/vat-material-rates,
+-- сюда перенесена как есть, просто со вводом ставки обычным числовым полем
+-- вместо сегмента 22/10/0 %).
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS vat_rate NUMERIC NOT NULL DEFAULT 0;

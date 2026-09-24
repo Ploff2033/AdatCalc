@@ -16,10 +16,17 @@
       waybills: window.WaybillsScreen,
       stock: window.StockScreen,
       dashboard: window.DashboardScreen,
-      settings: window.SettingsScreen
+      settings: window.SettingsScreen,
+      materials: window.MaterialsScreen,
+      recipes: window.RecipesScreen,
+      fleet: window.FleetScreen
     };
   }
-  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager' };
+  // Справочники (materials/recipes/fleet) — тот же уровень доступа, что и их
+  // API на чтение сегодня (write у materials/recipes — manager, у fleet —
+  // admin, но САМ экран техники доступен на просмотр и manager'у, кнопка
+  // «Добавить» скрыта не-admin — см. screen-fleet.js::render).
+  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager' };
   var current = null;
 
   function routeFromHash() {
