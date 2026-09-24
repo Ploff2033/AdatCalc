@@ -138,6 +138,15 @@ select.inp { cursor: pointer; }
 .plant-switch-btn .cap { color: var(--sidebar-muted); }
 .plant-switch-btn .val { font-size: 14px; font-weight: 600; }
 
+/* Выпадающий список заводов под кнопкой-переключателем — тёмная тема, в тон
+   сайдбару (без этого класса он наследовал светлый .inp и выглядел как
+   случайный белый прямоугольник с системным focus ring). */
+.plant-select {
+  height: 40px; box-sizing: border-box; border: 1px solid var(--sidebar-border); border-radius: 4px;
+  background: var(--sidebar-item-bg); color: #fff; padding: 0 12px; font: inherit; width: 100%; cursor: pointer;
+}
+.plant-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 nav.nav { display: flex; flex-direction: column; gap: 2px; }
 nav.nav a, nav.nav button.navlink {
   display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px; border-radius: 4px;
