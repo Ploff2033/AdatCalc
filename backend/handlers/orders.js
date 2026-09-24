@@ -2,6 +2,7 @@ const db = require('../db');
 const HttpError = require('../http-error');
 const { str, num } = require('../validate');
 const telegram = require('../telegram');
+const stock = require('./stock');
 
 // [column, jsField] — единый источник и для INSERT, и для чтения строки обратно.
 const ORDER_COLUMNS = [
@@ -45,17 +46,22 @@ const ORDER_COLUMNS = [
   ['total_profit', 'totalProfit'],
   ['profit_per_m3', 'profitPerM3'],
   ['total_margin_percent', 'totalMarginPercent'],
-  ['vat_applied', 'vatApplied']
+  ['vat_applied', 'vatApplied'],
+  ['ship_date', 'shipDate']
 ];
 
 // Расход материалов по заказу (снимок: название/ед. на момент заказа, а не
 // живая ссылка на mat_id — рецепт или материал могут потом измениться/удалиться).
+// materialId — опциональный (может отсутствовать у совсем старых клиентов),
+// но именно по нему handlers/stock.js бронирует/списывает остаток; без него
+// позиция просто не участвует в остатках (см. schema.sql).
 function sanitizeMaterials(materials) {
   if (!Array.isArray(materials)) return [];
   return materials.map((m, i) => ({
     name: str(m && m.name, `materials[${i}].name`),
     unit: str(m && m.unit, `materials[${i}].unit`),
-    qty: num(m && m.qty, `materials[${i}].qty`)
+    qty: num(m && m.qty, `materials[${i}].qty`),
+    materialId: (m && m.materialId) ? String(m.materialId) : null
   }));
 }
 
@@ -105,26 +111,41 @@ function sanitize(body) {
     totalProfit: num(body.totalProfit, 'totalProfit'),
     profitPerM3: num(body.profitPerM3, 'profitPerM3'),
     totalMarginPercent: num(body.totalMarginPercent, 'totalMarginPercent'),
-    vatApplied: !!body.vatApplied
+    vatApplied: !!body.vatApplied,
+    // Опциональна — старые клиенты (или заказ без выбранной даты отгрузки)
+    // её не присылают, тогда в БД остаётся NULL.
+    shipDate: body.shipDate ? str(body.shipDate, 'shipDate') : null
   };
 }
 
-const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number']);
+// Обнаружено между делом при проверке Фазы 2: 'address' сюда не попадал —
+// адрес доставки читался как Number(v), т.е. NaN у любого реального адреса
+// (NaN — falsy, поэтому `order.address ? ... : ''` во фронтенде просто
+// молча скрывал адрес, а не показывал "NaN"). Заказы БЕЗ адреса — те же
+// самые '' → Number('')=0, тоже falsy — оттого баг был не видно на глаз.
+const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address']);
 
 function rowToOrder(row, materialRows) {
   const out = { id: row.id };
   for (const [col, field] of ORDER_COLUMNS) {
     const v = row[col];
     if (col === 'created_at') out[field] = new Date(v).toISOString();
+    // ship_date — DATE, не TIMESTAMPTZ: то же "просто строка 'YYYY-MM-DD'",
+    // что и trip_date у waybill_entries (см. schema.sql) — Number(v) или
+    // toISOString() тут были бы неверны (Number(null)=0, а не "нет даты").
+    else if (col === 'ship_date') out[field] = v ? new Date(v).toISOString().slice(0, 10) : null;
     else if (col === 'neighbor_city' || col === 'vat_applied' || ORDER_TEXT_COLUMNS.has(col)) out[field] = v;
     else out[field] = Number(v);
   }
-  out.materials = materialRows.map((m) => ({ name: m.name, unit: m.unit, qty: Number(m.qty) }));
+  // cancelled_at не входит в ORDER_COLUMNS (не участвует в INSERT при
+  // создании заказа — проставляется только позже, через cancel()).
+  out.cancelledAt = row.cancelled_at ? new Date(row.cancelled_at).toISOString() : null;
+  out.materials = materialRows.map((m) => ({ name: m.name, unit: m.unit, qty: Number(m.qty), materialId: m.material_id }));
   return out;
 }
 
 async function fetchMaterials(client, orderId) {
-  const { rows } = await client.query('SELECT name, unit, qty FROM order_materials WHERE order_id = $1', [orderId]);
+  const { rows } = await client.query('SELECT name, unit, qty, material_id FROM order_materials WHERE order_id = $1', [orderId]);
   return rows;
 }
 
@@ -173,10 +194,14 @@ async function create(body) {
     const placeholders = cols.map((_, i) => `$${i + 1}`).join(',');
     await client.query(`INSERT INTO orders (${cols.join(',')}) VALUES (${placeholders})`, values);
     for (const m of f.materials) {
-      await client.query('INSERT INTO order_materials (order_id, name, unit, qty) VALUES ($1,$2,$3,$4)', [id, m.name, m.unit, m.qty]);
+      await client.query('INSERT INTO order_materials (order_id, name, unit, qty, material_id) VALUES ($1,$2,$3,$4,$5)', [id, m.name, m.unit, m.qty, m.materialId]);
     }
+    // Бронь остатков — в той же транзакции, что и сам заказ: если бронь не
+    // удалась (например гонка с одновременным удалением материала), заказ
+    // тоже не создастся, а не повиснет наполовину оформленным.
+    await stock.reserve(client, id, f.materials.map((m) => ({ materialId: m.materialId, qty: m.qty })));
     const { rows } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
-    const result = rowToOrder(rows[0], f.materials);
+    const result = rowToOrder(rows[0], f.materials.map((m) => ({ name: m.name, unit: m.unit, qty: m.qty, material_id: m.materialId })));
     await client.query('COMMIT');
     telegram.notifyOrderCreated(result);
     return result;
@@ -188,9 +213,53 @@ async function create(body) {
   }
 }
 
+// Полное удаление — теперь только admin (см. router.js). Снимает ещё не
+// списанную бронь ПЕРЕД удалением строки заказа (release() читает историю
+// по order_id — должна успеть отработать, пока заказ ещё существует), чтобы
+// бронь не повисла, если админ удалил заказ, не отменив его сначала.
+// release() идемпотентен: если заказ уже был отменён — просто найдёт 0.
 async function remove(id) {
-  const { rowCount } = await db.pool.query('DELETE FROM orders WHERE id = $1', [id]);
-  if (!rowCount) throw new HttpError(404, 'Заказ не найден');
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT id FROM orders WHERE id = $1', [id]);
+    if (!rows.length) throw new HttpError(404, 'Заказ не найден');
+    await stock.release(client, id, 'Удаление заказа');
+    await client.query('DELETE FROM orders WHERE id = $1', [id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Отмена — в отличие от remove() заказ остаётся в истории (только
+// cancelled_at), доступна менеджеру и выше (не только admin), и только пока
+// по заказу нет путевых листов — если рейсы уже начали возить, отменять
+// поздно, сначала нужно разобраться с уже выехавшими машинами вручную.
+async function cancel(id) {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT id, cancelled_at FROM orders WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows.length) throw new HttpError(404, 'Заказ не найден');
+    if (rows[0].cancelled_at) throw new HttpError(409, 'Заказ уже отменён');
+    const { rows: wbRows } = await client.query('SELECT 1 FROM waybill_entries WHERE order_id = $1 LIMIT 1', [id]);
+    if (wbRows.length) throw new HttpError(409, 'По заказу уже есть путевые листы — отменить нельзя');
+    await stock.release(client, id, 'Отмена заказа');
+    await client.query('UPDATE orders SET cancelled_at = now() WHERE id = $1', [id]);
+    const { rows: full } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
+    const result = rowToOrder(full[0], await fetchMaterials(client, id));
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Дата и завод — единственные поля уже оформленного заказа, которые можно
@@ -239,4 +308,4 @@ async function getByIds(ids) {
   }
 }
 
-module.exports = { list, create, remove, updateDate, getByIds, ORDER_COLUMNS };
+module.exports = { list, create, remove, cancel, updateDate, getByIds, ORDER_COLUMNS };

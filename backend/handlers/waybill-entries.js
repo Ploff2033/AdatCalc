@@ -1,6 +1,17 @@
 const db = require('../db');
 const HttpError = require('../http-error');
 const { str, num } = require('../validate');
+const stock = require('./stock');
+
+// Доля объёма заказа, которую покрывает один рейс путевого листа — заказ
+// считает все рейсы равными долями (см. Calc.tripsForVolume на фронте), тот
+// же принцип используется и тут для списания остатка на разнесённую часть.
+async function orderMaterialsAndFraction(client, orderId, tripCount) {
+  const { rows: orderRows } = await client.query('SELECT trip_count FROM orders WHERE id = $1', [orderId]);
+  if (!orderRows.length || !(Number(orderRows[0].trip_count) > 0)) return { materials: [], fraction: 0 };
+  const { rows: materials } = await client.query('SELECT material_id AS "materialId", qty FROM order_materials WHERE order_id = $1', [orderId]);
+  return { materials, fraction: tripCount / Number(orderRows[0].trip_count) };
+}
 
 // [column, jsField] — единый источник для INSERT/UPDATE и для чтения строки
 // обратно (тот же приём, что у ORDER_COLUMNS в handlers/orders.js).
@@ -158,6 +169,10 @@ async function create(body) {
     const values = COLUMNS.map((c) => f[c[1]]);
     const placeholders = cols.map((_, i) => `$${i + 2}`).join(',');
     await client.query(`INSERT INTO waybill_entries (id, ${cols.join(',')}) VALUES ($1, ${placeholders})`, [id, ...values]);
+    // Списание остатка на долю объёма этого рейса — см. комментарий у
+    // orderMaterialsAndFraction() выше.
+    const effect = await orderMaterialsAndFraction(client, f.orderId, f.tripCount);
+    await stock.writeoff(client, f.orderId, effect.materials, effect.fraction, 'Путевой лист');
     const { rows } = await client.query('SELECT * FROM waybill_entries WHERE id = $1', [id]);
     await client.query('COMMIT');
     return rowToEntry(rows[0]);
@@ -173,13 +188,20 @@ async function update(id, body) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: existing } = await client.query('SELECT id FROM waybill_entries WHERE id = $1', [id]);
+    const { rows: existing } = await client.query('SELECT id, order_id, trip_count FROM waybill_entries WHERE id = $1', [id]);
     if (!existing.length) throw new HttpError(404, 'Запись не найдена');
+    const old = existing[0];
     const f = await validateAndBuild(client, body, id);
     const cols = COLUMNS.map((c) => c[0]);
     const values = COLUMNS.map((c) => f[c[1]]);
     const sets = cols.map((col, i) => `${col} = $${i + 2}`).join(',');
     await client.query(`UPDATE waybill_entries SET ${sets} WHERE id = $1`, [id, ...values]);
+    // Реверс старого списания (со старым orderId/tripCount — заказ мог тоже
+    // поменяться), затем списание нового — симметрично create()/remove().
+    const oldEffect = await orderMaterialsAndFraction(client, old.order_id, Number(old.trip_count));
+    await stock.writeoff(client, old.order_id, oldEffect.materials, -oldEffect.fraction, 'Путевой лист (изменение)');
+    const newEffect = await orderMaterialsAndFraction(client, f.orderId, f.tripCount);
+    await stock.writeoff(client, f.orderId, newEffect.materials, newEffect.fraction, 'Путевой лист (изменение)');
     const { rows } = await client.query('SELECT * FROM waybill_entries WHERE id = $1', [id]);
     await client.query('COMMIT');
     return rowToEntry(rows[0]);
@@ -192,8 +214,21 @@ async function update(id, body) {
 }
 
 async function remove(id) {
-  const { rowCount } = await db.pool.query('DELETE FROM waybill_entries WHERE id = $1', [id]);
-  if (!rowCount) throw new HttpError(404, 'Запись не найдена');
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT order_id, trip_count FROM waybill_entries WHERE id = $1', [id]);
+    if (!rows.length) throw new HttpError(404, 'Запись не найдена');
+    const effect = await orderMaterialsAndFraction(client, rows[0].order_id, Number(rows[0].trip_count));
+    await client.query('DELETE FROM waybill_entries WHERE id = $1', [id]);
+    await stock.writeoff(client, rows[0].order_id, effect.materials, -effect.fraction, 'Удаление записи путевого листа');
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 module.exports = { list, create, update, remove, getByIds, tripHours, getLimitsConfig };

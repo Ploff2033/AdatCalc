@@ -295,3 +295,68 @@ BEGIN
       urea_price = COALESCE((SELECT urea_price_default FROM config WHERE id = 1), 0);
   END IF;
 END $$;
+
+-- ==================== v2: модуль остатков (Фаза 2) ====================
+-- Остаток материала на заводе — три числа прямо на карточке материала (у
+-- каждого материала и так один plant_id, отдельная таблица складов не
+-- нужна, см. план v2/redesign): физически на складе, сколько из него уже
+-- забронировано под оформленные заказы, и порог, ниже которого шлём
+-- уведомление. "Доступно" = stock_on_hand - stock_reserved, не хранится
+-- отдельно, считается на лету.
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS stock_on_hand NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS stock_reserved NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS stock_threshold NUMERIC NOT NULL DEFAULT 0;
+
+-- order_materials — снимок расхода на момент заказа (имя/ед./кол-во текстом,
+-- не живая ссылка, см. комментарий у самой таблицы) — но чтобы бронь/
+-- списание в handlers/stock.js знали, КАКОЙ именно материал трогать, нужен
+-- ещё и id. ON DELETE SET NULL (не CASCADE/RESTRICT) — если материал потом
+-- удалят, старый заказ остаётся как был, просто эта позиция больше не
+-- участвует в остатках (бронировать/списывать с несуществующего материала
+-- нечего — handlers/stock.js молча пропускает такие строки).
+ALTER TABLE order_materials ADD COLUMN IF NOT EXISTS material_id TEXT REFERENCES materials(id) ON DELETE SET NULL;
+
+-- Журнал движений остатка — reserve (заказ оформлен) | writeoff (разнесён
+-- путевой лист, знак минус к on_hand и reserved) | release (заказ отменён/
+-- удалён — снимается ещё не списанный остаток брони) | receipt (приход) |
+-- adjustment (ручная корректировка после инвентаризации). before/after
+-- хранятся явно, а не считаются задним числом из суммы движений — так лог
+-- самодостаточен и его можно просто вывести в ленту на экране "Остатки".
+-- reserved_after - reserved_before, просуммированное по order_id, также
+-- используется handlers/stock.js::release() как "сколько от брони этого
+-- заказа ещё не списано" — так отмена корректно работает и для частично
+-- отгруженных заказов, и повторный вызов ничего не ломает (даёт 0).
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id SERIAL PRIMARY KEY,
+  material_id TEXT NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  order_id TEXT REFERENCES orders(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL,
+  qty NUMERIC NOT NULL,
+  on_hand_before NUMERIC NOT NULL,
+  on_hand_after NUMERIC NOT NULL,
+  reserved_before NUMERIC NOT NULL,
+  reserved_after NUMERIC NOT NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_material ON stock_movements(material_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_order ON stock_movements(order_id);
+
+-- Дата отгрузки (из макета Main — отдельно от даты/времени оформления
+-- заказа) и отметка отмены. cancelled_at, а не статус-колонка — заказ
+-- остаётся в истории (не удаляется), просто с флагом; отличить "отменён"
+-- от "удалён" можно по тому, есть ли вообще строка в orders. Отменить можно
+-- только пока по заказу нет путевых листов (см. handlers/orders.js::cancel);
+-- удалить (DELETE) — только admin (см. router.js).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ship_date DATE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+
+-- Порог рентабельности (подсветка заказов ниже него в списке «Заказы») и
+-- Telegram-токен/chat id — переезжают из .env в БД, чтобы админ мог менять
+-- их из Настроек без доступа к серверу. backend/telegram.js читает сначала
+-- эти колонки, при пустом значении — падает обратно на переменные
+-- окружения (см. telegram.js), так что уже настроенные через .env боевые
+-- деплои не ломаются, пока их явно не перенастроят через интерфейс.
+ALTER TABLE config ADD COLUMN IF NOT EXISTS rentability_threshold_percent NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;

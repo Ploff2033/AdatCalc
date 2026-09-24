@@ -13,6 +13,7 @@ const orders = require('./handlers/orders');
 const waybillEntries = require('./handlers/waybill-entries');
 const plants = require('./handlers/plants');
 const config = require('./handlers/config');
+const stockMovements = require('./handlers/stock-movements');
 const auth = require('./handlers/auth');
 const db = require('./db');
 const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
@@ -134,7 +135,11 @@ function crudRoutes(base, mod, opts) {
     {
       method: 'DELETE',
       pattern: withId,
-      role: opts.write,
+      // opts.del — своя роль конкретно для удаления, отдельно от остального
+      // opts.write (по умолчанию совпадает с write, если не задана явно) —
+      // нужно для /api/orders: создание/правки открыты как раньше, а
+      // полное удаление сузили до admin (см. handlers/orders.js::remove).
+      role: opts.del !== undefined ? opts.del : opts.write,
       handler: async (req, res, m) => {
         await mod.remove(decodeURIComponent(m[1]));
         sendJson(res, 204);
@@ -324,13 +329,44 @@ const routes = [
   ...crudRoutes('/api/materials', materials, { read: null, write: 'manager', scopeByToken: true }),
   ...crudRoutes('/api/recipes', recipes, { read: null, write: 'manager', scopeByToken: true }),
 
+  // Остатки — приход/корректировка (не сам CRUD над карточкой материала,
+  // отдельные операции с журналом движений, см. handlers/stock.js).
+  {
+    method: 'POST',
+    pattern: /^\/api\/materials\/([^/]+)\/stock$/,
+    role: 'manager',
+    handler: async (req, res, m) => {
+      const body = await readBody(req);
+      sendJson(res, 200, await materials.stockAdjustment(decodeURIComponent(m[1]), body));
+    }
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/stock-movements$/,
+    role: 'manager',
+    handler: async (req, res, m, role, query) => sendJson(res, 200, await stockMovements.list(query))
+  },
+
   // Техника — общая на все заводы. Читать может кто угодно, менять — только админ.
   ...crudRoutes('/api/mixers', mixers, { read: null, write: 'admin' }),
   ...crudRoutes('/api/aggregate-trucks', aggregateTrucks, { read: null, write: 'admin' }),
 
   // Заказы — открыты всем, включая незалогиненных работников. Работник по
   // своей ссылке (?token=) видит только заказы своего завода — см. scopeByToken.
-  ...crudRoutes('/api/orders', orders, { read: null, write: null, scopeByToken: true }),
+  // Полное удаление (del) — только admin (см. v2/redesign: отменить заказ
+  // может менеджер через POST .../cancel ниже, а насовсем стереть историю —
+  // только админ); create/read остаются открытыми как раньше.
+  ...crudRoutes('/api/orders', orders, { read: null, write: null, del: 'admin', scopeByToken: true }),
+
+  // Отмена заказа — остаётся в истории (cancelled_at), в отличие от полного
+  // удаления выше. Менеджеру и выше; сама проверка "нет путевых листов" —
+  // внутри handlers/orders.js::cancel.
+  {
+    method: 'POST',
+    pattern: /^\/api\/orders\/([^/]+)\/cancel$/,
+    role: 'manager',
+    handler: async (req, res, m) => sendJson(res, 200, await orders.cancel(decodeURIComponent(m[1])))
+  },
 
   // Смена даты и/или завода заказа — единственное разрешённое редактирование
   // уже оформленного заказа (см. комментарий в handlers/orders.js). Только

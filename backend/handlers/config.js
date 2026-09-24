@@ -10,7 +10,7 @@ const { genToken } = require('../tokens');
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT neighbor_city_surcharge, company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip FROM config WHERE id = 1'
+    'SELECT neighbor_city_surcharge, company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
@@ -19,12 +19,19 @@ async function get(role) {
     driverShiftHours: Number(row.driver_shift_hours),
     vehicleShiftHours: Number(row.vehicle_shift_hours),
     avgSpeedKmh: Number(row.avg_speed_kmh),
-    unloadMinutes: Number(row.unload_minutes)
+    unloadMinutes: Number(row.unload_minutes),
+    // Виден всем с ролью (нужен и менеджеру — подсветка заказов ниже порога
+    // в списке «Заказы»), в отличие от токенов ниже.
+    rentabilityThresholdPercent: Number(row.rentability_threshold_percent)
   };
   if (role === 'admin') {
     out.universalWorkerToken = row.universal_worker_token;
     out.universalTokenLastUsedAt = row.universal_token_last_used_at ? new Date(row.universal_token_last_used_at).toISOString() : null;
     out.universalTokenLastUsedIp = row.universal_token_last_used_ip || null;
+    // Telegram-токен — чувствительный секрет, как и access_token заводов,
+    // поэтому наружу только admin (как universalWorkerToken выше).
+    out.telegramBotToken = row.telegram_bot_token || '';
+    out.telegramChatId = row.telegram_chat_id || '';
   }
   return out;
 }
@@ -55,6 +62,22 @@ async function update(body, role) {
   if (body.unloadMinutes !== undefined) {
     values.push(num(body.unloadMinutes, 'unloadMinutes'));
     sets.push(`unload_minutes = $${values.length}`);
+  }
+  if (body.rentabilityThresholdPercent !== undefined) {
+    values.push(num(body.rentabilityThresholdPercent, 'rentabilityThresholdPercent'));
+    sets.push(`rentability_threshold_percent = $${values.length}`);
+  }
+  // Токен/chat id — секрет той же категории, что universalWorkerToken/
+  // access_token заводов: PUT /api/config в router.js открыт manager+, но
+  // эти два поля меняются только если запрос реально от admin — менеджеру
+  // запрос не упадёт с ошибкой, просто эти поля тихо проигнорируются.
+  if (role === 'admin' && body.telegramBotToken !== undefined) {
+    values.push(String(body.telegramBotToken).trim());
+    sets.push(`telegram_bot_token = $${values.length}`);
+  }
+  if (role === 'admin' && body.telegramChatId !== undefined) {
+    values.push(String(body.telegramChatId).trim());
+    sets.push(`telegram_chat_id = $${values.length}`);
   }
   if (sets.length) {
     await db.pool.query(`UPDATE config SET ${sets.join(', ')} WHERE id = 1`, values);
