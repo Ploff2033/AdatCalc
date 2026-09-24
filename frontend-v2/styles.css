@@ -130,22 +130,22 @@ select.inp { cursor: pointer; }
 .sidebar-brand .name { font: 600 15px 'Rubik', sans-serif; color: #fff; }
 .sidebar-brand .role { font-size: 11px; color: var(--sidebar-muted); }
 
-.plant-switch-btn {
-  display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px;
+/* Переключатель завода — один настоящий <select> (не кнопка + отдельный
+   попап поверх неё, как было раньше и выглядело как два элемента разом),
+   оформленный под тот же тёмный "pill", что и в макете. appearance:none +
+   свой SVG-шеврон фоном — чтобы вместо системной стрелки браузера был тот
+   же шеврон, что и у остальных дропдаунов интерфейса. */
+.plant-select-pill {
+  appearance: none; -webkit-appearance: none;
+  display: flex; align-items: center; height: 44px; padding: 0 36px 0 12px;
   border-radius: 4px; border: 1px solid var(--sidebar-border); background: var(--sidebar-item-bg);
-  color: #fff; font: inherit; cursor: pointer; text-align: left; width: 100%;
+  color: #fff; font: 600 14px 'Rubik', sans-serif; cursor: pointer; text-align: left; width: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23A3A69E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
 }
-.plant-switch-btn .cap { color: var(--sidebar-muted); }
-.plant-switch-btn .val { font-size: 14px; font-weight: 600; }
-
-/* Выпадающий список заводов под кнопкой-переключателем — тёмная тема, в тон
-   сайдбару (без этого класса он наследовал светлый .inp и выглядел как
-   случайный белый прямоугольник с системным focus ring). */
-.plant-select {
-  height: 40px; box-sizing: border-box; border: 1px solid var(--sidebar-border); border-radius: 4px;
-  background: var(--sidebar-item-bg); color: #fff; padding: 0 12px; font: inherit; width: 100%; cursor: pointer;
-}
-.plant-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plant-select-pill:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plant-select-pill:disabled { cursor: default; opacity: .7; }
+.plant-select-pill option { background: var(--sidebar-item-bg); color: #fff; }
 
 nav.nav { display: flex; flex-direction: column; gap: 2px; }
 nav.nav a, nav.nav button.navlink {
@@ -265,7 +265,11 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
      Дашборд/Настройки — вложен в свой div.stack), поэтому прячем по id
      каждую секцию сайдбара, а не только прямых потомков. */
   .sidebar > nav.nav, .sidebar > div.sidebar-refs, #sb-nav-admin, .sidebar-user { display: none; }
-  .plant-switch-btn { width: auto; height: 36px; }
+  /* В компактной шапке телефона подпись "Завод" не нужна — сам select
+     достаточно короткий и понятный рядом с логотипом. */
+  #sb-plant-switch { width: auto; gap: 0; }
+  #sb-plant-switch > .cap { display: none; }
+  .plant-select-pill { width: auto; height: 36px; }
   .bottom-nav {
     display: flex; position: sticky; bottom: 0; z-index: 5; background: var(--sidebar-bg);
     border-top: 1px solid var(--sidebar-border); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));

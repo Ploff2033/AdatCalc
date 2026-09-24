@@ -12,15 +12,10 @@
   function renderPlantSwitch() {
     var plants = State.data.plants || [];
     var current = State.currentPlant();
-    document.getElementById('sb-plant-name').textContent = current ? current.name : '—';
-
+    var wrap = document.getElementById('sb-plant-switch');
     var select = document.getElementById('sb-plant-select');
-    var btn = document.getElementById('sb-plant-switch');
-    // Переключатель имеет смысл, только если реально есть выбор — как в v1
-    // (см. plant-switcher.js): >1 завода и роль хотя бы менеджера.
-    var canSwitch = Auth.isAtLeast('manager') && plants.length > 1;
-    btn.hidden = plants.length === 0;
-    if (!canSwitch) { select.hidden = true; return; }
+    wrap.hidden = plants.length === 0;
+    if (!plants.length) return;
 
     select.innerHTML = '';
     plants.forEach(function (p) {
@@ -30,6 +25,10 @@
       select.appendChild(opt);
     });
     select.value = current ? current.id : '';
+    // Переключатель имеет смысл, только если реально есть выбор — как в v1
+    // (см. plant-switcher.js): >1 завода и роль хотя бы менеджера. Иначе —
+    // тот же select, просто disabled, чтобы завод всё равно было видно.
+    select.disabled = !(Auth.isAtLeast('manager') && plants.length > 1);
   }
 
   function applyRoleVisibility() {
@@ -60,19 +59,11 @@
   }
 
   function init() {
-    var btn = document.getElementById('sb-plant-switch');
-    var select = document.getElementById('sb-plant-select');
-    btn.addEventListener('click', function () {
-      select.hidden = !select.hidden;
-      if (!select.hidden) select.focus();
-    });
-    select.addEventListener('change', function () {
-      Plant.setCurrent(select.value);
-      select.hidden = true;
+    document.getElementById('sb-plant-select').addEventListener('change', function () {
+      Plant.setCurrent(this.value);
       State.loadAll().then(render);
       if (window.Router) Router.rerender();
     });
-    select.addEventListener('blur', function () { select.hidden = true; });
 
     document.getElementById('sb-logout-btn').addEventListener('click', async function () {
       await Auth.logout();
