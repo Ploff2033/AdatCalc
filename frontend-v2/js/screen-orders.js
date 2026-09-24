@@ -178,16 +178,51 @@
     return orders;
   }
 
+  // Экспорт — тот же полный 33-колоночный формат, что и в v1
+  // (frontend/js/tab-orders.js::exportToExcel), просто на данных из v2-шного
+  // filteredOrders(); поля в объекте заказа одни и те же (один и тот же
+  // backend/handlers/orders.js::ORDER_COLUMNS для обеих версий), только тут
+  // раньше был обрезанный до 7 колонок вариант — по просьбе пользователя
+  // ("экспорт... возьми из первой, она куда более информативна").
   function csvEscape(v) { var s = String(v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
   function csvNum(n) { return (Math.round((n || 0) * 100) / 100).toString().replace('.', ','); }
+  function csvDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
 
   function exportToExcel() {
     var orders = filteredOrders();
     if (!orders.length) return;
-    var headers = ['Завод', 'Дата', 'Марка', 'Объём (м³)', 'К оплате (₽)', 'Прибыль (₽)', 'Рентабельность (%)'];
+
+    var headers = [
+      'Завод', 'Дата', 'Марка', 'Миксер', 'Адрес доставки', 'Объём (м³)', 'Расстояние (км)', 'Рейс в другой город',
+      'Материалы (₽/м³)', 'ФОТ (₽/м³)', 'Амортизация завода (₽/м³)', 'Коммуналка (₽/м³)', 'Себестоимость 1м³ (₽)',
+      'Себестоимость смеси (₽)', 'Цена (₽/м³)', 'Выручка со смеси (₽)', 'Прибыль от смеси (₽)', 'Рентабельность смеси (%)',
+      'Пробег за рейс (км)', 'Топливо за рейс (₽)', 'Амортизация техники за рейс (₽)', 'Доплата водителю (₽)', 'Рейсов',
+      'Расход на доставку (₽)', 'Доход от доставки (₽)', 'Прибыль от доставки (₽)', 'Рентабельность доставки (%)',
+      'Выручка всего (₽)', 'С НДС', 'в т.ч. НДС 22% (₽)', 'Чистая прибыль (₽)', 'Прибыль на 1м³ (₽)', 'Рентабельность сделки (%)', 'Расход материалов'
+    ];
+
     var rows = orders.map(function (o) {
-      return [o.plantName, new Date(o.createdAt).toLocaleString('ru-RU'), o.recipeName, csvNum(o.saleVolume), csvNum(o.totalRevenue), csvNum(o.totalProfit), csvNum(o.totalMarginPercent)];
+      var materialsText = (o.materials || []).map(function (m) {
+        return m.name + ': ' + csvNum(m.qty) + ' ' + m.unit;
+      }).join(', ');
+      // НДС в заказе — не всегда: тумблер "Цена указана с НДС" на Главной
+      // определяет сделку целиком (см. o.vatApplied). Извлекаем 22/122 из
+      // totalRevenue только когда сделка реально была с НДС.
+      var ndsAmount = o.vatApplied ? (o.totalRevenue || 0) * 22 / 122 : 0;
+      return [
+        o.plantName, csvDate(o.createdAt), o.recipeName, o.mixerName, o.address || '', csvNum(o.saleVolume), csvNum(o.distanceKm), o.neighborCity ? 'да' : 'нет',
+        csvNum(o.materialsCost), csvNum(o.payrollCost), csvNum(o.deprCost), csvNum(o.utilitiesCost), csvNum(o.costPerM3),
+        csvNum(o.mixCost), csvNum(o.salePrice), csvNum(o.mixRevenue), csvNum(o.mixProfit), csvNum(o.mixMarginPercent),
+        csvNum(o.roundTripKm), csvNum(o.fuelCostPerTrip), csvNum(o.amortCostPerTrip), csvNum(o.surchargePerTrip), csvNum(o.tripCount),
+        csvNum(o.deliveryCostTotal), csvNum(o.deliveryRevenue), csvNum(o.deliveryProfit), csvNum(o.deliveryMarginPercent),
+        csvNum(o.totalRevenue), o.vatApplied ? 'да' : 'нет', csvNum(ndsAmount), csvNum(o.totalProfit), csvNum(o.profitPerM3), csvNum(o.totalMarginPercent), materialsText
+      ];
     });
+
     var csv = '﻿' + [headers].concat(rows).map(function (r) { return r.map(csvEscape).join(';'); }).join('\r\n');
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob);

@@ -254,7 +254,13 @@
     setMarginBadge(document.getElementById('mix-margin'), mixMarginPercent);
 
     var safetyMargin = testPriceNet - costPerM3;
-    document.getElementById('mix-breakeven-price').textContent = Format.fmt(costPerM3, 2);
+    // Себестоимость сама по себе без НДС (это не выручка), но когда цена
+    // вводится в режиме "с НДС", сравнивать её напрямую с net-порогом
+    // нельзя — пользователь вводит гросс-число и ждёт, что оно сравнимо с
+    // тем, что написано здесь. Показываем порог в той же величине, что и
+    // текущий режим ввода (см. отзыв пользователя: "пишет 6500, ввожу 7000
+    // с НДС и не перебиваю в плюс").
+    document.getElementById('mix-breakeven-price').textContent = Format.fmt(vatGrossMode ? costPerM3 * VAT_MULT : costPerM3, 2) + (vatGrossMode ? ' с НДС' : ' без НДС');
     setProfitLine(document.getElementById('mix-safety-margin'), safetyMargin);
     setMarginBadge(document.getElementById('mix-safety-margin-pct'), testPriceNet > 0 ? (safetyMargin / testPriceNet) * 100 : 0);
 

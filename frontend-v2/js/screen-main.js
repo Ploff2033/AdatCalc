@@ -284,9 +284,6 @@
     var priceNet = priceDirty ? priceNetStored : salePrice;
     displayVatField(priceInput, priceNet);
 
-    var priceHint = document.getElementById('m-price-hint');
-    priceHint.textContent = vatGrossMode ? 'В прибыль идёт цена без НДС: ' + Format.fmt(priceNet, 2) + ' за м³.' : '';
-
     var deliveryChargeInput = document.getElementById('m-delivery-charge');
     deliveryChargeInput.disabled = selfPickup;
 
@@ -313,7 +310,20 @@
     document.getElementById('m-net-margin').textContent = Format.fmtNum(calc.totalMarginPercent, 1, '% рентабельность');
     document.getElementById('m-profit-per-m3').textContent = Format.fmt(calc.profitPerM3, 2);
     document.getElementById('m-safety-margin').textContent = Format.fmt(calc.safetyMargin, 2);
-    document.getElementById('m-safety-margin-pct').textContent = Format.fmtNum(calc.safetyMarginPercent, 1, '% до безубыточной цены');
+    // Маржа сама всегда без НДС (это честная прибыль, НДС — не ваши деньги),
+    // но порог сравнения — с учётом текущего режима ввода цены: сравнивать
+    // "ввёл 7000 с НДС" напрямую с "себестоимость 6500 без НДС" нельзя, они
+    // в разных величинах (см. отзыв пользователя).
+    var safetyMarginSub = Format.fmtNum(calc.safetyMarginPercent, 1, '% до безубыточной цены');
+    safetyMarginSub += vatGrossMode
+      ? ' · порог с НДС ' + Format.fmt(calc.costPerM3Gross, 2)
+      : ' · порог без НДС ' + Format.fmt(calc.costPerM3, 2);
+    document.getElementById('m-safety-margin-pct').textContent = safetyMarginSub;
+
+    var priceHint = document.getElementById('m-price-hint');
+    priceHint.textContent = vatGrossMode
+      ? 'В прибыль идёт цена без НДС: ' + Format.fmt(priceNet, 2) + ' за м³. Порог безубытка с НДС: ' + Format.fmt(calc.costPerM3Gross, 2) + '.'
+      : '';
 
     // Разбивка видна только залогиненным (менеджер/админ) — работник по
     // анонимной ссылке в v2 вообще не бывает (см. app.js), но проверка на

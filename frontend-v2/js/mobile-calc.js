@@ -175,7 +175,12 @@
     document.getElementById('mc-mix-payroll').textContent = Format.fmt(calc.payroll, 2) + '/м³';
     document.getElementById('mc-mix-depr').textContent = Format.fmt(calc.depr, 2) + '/м³';
     document.getElementById('mc-mix-utilities').textContent = Format.fmt(calc.utilities, 2) + '/м³';
-    document.getElementById('mc-mix-cost-per-m3').textContent = Format.fmt(calc.costPerM3, 2);
+    // costPerM3 — себестоимость, в ней по определению нет НДС (это не
+    // выручка). В режиме "с НДС" рядом показываем ещё и порог цены с НДС —
+    // иначе тестовую цену (введённую с НДС) не с чем сравнить напрямую,
+    // см. отзыв пользователя ("пишет 6500, ввожу 7000 с НДС и не перебиваю
+    // в плюс" — 6500 без НДС и 7000 с НДС в разных величинах).
+    document.getElementById('mc-mix-cost-per-m3').textContent = Format.fmt(calc.costPerM3, 2) + (vatGrossMode ? ' (' + Format.fmt(calc.costPerM3Gross, 2) + ' с НДС)' : '');
     document.getElementById('mc-mix-cost').textContent = Format.fmt(calc.mixCost, 0);
     var safetyEl = document.getElementById('mc-mix-safety');
     safetyEl.textContent = Format.fmt(calc.safetyMargin, 0) + ' ₽/м³';
@@ -212,7 +217,8 @@
     document.getElementById('mc-net-margin').textContent = Format.fmtNum(calc.totalMarginPercent, 1, '% рент.');
     document.getElementById('mc-profit-per-m3').textContent = Format.fmt(calc.profitPerM3, 0);
     document.getElementById('mc-safety').textContent = Format.fmt(calc.safetyMargin, 0) + '/м³';
-    document.getElementById('mc-safety-pct').textContent = Format.fmtNum(calc.safetyMarginPercent, 1, '%');
+    document.getElementById('mc-safety-pct').textContent = Format.fmtNum(calc.safetyMarginPercent, 1, '%')
+      + (vatGrossMode ? ' · порог с НДС ' + Format.fmt(calc.costPerM3Gross, 0) : '');
     document.getElementById('mc-split-mix').textContent = (calc.mixProfit >= 0 ? '+' : '') + Format.fmt(calc.mixProfit, 0);
     document.getElementById('mc-split-delivery').textContent = (calc.deliveryProfit >= 0 ? '+' : '') + Format.fmt(calc.deliveryProfit, 0);
 

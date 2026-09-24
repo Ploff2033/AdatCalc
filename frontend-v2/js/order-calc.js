@@ -65,21 +65,36 @@
       deliveryProfit = deliveryRevenue - deliveryCostTotal;
       deliveryMarginPercent = Calc.marginPercent(deliveryProfit, deliveryRevenue);
     }
-
+    // Прибыль/рентабельность — всегда от выручки без НДС (доставка без
+    // изменений, в ней НДС не участвует), это не зависит от тумблера.
+    // "К оплате" — то, что реально выставляется клиенту: тумблер "Цена с
+    // НДС" определяет, идёт ли сделка со смесью с НДС — выключен, значит
+    // сделка без НДС и "К оплате" = чистая выручка без наценки налога.
+    // (Портировано из frontend/js/tab-main.js как есть — доставка
+    // намеренно отдельная услуга без НДС, а не забытый случай.)
     var totalRevenueNet = mixRevenue + deliveryRevenue;
     var totalRevenueGross = mixRevenueGross + deliveryRevenue;
     var totalRevenueDisplayed = vatGrossMode ? totalRevenueGross : totalRevenueNet;
     var totalProfit = mixProfit + deliveryProfit;
     var profitPerM3Total = saleVolume > 0 ? totalProfit / saleVolume : 0;
     var marginTotal = Calc.marginPercent(totalProfit, totalRevenueNet);
+    // НДС сидит только в цене смеси (доставка — без НДС, см. выше), поэтому
+    // "в т.ч. НДС" считаем от mixRevenueGross, а не от totalRevenueGross.
     var vatAmount = vatGrossMode && mixRevenue > 0 ? mixRevenueGross - mixRevenue : 0;
     // Безубыточная цена доставки (для мобильной подсказки "доставка в минус
     // от X ₽/м³") — расход на 1 м³ при текущем плече/миксере.
     var deliveryBreakevenPerM3 = saleVolume > 0 && trips > 0 ? deliveryCostTotal / saleVolume : 0;
+    // "Порог с НДС" — та же себестоимость, но переведённая в цену, которую
+    // нужно выставить клиенту С УЧЁТОМ НДС, чтобы выйти в ноль. Сама маржа
+    // (safetyMargin выше) остаётся честной, без НДС — это просто удобная
+    // для сравнения величина, когда цена вводится в режиме "с НДС" (см.
+    // отзыв пользователя: "пишет 6500, ввожу 7000 с НДС и не перебиваю в
+    // плюс" — 6500 без НДС и 7000 с НДС сравнивать напрямую нельзя).
+    var costPerM3Gross = costPerM3 * VAT_MULT;
 
     return {
       deliveryReady: deliveryReady, trips: trips, roundTrip: roundTrip,
-      materialsCost: materialsCost, payroll: payroll, depr: depr, utilities: utilities, costPerM3: costPerM3,
+      materialsCost: materialsCost, payroll: payroll, depr: depr, utilities: utilities, costPerM3: costPerM3, costPerM3Gross: costPerM3Gross,
       materialsBreakdown: materialsBreakdown, priceNet: priceNet,
       mixRevenue: mixRevenue, mixRevenueGross: mixRevenueGross, mixCost: mixCost, mixProfit: mixProfit, mixMarginPercent: mixMarginPercent,
       safetyMargin: safetyMargin, safetyMarginPercent: priceNet > 0 ? (safetyMargin / priceNet) * 100 : 0,
