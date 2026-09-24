@@ -57,7 +57,22 @@
   var editingEmployee = null; // полный объект редактируемого сотрудника, или null при создании
   var draftPlantId = ''; // '' — общий сотрудник, иначе id завода (выбор в форме)
 
-  function employees() { return State.data.employees || []; }
+  // Свой список сотрудников, а не State.data.employees — тот заведён под
+  // Waybills (там driver-select должен видеть только текущий завод +
+  // общих, поэтому state.js шлёт GET /api/employees?plantId=<текущий>, см.
+  // shared/state.js::loadAll) и молча ограничивается одним заводом. Экрану
+  // Персонала как раз нужен обратный эффект — все заводы сразу, без
+  // привязки к тому, что выбрано в сайдбар-переключателе (это ролевой
+  // список для admin, не привязан к "текущему заводу" по смыслу). Бэкенд
+  // при GET /api/employees без ?plantId= отдаёт admin'у вообще всех (см.
+  // handlers/employees.js::list) — этим и пользуемся.
+  var allEmployees = [];
+  async function loadEmployees() {
+    try { allEmployees = await Api.get('/employees'); }
+    catch (err) { allEmployees = []; }
+  }
+
+  function employees() { return allEmployees; }
   function plants() { return State.data.plants || []; }
 
   function plantName(plantId) {
@@ -318,7 +333,7 @@
     try {
       if (editingEmployee) await Api.put('/employees/' + editingEmployee.id, payload);
       else await Api.post('/employees', payload);
-      await State.loadAll();
+      await Promise.all([State.loadAll(), loadEmployees()]);
       closeDrawer();
       render();
     } catch (err) {
@@ -332,7 +347,7 @@
     if (!confirm('Удалить сотрудника «' + editingEmployee.name + '»?')) return;
     try {
       await Api.del('/employees/' + editingEmployee.id);
-      await State.loadAll();
+      await Promise.all([State.loadAll(), loadEmployees()]);
       closeDrawer();
       render();
     } catch (err) {
@@ -368,7 +383,8 @@
 
   function show() {
     if (!initialized) init();
-    render();
+    render(); // сразу — с тем, что уже есть (пусто при первом заходе, кэш при повторном), без мигания пустым экраном
+    loadEmployees().then(render);
   }
 
   window.PersonnelScreen = { show: show };
