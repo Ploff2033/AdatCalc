@@ -111,6 +111,11 @@ select.inp { cursor: pointer; }
 
 /* ---------- каркас приложения ---------- */
 .app-shell { display: flex; min-height: 100vh; background: var(--bg); }
+/* По умолчанию скрыт (а не только через @media min-width:861px, как раньше) —
+   так .bottom-nav не может остаться видимым просто потому, что ни одно из
+   двух @media-условий почему-то не сработало; показываем его только явным
+   opt-in внутри @media max-width:860px ниже. */
+.bottom-nav { display: none; }
 
 .sidebar {
   width: 232px; flex: none; background: var(--sidebar-bg); color: var(--sidebar-fg);
@@ -170,6 +175,12 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
 }
 .card-h2 { display: flex; align-items: center; gap: 10px; }
 .card-h2 h2 { font-size: 18px; font-weight: 600; }
+
+/* ---------- панель итогов на Главной (screen-main.js) ---------- */
+.m-kpi { display: flex; flex-direction: column; gap: 2px; padding: 16px 20px; min-width: 0; }
+.m-kpi-label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--sidebar-muted); font-weight: 600; }
+.m-kpi-val { font-size: 26px; font-weight: 500; white-space: nowrap; }
+.m-kpi-sub { font-size: 12px; color: var(--sidebar-muted); }
 
 /* ---------- утилиты сетки ---------- */
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
@@ -241,7 +252,10 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   .app-shell { flex-direction: column; }
   .sidebar { position: static; width: auto; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 14px; gap: 10px; }
   .sidebar-brand { flex: 1; }
-  .sidebar > nav.nav, .sidebar > div.sidebar-refs, .sidebar-user { display: none; }
+  /* nav.nav встречается и глубже одного уровня (например #sb-nav-admin —
+     Дашборд/Настройки — вложен в свой div.stack), поэтому прячем по id
+     каждую секцию сайдбара, а не только прямых потомков. */
+  .sidebar > nav.nav, .sidebar > div.sidebar-refs, #sb-nav-admin, .sidebar-user { display: none; }
   .plant-switch-btn { width: auto; height: 36px; }
   .bottom-nav {
     display: flex; position: sticky; bottom: 0; z-index: 5; background: var(--sidebar-bg);
@@ -253,9 +267,14 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   .page { padding: 16px; gap: 16px; }
   .page-head h1 { font-size: 22px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  /* Эти три сетки заданы инлайн-стилем прямо в screen-main.js/waybills.js/
+     settings.js (фиксированная правая/левая колонка в пикселях) — !important
+     нужен, чтобы карточка на узком экране не сжималась в нулевую ширину
+     вместо того чтобы просто встать в один столбец (то самое "не видно
+     формы, только правая колонка"). */
+  .m-grid, .wb-grid, .set-grid { grid-template-columns: 1fr !important; }
   .login-shell { grid-template-columns: 1fr; }
   .login-hero { padding: 32px 24px; }
   .login-card { width: auto; }
   .login-form-side { padding: 24px; }
 }
-@media (min-width: 861px) { .bottom-nav { display: none; } }
