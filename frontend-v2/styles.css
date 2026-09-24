@@ -67,6 +67,12 @@ select.inp { cursor: pointer; }
 .seg { display: flex; border: 1px solid #CFCAC0; border-radius: 4px; overflow: hidden; background: #fff; }
 .seg button { flex: 1; height: 38px; border: 0; background: transparent; font: inherit; font-size: 13px; color: #3F413C; cursor: pointer; }
 .seg button.on { background: var(--ink); color: #fff; }
+/* Сегменты фиксированной ширины (например, width:300px у 2-3 кнопок в
+   Fleet/Personnel) и так получают комфортный внутренний отступ за счёт
+   flex:1 в широком контейнере. У переключателя заводов в Настройках
+   (width:auto, число кнопок заранее неизвестно) кнопки сжимаются точно по
+   тексту без запаса — по отзыву пользователя добавлен свой боковой паддинг. */
+#s-plants-seg button { padding: 0 24px; }
 
 .btn {
   height: 44px; padding: 0 20px; border-radius: 4px; border: 1px solid var(--ink);

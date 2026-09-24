@@ -129,7 +129,7 @@
     if (!body.dataset.scaffolded) {
       body.innerHTML =
         '<div class="seg" role="group" aria-label="Завод" id="s-plants-seg" style="width:auto;display:inline-flex"></div>' +
-        '<div id="s-plant-editor" style="margin-top:14px"></div>';
+        '<div id="s-plant-editor" style="margin-top:22px"></div>';
       body.dataset.scaffolded = 'admin';
     }
     var plants = State.data.plants || [];
@@ -163,7 +163,13 @@
   }
 
   function buildPlantEditor(container, plant) {
+    // Отдельные "категории" редактора (название/выработка, амортизация,
+    // цены, координаты, ссылка, кнопки) — раньше шли впритык друг к другу
+    // (сами .grid-2/.grid-3 задают только gap МЕЖДУ своими колонками, а не
+    // отступ ДО следующего блока) — по отзыву пользователя добавлен общий
+    // вертикальный gap между этими блоками.
     container.innerHTML =
+      '<div class="stack" style="gap:26px">' +
       '<div class="grid-3">' +
         '<div class="field"><label for="sp-name">Название</label><input id="sp-name" class="inp"></div>' +
         '<div class="field"><label for="sp-output">Целевая выработка</label><div class="unit"><input id="sp-output" class="inp num" inputmode="decimal"><span>м³/мес</span></div></div>' +
@@ -195,9 +201,10 @@
         '</div>' +
       '</div>' +
       '<p class="banner" id="sp-error" hidden></p>' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
         '<button type="button" class="btn ghost sm" id="sp-delete-btn" style="color:#8C2217;border-color:#E3B8B1">Удалить завод</button>' +
         '<button type="button" class="btn pri" id="sp-save-btn">Сохранить завод</button>' +
+      '</div>' +
       '</div>';
 
     document.getElementById('sp-name').value = plant.name;
