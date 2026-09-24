@@ -10,11 +10,29 @@
 
   function isMobile() { return mq.matches; }
 
+  // .bottom-nav вешается/скрывается через CSS-медиазапрос с тем же условием
+  // (max-width:860px) — но это две НЕЗАВИСИМЫЕ проверки браузера (CSS и JS
+  // matchMedia), которые в норме совпадают. Если в конкретном браузере/
+  // вебвью они почему-то расходятся, страница экрана (десктоп или мобильный
+  // шаблон) уже решается через isMobile(), а .bottom-nav — через отдельный
+  // @media — рассинхрон именно так и проявлялся ("дублирует меню").
+  // applyBottomNavVisibility() убирает саму возможность разъехаться: видимость
+  // берётся из ТОГО ЖЕ isMobile(), что и выбор экрана, через [hidden]
+  // (которому в styles.css назначен display:none!important).
+  function applyBottomNavVisibility() {
+    var bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav) bottomNav.hidden = !isMobile();
+  }
+
   function init() {
-    var handler = function () { if (window.Router) Router.rerender(); };
+    applyBottomNavVisibility();
+    var handler = function () {
+      applyBottomNavVisibility();
+      if (window.Router) Router.rerender();
+    };
     if (mq.addEventListener) mq.addEventListener('change', handler);
     else mq.addListener(handler); // старые Safari
   }
 
-  window.Viewport = { isMobile: isMobile, init: init };
+  window.Viewport = { isMobile: isMobile, init: init, applyBottomNavVisibility: applyBottomNavVisibility };
 })();

@@ -33,6 +33,7 @@
   }
 
   function show(route) {
+    if (window.Viewport) Viewport.applyBottomNavVisibility();
     var SCREENS = screens();
     if (!SCREENS[route] || !allowed(route)) route = 'main';
     Array.prototype.forEach.call(document.querySelectorAll('.page[data-route]'), function (el) {
