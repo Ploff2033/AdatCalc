@@ -392,3 +392,12 @@ BEGIN
       neighbor_city_surcharge = COALESCE((SELECT neighbor_city_surcharge FROM config WHERE id = 1), 0);
   END IF;
 END $$;
+
+-- Материалы без учёта остатка (вода из водопровода, газ по трубе — их
+-- физически "не может стать меньше" на складе). FALSE по умолчанию не
+-- меняет поведение уже заведённых материалов. Бронь/списание/снятие брони
+-- по заказам для такого материала просто не трогают числа (см.
+-- handlers/stock.js::adjustMaterial) — остаток остаётся 0/0, порог теряет
+-- смысл и не участвует в дефицитных предупреждениях (фронтенд/бэкенд
+-- одинаково пропускают такие материалы при подсчёте дефицита).
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS stock_unlimited BOOLEAN NOT NULL DEFAULT FALSE;

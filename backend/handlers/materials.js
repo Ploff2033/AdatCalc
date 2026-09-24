@@ -19,6 +19,10 @@ function rowToMaterial(row) {
     stockOnHand: Number(row.stock_on_hand),
     stockReserved: Number(row.stock_reserved),
     stockThreshold: Number(row.stock_threshold),
+    // Материал "не может закончиться" (вода, газ по трубе и т.п.) — остаток
+    // не считается и не участвует в дефицитных предупреждениях, см.
+    // handlers/stock.js::adjustMaterial.
+    stockUnlimited: !!row.stock_unlimited,
     delivery: {
       ownTransport: row.delivery_own_transport,
       truckId: row.delivery_truck_id,
@@ -84,13 +88,14 @@ async function create(body) {
     const vatRate = body.vatRate !== undefined ? num(body.vatRate, 'vatRate') : 0;
     const lossPercent = num(body.lossPercent, 'lossPercent');
     const stockThreshold = body.stockThreshold !== undefined ? num(body.stockThreshold, 'stockThreshold') : 0;
+    const stockUnlimited = !!body.stockUnlimited;
     const d = await sanitizeDelivery(client, body.delivery);
 
     const id = db.genId('mat');
     await client.query(
-      `INSERT INTO materials (id, plant_id, name, unit, price, vat_rate, loss_percent, delivery_own_transport, delivery_truck_id, delivery_distance_km, delivery_fuel_price_per_liter, delivery_urea_price_per_liter, delivery_driver_surcharge, delivery_manual_cost_per_unit, stock_threshold)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-      [id, plantId, name, unit, price, vatRate, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.ureaPricePerLiter, d.driverSurcharge, d.manualCostPerUnit, stockThreshold]
+      `INSERT INTO materials (id, plant_id, name, unit, price, vat_rate, loss_percent, delivery_own_transport, delivery_truck_id, delivery_distance_km, delivery_fuel_price_per_liter, delivery_urea_price_per_liter, delivery_driver_surcharge, delivery_manual_cost_per_unit, stock_threshold, stock_unlimited)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      [id, plantId, name, unit, price, vatRate, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.ureaPricePerLiter, d.driverSurcharge, d.manualCostPerUnit, stockThreshold, stockUnlimited]
     );
     const { rows } = await client.query('SELECT * FROM materials WHERE id = $1', [id]);
     return rowToMaterial(rows[0]);
@@ -102,7 +107,7 @@ async function create(body) {
 async function update(id, body) {
   const client = await db.pool.connect();
   try {
-    const { rows: existing } = await client.query('SELECT id, stock_threshold, vat_rate FROM materials WHERE id = $1', [id]);
+    const { rows: existing } = await client.query('SELECT id, stock_threshold, stock_unlimited, vat_rate FROM materials WHERE id = $1', [id]);
     if (!existing.length) throw new HttpError(404, 'Материал не найден');
 
     const plantId = str(body.plantId, 'plantId');
@@ -115,12 +120,13 @@ async function update(id, body) {
     const vatRate = body.vatRate !== undefined ? num(body.vatRate, 'vatRate') : Number(existing[0].vat_rate);
     const lossPercent = num(body.lossPercent, 'lossPercent');
     const stockThreshold = body.stockThreshold !== undefined ? num(body.stockThreshold, 'stockThreshold') : Number(existing[0].stock_threshold);
+    const stockUnlimited = body.stockUnlimited !== undefined ? !!body.stockUnlimited : existing[0].stock_unlimited;
     const d = await sanitizeDelivery(client, body.delivery);
 
     await client.query(
-      `UPDATE materials SET plant_id=$2, name=$3, unit=$4, price=$5, vat_rate=$6, loss_percent=$7, delivery_own_transport=$8, delivery_truck_id=$9, delivery_distance_km=$10, delivery_fuel_price_per_liter=$11, delivery_urea_price_per_liter=$12, delivery_driver_surcharge=$13, delivery_manual_cost_per_unit=$14, stock_threshold=$15
+      `UPDATE materials SET plant_id=$2, name=$3, unit=$4, price=$5, vat_rate=$6, loss_percent=$7, delivery_own_transport=$8, delivery_truck_id=$9, delivery_distance_km=$10, delivery_fuel_price_per_liter=$11, delivery_urea_price_per_liter=$12, delivery_driver_surcharge=$13, delivery_manual_cost_per_unit=$14, stock_threshold=$15, stock_unlimited=$16
        WHERE id=$1`,
-      [id, plantId, name, unit, price, vatRate, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.ureaPricePerLiter, d.driverSurcharge, d.manualCostPerUnit, stockThreshold]
+      [id, plantId, name, unit, price, vatRate, lossPercent, d.ownTransport, d.truckId, d.distanceKm, d.fuelPricePerLiter, d.ureaPricePerLiter, d.driverSurcharge, d.manualCostPerUnit, stockThreshold, stockUnlimited]
     );
     const { rows } = await client.query('SELECT * FROM materials WHERE id = $1', [id]);
     return rowToMaterial(rows[0]);

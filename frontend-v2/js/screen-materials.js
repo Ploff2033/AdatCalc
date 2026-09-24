@@ -26,8 +26,9 @@
             '<div class="field"><label for="mt-f-name">Название</label><input id="mt-f-name" class="inp" required></div>' +
             '<div class="grid-2">' +
               '<div class="field"><label for="mt-f-unit">Единица</label><select id="mt-f-unit" class="inp"><option>т</option><option>м³</option><option>кг</option><option>л</option></select></div>' +
-              '<div class="field"><label for="mt-f-threshold">Порог остатка на складе</label><input id="mt-f-threshold" class="inp num" inputmode="decimal" value="0"></div>' +
+              '<div class="field" id="mt-f-threshold-field"><label for="mt-f-threshold">Порог остатка на складе</label><input id="mt-f-threshold" class="inp num" inputmode="decimal" value="0"></div>' +
             '</div>' +
+            '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer"><button type="button" class="tog" id="mt-f-unlimited" aria-pressed="false"><i></i></button>Неограниченный остаток (вода, газ по трубе и т.п.)</label>' +
             '<div class="grid-3">' +
               '<div class="field"><label for="mt-f-price">Цена закупки с НДС</label><input id="mt-f-price" class="inp num" inputmode="decimal" required></div>' +
               '<div class="field"><label for="mt-f-vat">Ставка НДС</label><div class="unit"><input id="mt-f-vat" class="inp num" inputmode="decimal" value="0"><span>%</span></div></div>' +
@@ -85,7 +86,7 @@
       var deliveryAddition = Calc.materialDeliveryAdditionPerTon(m, trucks);
       var effective = Calc.materialEffectivePrice(m, trucks);
       return '<div class="row" style="grid-template-columns:1.6fr 44px 110px 64px 64px 1.3fr 110px 70px;min-height:58px;cursor:pointer" data-material-id="' + m.id + '">' +
-        '<div class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + m.name + '</span><span class="hint">порог ' + Format.fmtNum(m.stockThreshold, 0, m.unit) + '</span></div>' +
+        '<div class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + m.name + '</span><span class="hint">' + (m.stockUnlimited ? 'остаток не учитывается' : 'порог ' + Format.fmtNum(m.stockThreshold, 0, m.unit)) + '</span></div>' +
         '<div class="hint">' + m.unit + '</div>' +
         '<div class="r num">' + Format.fmtNum(m.price, 2) + '</div>' +
         '<div class="r num hint">' + (m.vatRate > 0 ? Format.fmtNum(m.vatRate, 0, '%') : '—') + '</div>' +
@@ -116,6 +117,14 @@
     var own = document.getElementById('mt-f-own-transport').classList.contains('on');
     document.getElementById('mt-f-truck-fields').hidden = !own;
     document.getElementById('mt-f-manual-field').hidden = own;
+  }
+
+  // Порог остатка не имеет смысла для материала, которого "не может стать
+  // меньше" — прячем поле, а не просто дизейблим, чтобы не создавать
+  // впечатление, что оно всё ещё на что-то влияет.
+  function applyUnlimitedVisibility() {
+    var unlimited = document.getElementById('mt-f-unlimited').classList.contains('on');
+    document.getElementById('mt-f-threshold-field').hidden = unlimited;
   }
 
   function readDeliveryFromForm() {
@@ -168,8 +177,11 @@
     document.getElementById('mt-f-own-transport').classList.remove('on');
     NumericInput.setFormattedValue(document.getElementById('mt-f-km'), 0);
     NumericInput.setFormattedValue(document.getElementById('mt-f-manual'), 0);
+    document.getElementById('mt-f-unlimited').classList.remove('on');
+    document.getElementById('mt-f-unlimited').setAttribute('aria-pressed', 'false');
     buildTruckOptions('');
     applyDeliveryModeVisibility();
+    applyUnlimitedVisibility();
     updatePreview();
     document.getElementById('mt-drawer').hidden = false;
   }
@@ -191,7 +203,10 @@
     buildTruckOptions(d.truckId);
     NumericInput.setFormattedValue(document.getElementById('mt-f-km'), d.distanceKm || 0);
     NumericInput.setFormattedValue(document.getElementById('mt-f-manual'), d.manualCostPerUnit || 0);
+    document.getElementById('mt-f-unlimited').classList.toggle('on', !!mat.stockUnlimited);
+    document.getElementById('mt-f-unlimited').setAttribute('aria-pressed', mat.stockUnlimited ? 'true' : 'false');
     applyDeliveryModeVisibility();
+    applyUnlimitedVisibility();
     updatePreview();
     document.getElementById('mt-drawer').hidden = false;
   }
@@ -210,6 +225,7 @@
       vatRate: NumericInput.parseNumber(document.getElementById('mt-f-vat').value) || 0,
       lossPercent: NumericInput.parseNumber(document.getElementById('mt-f-loss').value) || 0,
       stockThreshold: NumericInput.parseNumber(document.getElementById('mt-f-threshold').value) || 0,
+      stockUnlimited: document.getElementById('mt-f-unlimited').classList.contains('on'),
       delivery: readDeliveryFromForm()
     };
     if (!payload.name) { errorEl.textContent = 'Укажите название материала.'; errorEl.hidden = false; return; }
@@ -261,6 +277,11 @@
       this.setAttribute('aria-pressed', this.classList.contains('on') ? 'true' : 'false');
       applyDeliveryModeVisibility();
       updatePreview();
+    });
+    document.getElementById('mt-f-unlimited').addEventListener('click', function () {
+      this.classList.toggle('on');
+      this.setAttribute('aria-pressed', this.classList.contains('on') ? 'true' : 'false');
+      applyUnlimitedVisibility();
     });
     ['mt-f-unit', 'mt-f-price', 'mt-f-vat', 'mt-f-loss', 'mt-f-truck', 'mt-f-km', 'mt-f-manual'].forEach(function (id) {
       document.getElementById(id).addEventListener('input', updatePreview);

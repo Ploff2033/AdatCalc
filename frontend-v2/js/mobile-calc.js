@@ -13,6 +13,7 @@
           '<div class="field"><label for="mc-recipe">Рецепт</label><select id="mc-recipe" class="inp" style="height:48px"></select></div>' +
           '<div class="field"><label for="mc-volume">Объём</label><div class="unit"><input id="mc-volume" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>м³</span></div></div>' +
         '</div>' +
+        '<div class="field"><label for="mc-ship-date">Дата отгрузки</label><input id="mc-ship-date" type="date" class="inp" style="height:48px"></div>' +
         '<div class="field"><label for="mc-price">Цена за м³</label>' +
           '<div style="display:grid;grid-template-columns:minmax(0,1fr) 138px;gap:8px">' +
             '<div class="unit"><input id="mc-price" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>₽</span></div>' +
@@ -235,6 +236,8 @@
       address: addressInput.value.trim(), fuelPrice: fuelPrice, ureaPrice: ureaPrice,
       nbCity: document.getElementById('mc-nb-city').checked, vatGrossMode: vatGrossMode
     }, calc);
+    delete lastCalc.createdAt; // проставляется заново в момент нажатия «Оформить», а не на каждый пересчёт
+    lastCalc.shipDate = document.getElementById('mc-ship-date').value || null;
   }
 
   async function handlePlaceOrder() {
@@ -254,6 +257,7 @@
       document.getElementById('mc-volume').value = '';
       document.getElementById('mc-dist').value = '';
       document.getElementById('mc-address').value = '';
+      document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
       render();
     } catch (err) {
       errorEl.textContent = 'Не удалось оформить заказ: ' + err.message;
@@ -265,6 +269,8 @@
 
   function init() {
     document.getElementById('page-main').innerHTML = HTML;
+    document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('mc-ship-date').addEventListener('change', render);
 
     document.getElementById('mc-vat-off').addEventListener('click', function () {
       vatGrossMode = false;

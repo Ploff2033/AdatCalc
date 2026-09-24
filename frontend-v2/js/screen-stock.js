@@ -52,6 +52,20 @@
     var warnNames = [];
 
     rows.innerHTML = materials.map(function (m) {
+      // Материал без учёта остатка (вода, газ по трубе...) — считать
+      // нечего, бэкенд для него и не пишет движения (см.
+      // handlers/stock.js::adjustMaterial), просто показываем "∞" и не
+      // тянем его в баннер дефицита.
+      if (m.stockUnlimited) {
+        return '<div class="row" style="grid-template-columns:1.6fr 1fr 1fr 1fr 0.8fr 1.5fr;min-height:56px">' +
+          '<div class="stack"><span style="font-weight:500">' + m.name + '</span><span class="hint">' + m.unit + '</span></div>' +
+          '<div class="r num hint">∞</div>' +
+          '<div class="r num hint">∞</div>' +
+          '<div class="r num hint">∞</div>' +
+          '<div class="r num hint">—</div>' +
+          '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"></div><span class="chip mute">Не учитывается</span></div>' +
+        '</div>';
+      }
       var avail = m.stockOnHand - m.stockReserved;
       var pct = m.stockOnHand > 0 ? Math.max(0, Math.min(100, Math.round((avail / m.stockOnHand) * 100))) : 0;
       var cls, label, color, barColor;
@@ -124,7 +138,11 @@
     formKind = kind;
     var panel = document.getElementById('s-form-panel');
     var select = document.getElementById('s-form-material');
-    select.innerHTML = currentMaterials().map(function (m) { return '<option value="' + m.id + '">' + m.name + ' (' + m.unit + ')</option>'; }).join('');
+    // Материалы без учёта остатка сюда не попадают — приход/корректировка
+    // для них физически ничего не меняют (см. handlers/stock.js), только
+    // сбивали бы с толку видимостью действия без эффекта.
+    select.innerHTML = currentMaterials().filter(function (m) { return !m.stockUnlimited; })
+      .map(function (m) { return '<option value="' + m.id + '">' + m.name + ' (' + m.unit + ')</option>'; }).join('');
     document.getElementById('s-form-title').textContent = kind === 'receipt' ? 'Приход материала' : 'Корректировка остатка';
     document.getElementById('s-form-qty-label').textContent = kind === 'receipt' ? 'Количество' : 'Изменение (может быть отрицательным)';
     document.getElementById('s-form-hint').textContent = kind === 'receipt'

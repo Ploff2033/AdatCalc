@@ -7,7 +7,7 @@ const telegram = require('../telegram');
 // у stock_movements в schema.sql про то, зачем они хранятся явно.
 async function adjustMaterial(client, materialId, opts) {
   const { rows } = await client.query(
-    'SELECT stock_on_hand, stock_reserved, stock_threshold, plant_id, name FROM materials WHERE id = $1 FOR UPDATE',
+    'SELECT stock_on_hand, stock_reserved, stock_threshold, stock_unlimited, plant_id, name FROM materials WHERE id = $1 FOR UPDATE',
     [materialId]
   );
   // Материал мог быть удалён после того, как заказ его использовал —
@@ -17,6 +17,19 @@ async function adjustMaterial(client, materialId, opts) {
   if (!rows.length) return null;
 
   const before = rows[0];
+
+  // Материал без учёта остатка (вода, газ...) — числа физически не могут
+  // измениться, поэтому просто ничего не пишем (ни в materials, ни в
+  // stock_movements — журналу движений тут действительно нечего фиксировать)
+  // и не шлём уведомлений о дефиците. Возвращаем не null (это для вызывающих
+  // означало бы "материал не найден", см. materials.js::stockAdjustment), а
+  // честный, просто неизменившийся срез.
+  if (before.stock_unlimited) {
+    const onHand = Number(before.stock_on_hand);
+    const reserved = Number(before.stock_reserved);
+    return { onHandBefore: onHand, onHandAfter: onHand, reservedBefore: reserved, reservedAfter: reserved };
+  }
+
   const onHandBefore = Number(before.stock_on_hand);
   const reservedBefore = Number(before.stock_reserved);
   const onHandAfter = onHandBefore + (opts.onHandDelta || 0);

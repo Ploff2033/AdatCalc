@@ -186,6 +186,15 @@
       if (!mat) {
         return '<div class="row" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr"><div>Неизвестный материал</div><div class="r num">' + Format.fmtNum(need, 2) + '</div><div class="r">—</div><div class="r">—</div><div><span class="chip mute">Нет данных</span></div></div>';
       }
+      if (mat.stockUnlimited) {
+        return '<div class="row" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr">' +
+          '<div style="font-weight:500">' + mat.name + '</div>' +
+          '<div class="r num">' + Format.fmtNum(need, 2, mat.unit) + '</div>' +
+          '<div class="r num hint">∞</div>' +
+          '<div class="r num hint">∞</div>' +
+          '<div><span class="chip mute">Не учитывается</span></div>' +
+        '</div>';
+      }
       var avail = mat.stockOnHand - mat.stockReserved;
       var after = avail - need;
       var cls, label, color;
