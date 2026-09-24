@@ -372,3 +372,23 @@ ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
 -- сюда перенесена как есть, просто со вводом ставки обычным числовым полем
 -- вместо сегмента 22/10/0 %).
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS vat_rate NUMERIC NOT NULL DEFAULT 0;
+
+-- ==================== v2: настройки заводов (объединение в один раздел) ====================
+-- Доплата водителю за рейс в соседний город — раньше была общей в
+-- config.neighbor_city_surcharge, но по сути привязана к заводу (у разных
+-- заводов разные соседние города и расстояния до них). Бэкфилл из старого
+-- общего значения — ОДИН раз, в момент добавления колонки (тот же приём,
+-- что и с fuel_price/urea_price выше), иначе каждый рестарт затирал бы то,
+-- что админ явно выставил заводу. Старая колонка в config остаётся в БД
+-- (данные не удаляем), но код её больше не читает.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema() AND table_name = 'plants' AND column_name = 'neighbor_city_surcharge'
+  ) THEN
+    ALTER TABLE plants ADD COLUMN neighbor_city_surcharge NUMERIC NOT NULL DEFAULT 0;
+    UPDATE plants SET
+      neighbor_city_surcharge = COALESCE((SELECT neighbor_city_surcharge FROM config WHERE id = 1), 0);
+  END IF;
+END $$;

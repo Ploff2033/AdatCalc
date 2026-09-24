@@ -247,7 +247,7 @@
     if (!ureaPriceDirty) NumericInput.setFormattedValue(ureaPriceInput, (plant && plant.ureaPrice) || 0);
     var ureaPrice = NumericInput.parseNumber(ureaPriceInput.value) || 0;
 
-    var neighborCitySurcharge = (data.config && data.config.neighborCitySurcharge) || 0;
+    var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
     document.getElementById('m-nb-badge').textContent = '(+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс)';
 
     var missingDelivery = [];

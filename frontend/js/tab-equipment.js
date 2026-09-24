@@ -229,10 +229,14 @@
     });
   }
 
-  // ---- Цены топлива/мочевины — у каждого завода свои (текущий завод — из
-  // переключателя сверху), + общие настройки (надбавка за рейс) ниже ----
+  // ---- Цены топлива/мочевины + доплата за рейс в другой город — у каждого
+  // завода свои (текущий завод — из переключателя сверху). Доплата раньше
+  // была общей в config.neighborCitySurcharge — перенесена в plants (см.
+  // миграцию в schema.sql), сюда же, в тот же per-plant save, потому что по
+  // сути это такая же характеристика завода, как цена топлива/мочевины. ----
   var fuelPriceInput = document.getElementById('fuel-price-default');
   var ureaPriceInput = document.getElementById('urea-price-default');
+  var neighborSurchargeInput = document.getElementById('neighbor-city-surcharge');
   var pricesSaveTimer = null;
   var pricesSavePlantId = null;
 
@@ -250,11 +254,12 @@
     try {
       await Api.put('/plants/' + pricesSavePlantId + '/prices', {
         fuelPrice: NumericInput.parseNumber(fuelPriceInput.value) || 0,
-        ureaPrice: NumericInput.parseNumber(ureaPriceInput.value) || 0
+        ureaPrice: NumericInput.parseNumber(ureaPriceInput.value) || 0,
+        neighborCitySurcharge: NumericInput.parseNumber(neighborSurchargeInput.value) || 0
       });
       await State.loadAll();
     } catch (err) {
-      alert('Не удалось сохранить цены топлива/мочевины: ' + err.message);
+      alert('Не удалось сохранить цены/доплату: ' + err.message);
     }
   }
 
@@ -263,31 +268,11 @@
     var suffix = plant ? ' — ' + plant.name : '';
     document.getElementById('fuel-price-default-label').textContent = 'Цена топлива' + suffix;
     document.getElementById('urea-price-default-label').textContent = 'Цена мочевины (AdBlue)' + suffix;
+    document.getElementById('neighbor-city-surcharge-label').textContent = 'Надбавка за рейс в другой город' + suffix;
     if (!plant) return;
     if (document.activeElement !== fuelPriceInput) NumericInput.setFormattedValue(fuelPriceInput, plant.fuelPrice || 0);
     if (document.activeElement !== ureaPriceInput) NumericInput.setFormattedValue(ureaPriceInput, plant.ureaPrice || 0);
-  }
-
-  var neighborSurchargeInput = document.getElementById('neighbor-city-surcharge');
-  var neighborSurchargeSaveTimer = null;
-
-  function scheduleNeighborSurchargeSave() {
-    clearTimeout(neighborSurchargeSaveTimer);
-    neighborSurchargeSaveTimer = setTimeout(saveNeighborSurcharge, 500);
-  }
-
-  async function saveNeighborSurcharge() {
-    try {
-      await Api.put('/config', { neighborCitySurcharge: NumericInput.parseNumber(neighborSurchargeInput.value) || 0 });
-      await State.loadAll();
-    } catch (err) {
-      alert('Не удалось сохранить надбавку за рейс в другой город: ' + err.message);
-    }
-  }
-
-  function renderNeighborSurcharge() {
-    if (document.activeElement === neighborSurchargeInput) return;
-    NumericInput.setFormattedValue(neighborSurchargeInput, State.data.config.neighborCitySurcharge || 0);
+    if (document.activeElement !== neighborSurchargeInput) NumericInput.setFormattedValue(neighborSurchargeInput, plant.neighborCitySurcharge || 0);
   }
 
   function init() {
@@ -324,7 +309,7 @@
     NumericInput.attach(neighborSurchargeInput);
     fuelPriceInput.addEventListener('input', schedulePricesSave);
     ureaPriceInput.addEventListener('input', schedulePricesSave);
-    neighborSurchargeInput.addEventListener('input', scheduleNeighborSurchargeSave);
+    neighborSurchargeInput.addEventListener('input', schedulePricesSave);
   }
 
   function renderAdminOnlyCards() {
@@ -337,7 +322,6 @@
     renderTiles();
     renderTruckTiles();
     renderPrices();
-    renderNeighborSurcharge();
     renderAdminOnlyCards();
   }
 

@@ -2,19 +2,21 @@ const db = require('../db');
 const { num } = require('../validate');
 const { genToken } = require('../tokens');
 
-// Общие для всех заводов настройки (надбавка за рейс, реквизиты, лимиты смен).
-// Цены топлива/мочевины и выработка/амортизация/коммуналка — у каждого завода
-// свои, см. handlers/plants.js. Auth-хэши в этой же таблице, но наружу не отдаются.
+// Общие для всех заводов настройки (реквизиты, лимиты смен).
+// Цены топлива/мочевины, доплата за рейс в другой город и выработка/
+// амортизация/коммуналка — у каждого завода свои, см. handlers/plants.js
+// (neighbor_city_surcharge раньше была здесь же, общей на все заводы —
+// перенесена, старая колонка config.neighbor_city_surcharge осталась в БД
+// неиспользуемой). Auth-хэши в этой же таблице, но наружу не отдаются.
 // Общий токен подмены (universal_worker_token) отдаётся только admin — как и
 // access_token у заводов, это чувствительный секрет, дающий доступ ко всем
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT neighbor_city_surcharge, company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id FROM config WHERE id = 1'
+    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
-    neighborCitySurcharge: Number(row.neighbor_city_surcharge),
     companyRequisites: row.company_requisites || '',
     driverShiftHours: Number(row.driver_shift_hours),
     vehicleShiftHours: Number(row.vehicle_shift_hours),
@@ -39,10 +41,6 @@ async function get(role) {
 async function update(body, role) {
   const sets = [];
   const values = [];
-  if (body.neighborCitySurcharge !== undefined) {
-    values.push(num(body.neighborCitySurcharge, 'neighborCitySurcharge'));
-    sets.push(`neighbor_city_surcharge = $${values.length}`);
-  }
   if (body.companyRequisites !== undefined) {
     values.push(String(body.companyRequisites).trim());
     sets.push(`company_requisites = $${values.length}`);

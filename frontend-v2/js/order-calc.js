@@ -48,7 +48,7 @@
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0,
       neighborCity = !!input.nbCity, surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0,
       deliveryRevenue = 0, deliveryProfit = 0, deliveryMarginPercent = 0;
-    var neighborCitySurcharge = (data.config && data.config.neighborCitySurcharge) || 0;
+    var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
 
     if (deliveryReady && !selfPickup) {
       trips = Calc.tripsForVolume(mixer, saleVolume);

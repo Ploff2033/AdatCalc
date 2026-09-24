@@ -162,7 +162,7 @@
     }
     var ureaPrice = NumericInput.parseNumber(ureaPriceInput.value) || 0;
 
-    var neighborCitySurcharge = data.config.neighborCitySurcharge || 0;
+    var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
     document.getElementById('nb-city-badge').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс';
 
     // Марка/рецепт нужна для любого расчёта. Миксер/расстояние нужны только

@@ -142,7 +142,7 @@
     var ureaPrice = NumericInput.parseNumber(ureaPriceInput.value) || 0;
     document.getElementById('mc-fuel-summary').innerHTML = 'Топливо <b class="num" style="color:var(--ink)">' + Format.fmtNum(fuelPrice, 2) + '</b> · AdBlue <b class="num" style="color:var(--ink)">' + Format.fmtNum(ureaPrice, 0) + '</b> ₽/л';
 
-    var neighborCitySurcharge = (data.config && data.config.neighborCitySurcharge) || 0;
+    var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
     document.getElementById('mc-nb-hint').textContent = '+' + Format.fmt(neighborCitySurcharge, 0) + ' водителю';
 
     if (!recipe) { placeBtn.disabled = true; lastCalc = null; return; }

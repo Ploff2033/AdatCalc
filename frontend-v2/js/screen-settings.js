@@ -27,18 +27,18 @@
           '<div class="field"><label for="s-requisites">Реквизиты (свободный текст — подставляются в путевые листы)</label><textarea id="s-requisites" class="inp" style="height:120px;padding:10px 12px;resize:vertical"></textarea></div>' +
         '</section>' +
         '<section id="s-plants" class="card sec">' +
-          '<div class="sec-h"><h2>Заводы · цены</h2><span class="hint">Полное редактирование заводов — в <a href="/" target="_blank" rel="noopener">прежнем интерфейсе</a></span></div>' +
-          '<div id="s-plants-list" class="stack g16"></div>' +
+          '<div class="sec-h"><h2>Заводы</h2><button type="button" class="btn sm" id="s-plants-add-btn" hidden>Новый завод</button></div>' +
+          '<div id="s-plants-body"></div>' +
         '</section>' +
         '<section id="s-trips" class="card sec">' +
           '<div class="sec-h"><h2>Доставка и смены</h2></div>' +
           '<div class="grid-2">' +
-            '<div class="field"><label for="s-nb-surcharge">Доплата водителю за рейс в соседний город</label><div class="unit"><input id="s-nb-surcharge" class="inp num" inputmode="decimal"><span>₽/рейс</span></div></div>' +
             '<div class="field"><label for="s-driver-hours">Смена водителя</label><div class="unit"><input id="s-driver-hours" class="inp num" inputmode="decimal"><span>ч</span></div></div>' +
             '<div class="field"><label for="s-vehicle-hours">Смена машины</label><div class="unit"><input id="s-vehicle-hours" class="inp num" inputmode="decimal"><span>ч</span></div></div>' +
             '<div class="field"><label for="s-avg-speed">Средняя скорость миксера</label><div class="unit"><input id="s-avg-speed" class="inp num" inputmode="decimal"><span>км/ч</span></div></div>' +
             '<div class="field"><label for="s-unload">Время разгрузки</label><div class="unit"><input id="s-unload" class="inp num" inputmode="decimal"><span>мин</span></div></div>' +
           '</div>' +
+          '<p class="hint" style="margin:0">Доплата водителю за рейс в соседний город — теперь у каждого завода своя, см. раздел «Заводы» выше.</p>' +
         '</section>' +
         '<section id="s-rent" class="card sec">' +
           '<div class="sec-h"><h2>Контроль рентабельности</h2></div>' +
@@ -66,25 +66,55 @@
     if (document.activeElement !== el) el.value = (State.data.config && State.data.config.companyRequisites) || '';
   }
 
+  // ---- Заводы ----
+  // manager видит и правит только то, чем уже мог управлять раньше (цены
+  // топлива/мочевины + теперь доплата за рейс, все через PUT
+  // /api/plants/:id/prices) — тот же простой стек карточек, что был. admin
+  // получает полный редактор по макету Settings.dc.html: сегмент-выбор
+  // завода + все поля (название/выработка/амортизация/координаты/ссылка/
+  // удаление) через полный PUT /api/plants/:id, отдельной immediate-кнопкой
+  // "Сохранить завод" — не через общий savebar внизу экрана (тот заточен
+  // под пачку разнородных полей всех секций сразу, а тут одна сущность со
+  // своими обязательными полями и своим DELETE/POST, как в Materials/Fleet).
+  var selectedPlantId = null;
+
   function renderPlants() {
-    var container = document.getElementById('s-plants-list');
+    var addBtn = document.getElementById('s-plants-add-btn');
+    if (Auth.isAtLeast('admin')) {
+      addBtn.hidden = false;
+      renderPlantsAdmin();
+    } else {
+      addBtn.hidden = true;
+      renderPlantsManager();
+    }
+  }
+
+  function renderPlantsManager() {
+    var body = document.getElementById('s-plants-body');
+    if (!body.dataset.scaffolded) {
+      body.innerHTML = '<div id="s-plants-list" class="stack g16"></div>';
+      body.dataset.scaffolded = 'manager';
+    }
+    var list = document.getElementById('s-plants-list');
     var plants = State.data.plants || [];
-    container.innerHTML = plants.map(function (p) {
+    list.innerHTML = plants.map(function (p) {
       return '<div class="stack g10" data-plant-id="' + p.id + '" style="padding:14px;border:1px solid var(--border-soft);border-radius:6px">' +
         '<b>' + p.name + '</b>' +
-        '<div class="grid-2">' +
+        '<div class="grid-3">' +
           '<div class="field"><label>Цена топлива</label><div class="unit"><input class="inp num s-fuel-price" inputmode="decimal"><span>₽/л</span></div></div>' +
           '<div class="field"><label>Цена мочевины (AdBlue)</label><div class="unit"><input class="inp num s-urea-price" inputmode="decimal"><span>₽/л</span></div></div>' +
+          '<div class="field"><label>Доплата за рейс в другой город</label><div class="unit"><input class="inp num s-surcharge" inputmode="decimal"><span>₽/рейс</span></div></div>' +
         '</div>' +
       '</div>';
     }).join('') || '<p class="hint">Заводов ещё нет.</p>';
     plants.forEach(function (p) {
-      var card = container.querySelector('[data-plant-id="' + p.id + '"]');
+      var card = list.querySelector('[data-plant-id="' + p.id + '"]');
       if (!card) return;
       NumericInput.setFormattedValue(card.querySelector('.s-fuel-price'), p.fuelPrice || 0);
       NumericInput.setFormattedValue(card.querySelector('.s-urea-price'), p.ureaPrice || 0);
+      NumericInput.setFormattedValue(card.querySelector('.s-surcharge'), p.neighborCitySurcharge || 0);
     });
-    Array.prototype.forEach.call(container.querySelectorAll('.s-fuel-price, .s-urea-price'), function (input) {
+    Array.prototype.forEach.call(list.querySelectorAll('.s-fuel-price, .s-urea-price, .s-surcharge'), function (input) {
       NumericInput.attach(input);
       input.addEventListener('input', function () {
         var plantId = input.closest('[data-plant-id]').dataset.plantId;
@@ -94,9 +124,210 @@
     });
   }
 
+  function renderPlantsAdmin() {
+    var body = document.getElementById('s-plants-body');
+    if (!body.dataset.scaffolded) {
+      body.innerHTML =
+        '<div class="seg" role="group" aria-label="Завод" id="s-plants-seg" style="width:auto;display:inline-flex"></div>' +
+        '<div id="s-plant-editor" style="margin-top:14px"></div>';
+      body.dataset.scaffolded = 'admin';
+    }
+    var plants = State.data.plants || [];
+    var seg = document.getElementById('s-plants-seg');
+    var editor = document.getElementById('s-plant-editor');
+    if (!plants.length) {
+      seg.innerHTML = '';
+      editor.innerHTML = '<p class="hint">Заводов ещё нет — добавьте первый кнопкой «Новый завод» выше.</p>';
+      editor.dataset.builtFor = '';
+      return;
+    }
+    if (!selectedPlantId || !plants.some(function (p) { return p.id === selectedPlantId; })) {
+      selectedPlantId = plants[0].id;
+    }
+    seg.innerHTML = plants.map(function (p) {
+      return '<button type="button" data-plant-id="' + p.id + '" class="' + (p.id === selectedPlantId ? 'on' : '') + '" aria-pressed="' + (p.id === selectedPlantId) + '">' + p.name + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(seg.querySelectorAll('button'), function (btn) {
+      btn.addEventListener('click', function () {
+        selectedPlantId = btn.dataset.plantId;
+        renderPlantsAdmin();
+      });
+    });
+    // Пересобираем поля редактора только при смене выбранного завода — иначе
+    // фоновый рендер (например, после сохранения ДРУГОЙ секции Настроек)
+    // сбросил бы недосохранённый ввод admin'а в текущем.
+    if (editor.dataset.builtFor === selectedPlantId) return;
+    editor.dataset.builtFor = selectedPlantId;
+    var plant = plants.find(function (p) { return p.id === selectedPlantId; });
+    buildPlantEditor(editor, plant);
+  }
+
+  function buildPlantEditor(container, plant) {
+    container.innerHTML =
+      '<div class="grid-3">' +
+        '<div class="field"><label for="sp-name">Название</label><input id="sp-name" class="inp"></div>' +
+        '<div class="field"><label for="sp-output">Целевая выработка</label><div class="unit"><input id="sp-output" class="inp num" inputmode="decimal"><span>м³/мес</span></div></div>' +
+        '<div class="field"><label for="sp-utilities">Коммуналка</label><div class="unit"><input id="sp-utilities" class="inp num" inputmode="decimal"><span>₽/мес</span></div></div>' +
+      '</div>' +
+      '<div class="stack g10">' +
+        '<span class="cap">Амортизация завода</span>' +
+        '<div class="grid-3">' +
+          '<div class="field"><label for="sp-depr-balance">Балансовая стоимость</label><div class="unit"><input id="sp-depr-balance" class="inp num" inputmode="decimal"><span>₽</span></div></div>' +
+          '<div class="field"><label for="sp-depr-residual">Остаточная стоимость</label><div class="unit"><input id="sp-depr-residual" class="inp num" inputmode="decimal"><span>₽</span></div></div>' +
+          '<div class="field"><label for="sp-depr-lifespan">Срок службы</label><div class="unit"><input id="sp-depr-lifespan" class="inp num" inputmode="decimal"><span>мес</span></div></div>' +
+        '</div>' +
+        '<div class="spread" style="padding:10px 14px;border-radius:4px;background:var(--surface-3)"><span>В себестоимости 1 м³</span><span class="num" id="sp-depr-preview" style="font-weight:600">—</span></div>' +
+      '</div>' +
+      '<div class="grid-3">' +
+        '<div class="field"><label for="sp-fuel">Цена топлива</label><div class="unit"><input id="sp-fuel" class="inp num" inputmode="decimal"><span>₽/л</span></div></div>' +
+        '<div class="field"><label for="sp-urea">Цена мочевины (AdBlue)</label><div class="unit"><input id="sp-urea" class="inp num" inputmode="decimal"><span>₽/л</span></div></div>' +
+        '<div class="field"><label for="sp-surcharge">Доплата за рейс в другой город</label><div class="unit"><input id="sp-surcharge" class="inp num" inputmode="decimal"><span>₽/рейс</span></div></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="field"><label for="sp-lat">Широта</label><input id="sp-lat" class="inp num" inputmode="decimal"></div>' +
+        '<div class="field"><label for="sp-lng">Долгота</label><input id="sp-lng" class="inp num" inputmode="decimal"></div>' +
+      '</div>' +
+      '<div class="field"><label>Ссылка для работников завода</label>' +
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px">' +
+          '<input id="sp-link" class="inp num" readonly style="background:var(--surface-3);color:var(--muted)">' +
+          '<button type="button" class="btn ghost sm" id="sp-link-copy" style="height:40px">Копировать</button>' +
+          '<button type="button" class="btn ghost sm" id="sp-link-reissue" style="height:40px">Перевыпустить</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="banner" id="sp-error" hidden></p>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px">' +
+        '<button type="button" class="btn ghost sm" id="sp-delete-btn" style="color:#8C2217;border-color:#E3B8B1">Удалить завод</button>' +
+        '<button type="button" class="btn pri" id="sp-save-btn">Сохранить завод</button>' +
+      '</div>';
+
+    document.getElementById('sp-name').value = plant.name;
+    NumericInput.attach(document.getElementById('sp-output'));
+    NumericInput.setFormattedValue(document.getElementById('sp-output'), plant.targetOutput);
+    NumericInput.attach(document.getElementById('sp-utilities'));
+    NumericInput.setFormattedValue(document.getElementById('sp-utilities'), plant.utilitiesMonthly);
+    NumericInput.attach(document.getElementById('sp-depr-balance'));
+    NumericInput.setFormattedValue(document.getElementById('sp-depr-balance'), plant.plantDepr.balance);
+    NumericInput.attach(document.getElementById('sp-depr-residual'));
+    NumericInput.setFormattedValue(document.getElementById('sp-depr-residual'), plant.plantDepr.residual);
+    NumericInput.attach(document.getElementById('sp-depr-lifespan'));
+    NumericInput.setFormattedValue(document.getElementById('sp-depr-lifespan'), plant.plantDepr.lifespanMonths);
+    NumericInput.attach(document.getElementById('sp-fuel'));
+    NumericInput.setFormattedValue(document.getElementById('sp-fuel'), plant.fuelPrice);
+    NumericInput.attach(document.getElementById('sp-urea'));
+    NumericInput.setFormattedValue(document.getElementById('sp-urea'), plant.ureaPrice);
+    NumericInput.attach(document.getElementById('sp-surcharge'));
+    NumericInput.setFormattedValue(document.getElementById('sp-surcharge'), plant.neighborCitySurcharge);
+    NumericInput.attach(document.getElementById('sp-lat'));
+    NumericInput.attach(document.getElementById('sp-lng'));
+    if (plant.plantLocation) {
+      NumericInput.setFormattedValue(document.getElementById('sp-lat'), plant.plantLocation.lat);
+      NumericInput.setFormattedValue(document.getElementById('sp-lng'), plant.plantLocation.lng);
+    }
+    document.getElementById('sp-link').value = plant.accessToken ? (location.origin + '/?token=' + encodeURIComponent(plant.accessToken)) : '';
+
+    function updateDeprPreview() {
+      var fake = {
+        plantDepr: {
+          balance: NumericInput.parseNumber(document.getElementById('sp-depr-balance').value) || 0,
+          residual: NumericInput.parseNumber(document.getElementById('sp-depr-residual').value) || 0,
+          lifespanMonths: NumericInput.parseNumber(document.getElementById('sp-depr-lifespan').value) || 0
+        },
+        targetOutput: NumericInput.parseNumber(document.getElementById('sp-output').value) || 0
+      };
+      document.getElementById('sp-depr-preview').textContent = Format.fmt(Calc.plantDeprPerM3(fake), 2) + '/м³';
+    }
+    ['sp-depr-balance', 'sp-depr-residual', 'sp-depr-lifespan', 'sp-output'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', updateDeprPreview);
+    });
+    updateDeprPreview();
+
+    document.getElementById('sp-save-btn').addEventListener('click', function () { savePlant(plant.id); });
+    document.getElementById('sp-delete-btn').addEventListener('click', function () { deletePlant(plant); });
+    document.getElementById('sp-link-copy').addEventListener('click', function (e) {
+      var link = document.getElementById('sp-link').value;
+      if (!link) return;
+      navigator.clipboard.writeText(link).then(function () {
+        e.target.textContent = 'Скопировано!';
+        setTimeout(function () { e.target.textContent = 'Копировать'; }, 2000);
+      }).catch(function () { window.prompt('Скопируйте ссылку (Ctrl+C):', link); });
+    });
+    document.getElementById('sp-link-reissue').addEventListener('click', function () {
+      if (!confirm('Перевыпустить ссылку для «' + plant.name + '»? Старая перестанет работать немедленно.')) return;
+      Api.post('/plants/' + plant.id + '/reissue-token', {}).then(function () { return State.loadAll(); })
+        .then(function () { forceRebuildPlantEditor(); render(); })
+        .catch(function (err) { alert(err.message); });
+    });
+  }
+
+  function forceRebuildPlantEditor() {
+    var editor = document.getElementById('s-plant-editor');
+    if (editor) editor.dataset.builtFor = '';
+  }
+
+  async function savePlant(id) {
+    var errorEl = document.getElementById('sp-error');
+    errorEl.hidden = true;
+    var name = document.getElementById('sp-name').value.trim();
+    if (!name) { errorEl.textContent = 'Укажите название завода.'; errorEl.hidden = false; return; }
+    var latRaw = document.getElementById('sp-lat').value;
+    var lngRaw = document.getElementById('sp-lng').value;
+    var lat = NumericInput.parseNumber(latRaw);
+    var lng = NumericInput.parseNumber(lngRaw);
+    var payload = {
+      name: name,
+      targetOutput: NumericInput.parseNumber(document.getElementById('sp-output').value) || 0,
+      utilitiesMonthly: NumericInput.parseNumber(document.getElementById('sp-utilities').value) || 0,
+      plantDepr: {
+        balance: NumericInput.parseNumber(document.getElementById('sp-depr-balance').value) || 0,
+        residual: NumericInput.parseNumber(document.getElementById('sp-depr-residual').value) || 0,
+        lifespanMonths: NumericInput.parseNumber(document.getElementById('sp-depr-lifespan').value) || 0
+      },
+      fuelPrice: NumericInput.parseNumber(document.getElementById('sp-fuel').value) || 0,
+      ureaPrice: NumericInput.parseNumber(document.getElementById('sp-urea').value) || 0,
+      neighborCitySurcharge: NumericInput.parseNumber(document.getElementById('sp-surcharge').value) || 0,
+      plantLocation: (isFinite(lat) && isFinite(lng)) ? { lat: lat, lng: lng } : null
+    };
+    var btn = document.getElementById('sp-save-btn');
+    btn.disabled = true;
+    try {
+      await Api.put('/plants/' + id, payload);
+      await State.loadAll();
+      forceRebuildPlantEditor();
+      render();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function deletePlant(plant) {
+    if (!confirm('Удалить завод «' + plant.name + '»? Нужно, чтобы на нём не осталось материалов, рецептов и сотрудников.')) return;
+    try {
+      await Api.del('/plants/' + plant.id);
+      selectedPlantId = null;
+      await State.loadAll();
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function createPlant() {
+    try {
+      var created = await Api.post('/plants', { name: 'Новый завод' });
+      selectedPlantId = created.id;
+      await State.loadAll();
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function renderTrips() {
     var c = State.data.config || {};
-    var map = { 's-nb-surcharge': c.neighborCitySurcharge, 's-driver-hours': c.driverShiftHours, 's-vehicle-hours': c.vehicleShiftHours, 's-avg-speed': c.avgSpeedKmh, 's-unload': c.unloadMinutes };
+    var map = { 's-driver-hours': c.driverShiftHours, 's-vehicle-hours': c.vehicleShiftHours, 's-avg-speed': c.avgSpeedKmh, 's-unload': c.unloadMinutes };
     Object.keys(map).forEach(function (id) {
       var el = document.getElementById(id);
       if (document.activeElement !== el) NumericInput.setFormattedValue(el, map[id] || 0);
@@ -197,7 +428,6 @@
     try {
       var configBody = {
         companyRequisites: document.getElementById('s-requisites').value,
-        neighborCitySurcharge: NumericInput.parseNumber(document.getElementById('s-nb-surcharge').value) || 0,
         driverShiftHours: NumericInput.parseNumber(document.getElementById('s-driver-hours').value) || 0,
         vehicleShiftHours: NumericInput.parseNumber(document.getElementById('s-vehicle-hours').value) || 0,
         avgSpeedKmh: NumericInput.parseNumber(document.getElementById('s-avg-speed').value) || 0,
@@ -218,7 +448,8 @@
         var card = document.querySelector('[data-plant-id="' + plantId + '"]');
         return Api.put('/plants/' + plantId + '/prices', {
           fuelPrice: NumericInput.parseNumber(card.querySelector('.s-fuel-price').value) || 0,
-          ureaPrice: NumericInput.parseNumber(card.querySelector('.s-urea-price').value) || 0
+          ureaPrice: NumericInput.parseNumber(card.querySelector('.s-urea-price').value) || 0,
+          neighborCitySurcharge: NumericInput.parseNumber(card.querySelector('.s-surcharge').value) || 0
         });
       });
       await Promise.all(plantWrites);
@@ -240,11 +471,12 @@
     document.getElementById('page-settings').innerHTML = HTML;
 
     ['s-requisites'].forEach(function (id) { document.getElementById(id).addEventListener('input', function () { markDirty('реквизиты'); }); });
-    [['s-nb-surcharge', 'доплата за город'], ['s-driver-hours', 'смена водителя'], ['s-vehicle-hours', 'смена машины'], ['s-avg-speed', 'скорость'], ['s-unload', 'разгрузка'], ['s-rent-threshold', 'порог рентабельности']].forEach(function (pair) {
+    [['s-driver-hours', 'смена водителя'], ['s-vehicle-hours', 'смена машины'], ['s-avg-speed', 'скорость'], ['s-unload', 'разгрузка'], ['s-rent-threshold', 'порог рентабельности']].forEach(function (pair) {
       NumericInput.attach(document.getElementById(pair[0]));
       document.getElementById(pair[0]).addEventListener('input', function () { markDirty(pair[1]); });
     });
 
+    document.getElementById('s-plants-add-btn').addEventListener('click', createPlant);
     document.getElementById('s-save-btn').addEventListener('click', handleSave);
     document.getElementById('s-cancel-btn').addEventListener('click', function () {
       dirtyFields = {};
