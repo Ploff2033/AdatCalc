@@ -100,7 +100,6 @@
         '</div>' +
         '<div style="margin-top:auto;padding:16px 22px 20px;border-top:1px solid var(--border-soft);background:var(--surface-2)" class="stack g12">' +
           '<div class="banner" id="m-validation-banner" hidden></div>' +
-          '<div class="banner" id="m-stock-banner" hidden></div>' +
           '<button class="btn pri" id="m-place-order-btn" style="width:100%;height:48px;font-size:15px">Оформить заказ</button>' +
           '<p class="hint" id="m-order-placed-hint" style="text-align:center;margin:0" hidden>Заказ оформлен.</p>' +
           '<p class="hint" style="text-align:center;margin:0">После оформления цены заказа фиксируются.</p>' +
@@ -160,20 +159,23 @@
     var rowsEl = document.getElementById('m-stock-rows');
     var emptyEl = document.getElementById('m-stock-empty');
     var chipEl = document.getElementById('m-stock-chip');
-    var bannerEl = document.getElementById('m-stock-banner');
     if (!recipe || !(saleVolume > 0)) {
       rowsEl.innerHTML = '';
       emptyEl.hidden = false;
       chipEl.hidden = true;
-      bannerEl.hidden = true;
       return;
     }
     emptyEl.hidden = true;
     var materialsById = {};
     (State.data.materials || []).forEach(function (m) { materialsById[m.id] = m; });
 
+    // Дефицит здесь — просто ещё один статус в таблице, не предупреждение
+    // перед кнопкой "Оформить": следить за остатками (и разбираться с
+    // дефицитом — дозаказать, скорректировать) — забота того, кто смотрит
+    // экран "Остатки" и Telegram-уведомления, а не того, кто в моменте
+    // считает заказ клиенту (см. отзыв пользователя — баннер здесь мешал
+    // не по адресу).
     var deficits = 0, warnings = 0;
-    var worstDeficit = null; // {name, shortage, unit} — самый большой дефицит, для баннера
     rowsEl.innerHTML = recipe.items.map(function (item) {
       var mat = materialsById[item.materialId];
       var need = item.qty * saleVolume;
@@ -183,10 +185,8 @@
       var avail = mat.stockOnHand - mat.stockReserved;
       var after = avail - need;
       var cls, label, color;
-      if (after < 0) {
-        cls = 'bad'; label = 'Дефицит'; color = '#8C2217'; deficits++;
-        if (!worstDeficit || -after > worstDeficit.shortage) worstDeficit = { name: mat.name, shortage: -after, unit: mat.unit };
-      } else if (after < mat.stockThreshold) { cls = 'warn'; label = 'Ниже порога ' + Format.fmtNum(mat.stockThreshold, 0, mat.unit); color = '#6E4700'; warnings++; }
+      if (after < 0) { cls = 'bad'; label = 'Дефицит'; color = '#8C2217'; deficits++; }
+      else if (after < mat.stockThreshold) { cls = 'warn'; label = 'Ниже порога ' + Format.fmtNum(mat.stockThreshold, 0, mat.unit); color = '#6E4700'; warnings++; }
       else { cls = 'ok'; label = 'Хватает'; color = '#1C1D1B'; }
       return '<div class="row" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr">' +
         '<div style="font-weight:500">' + mat.name + '</div>' +
@@ -200,17 +200,6 @@
     if (deficits) { chipEl.hidden = false; chipEl.className = 'chip bad'; chipEl.textContent = deficits + ' дефицит' + (deficits > 1 ? 'а' : ''); }
     else if (warnings) { chipEl.hidden = false; chipEl.className = 'chip warn'; chipEl.textContent = warnings + ' ниже порога'; }
     else { chipEl.hidden = false; chipEl.className = 'chip ok'; chipEl.textContent = 'Хватает всего'; }
-
-    // Баннер — предупреждение, не блокировка (как в макете): заказ всё равно
-    // можно оформить, бронь просто уйдёт в минус, а в Telegram придёт
-    // уведомление (см. handlers/stock.js::adjustMaterial).
-    if (worstDeficit) {
-      bannerEl.hidden = false;
-      bannerEl.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>' +
-        '<span>' + worstDeficit.name + ' на складе не хватит на <b class="num">' + Format.fmtNum(worstDeficit.shortage, 1, worstDeficit.unit) + '</b>. Заказ оформится, бронь уйдёт в минус, а в Telegram придёт уведомление.</span>';
-    } else {
-      bannerEl.hidden = true;
-    }
   }
 
   function recalc() {
