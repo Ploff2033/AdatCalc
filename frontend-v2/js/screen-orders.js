@@ -2,9 +2,10 @@
   // Список заказов — данные и правила те же, что в frontend/js/tab-orders.js
   // (GET /api/orders уже отдаёт то же самое обеим версиям), но карточки
   // сгруппированы по дню и раскрываются в разбивку по себестоимости, как в
-  // макете Orders.dc.html. rentabilityThresholdPercent (подсветка ниже
-  // порога) и «Отменить»/«Удалить» — появятся в Фазе 2 вместе со схемой.
+  // макете Orders.dc.html.
+  var ROW_COLS = '120px minmax(0,1fr) 140px 170px 70px 44px';
   var plantFilterValue = '';
+  var openMenuId = null;
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap" id="o-scope-label">Заказы</span><h1>Заказы</h1></div>' +
@@ -12,13 +13,46 @@
     '</div>' +
     '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
       '<select class="inp" id="o-plant-filter" style="width:200px" aria-label="Завод" hidden></select>' +
+      '<span class="hint" id="o-rent-hint"></span>' +
     '</div>' +
     '<div class="grid-4" id="o-kpi"></div>' +
     '<section class="card" style="overflow:hidden;display:flex;flex-direction:column">' +
-      '<div class="row head" style="grid-template-columns:120px minmax(0,1fr) 140px 170px 70px"><div>Время</div><div>Смесь и маршрут</div><div class="r">К оплате</div><div class="r">Прибыль</div><div class="r">Рент.</div></div>' +
+      '<div class="row head" style="grid-template-columns:' + ROW_COLS + '"><div>Время</div><div>Смесь и маршрут</div><div class="r">К оплате</div><div class="r">Прибыль</div><div class="r">Рент.</div><div></div></div>' +
       '<div id="o-list"></div>' +
       '<p class="empty-state" id="o-empty" hidden>Заказов пока нет.</p>' +
     '</section>';
+
+  function closeAllMenus() {
+    Array.prototype.forEach.call(document.querySelectorAll('.o-menu'), function (m) { m.hidden = true; });
+    openMenuId = null;
+  }
+
+  function allocatedTrips(orderId) {
+    return (State.data.waybillEntries || []).filter(function (e) { return e.orderId === orderId; })
+      .reduce(function (s, e) { return s + e.tripCount; }, 0);
+  }
+
+  async function handleCancel(order) {
+    if (!confirm('Отменить заказ от ' + timeLabel(order.createdAt) + '? Бронь материалов будет снята.')) return;
+    try {
+      await Api.post('/orders/' + order.id + '/cancel', {});
+      await State.loadAll();
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function handleDelete(order) {
+    if (!confirm('Удалить заказ насовсем? Это необратимо, история будет потеряна (в отличие от «Отменить»).')) return;
+    try {
+      await Api.del('/orders/' + order.id);
+      await State.loadAll();
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
 
   function dayKey(iso) { var d = new Date(iso); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); }
   function dayLabel(iso) {
@@ -54,19 +88,51 @@
 
   function buildOrderRow(order) {
     var row = document.createElement('div');
+    var threshold = (State.data.config && State.data.config.rentabilityThresholdPercent) || 0;
+    var belowThreshold = !order.cancelledAt && threshold > 0 && order.totalMarginPercent < threshold;
     row.className = 'row';
-    row.style.gridTemplateColumns = '120px minmax(0,1fr) 140px 170px 70px';
+    row.style.gridTemplateColumns = ROW_COLS;
     row.style.cursor = 'pointer';
+    if (belowThreshold) row.style.background = 'var(--act-bg)';
+    if (order.cancelledAt) row.style.opacity = '.55';
     var sign = (order.totalProfit || 0) >= 0 ? '#1C1D1B' : '#8C2217';
+    var allocated = order.tripCount > 0 ? allocatedTrips(order.id) : 0;
+    var canCancel = !order.cancelledAt && allocated === 0;
+    var canDelete = Auth.isAtLeast('admin');
     row.innerHTML =
       '<div class="num" style="font-size:13px;color:var(--ink-soft)">' + timeLabel(order.createdAt) + '</div>' +
       '<div class="stack" style="gap:2px;min-width:0">' +
-        '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600">' + order.recipeName + '</span>' + (order.vatApplied ? '<span class="chip act" style="height:20px;font-size:11px">с НДС</span>' : '') + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600">' + order.recipeName + '</span>' +
+          (order.vatApplied ? '<span class="chip act" style="height:20px;font-size:11px">с НДС</span>' : '') +
+          (order.cancelledAt ? '<span class="chip mute" style="height:20px;font-size:11px">Отменён</span>' : '') +
+        '</div>' +
         '<span class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + order.plantName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + (order.address ? ' · ' + order.address : '') + '</span>' +
       '</div>' +
       '<div class="r num" style="font-size:15px;font-weight:500">' + Format.fmt(order.totalRevenue, 0) + '</div>' +
       '<div class="r num" style="font-weight:500;color:' + sign + '">' + Format.fmt(order.totalProfit, 0) + '</div>' +
-      '<div class="r num" style="font-weight:600;color:' + sign + '">' + Format.fmtNum(order.totalMarginPercent, 1, '%') + '</div>';
+      '<div class="r num" style="font-weight:600;color:' + sign + '">' + Format.fmtNum(order.totalMarginPercent, 1, '%') + '</div>' +
+      '<div style="position:relative;display:flex;justify-content:flex-end">' +
+        ((canCancel || canDelete) ? '<button type="button" class="btn ghost icon o-menu-btn" aria-label="Действия" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' +
+          '<div class="card stack g4 o-menu" style="position:absolute;right:0;top:36px;z-index:6;padding:6px;min-width:160px" hidden>' +
+            (canCancel ? '<button type="button" class="btn ghost sm o-cancel-btn" style="justify-content:flex-start">Отменить заказ</button>' : '') +
+            (canDelete ? '<button type="button" class="btn ghost sm o-delete-btn" style="justify-content:flex-start;color:#8C2217">Удалить насовсем</button>' : '') +
+          '</div>' : '') +
+      '</div>';
+
+    if (canCancel || canDelete) {
+      var menuBtn = row.querySelector('.o-menu-btn');
+      var menu = row.querySelector('.o-menu');
+      menuBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var willOpen = menu.hidden;
+        closeAllMenus();
+        if (willOpen) { menu.hidden = false; openMenuId = order.id; }
+      });
+      var cancelBtn = row.querySelector('.o-cancel-btn');
+      if (cancelBtn) cancelBtn.addEventListener('click', function (e) { e.stopPropagation(); handleCancel(order); });
+      var deleteBtn = row.querySelector('.o-delete-btn');
+      if (deleteBtn) deleteBtn.addEventListener('click', function (e) { e.stopPropagation(); handleDelete(order); });
+    }
 
     var details = document.createElement('div');
     details.hidden = true;
@@ -136,6 +202,10 @@
 
   function render() {
     renderPlantFilter();
+    var threshold = (State.data.config && State.data.config.rentabilityThresholdPercent) || 0;
+    document.getElementById('o-rent-hint').textContent = threshold > 0
+      ? 'Оранжевым — заказы с рентабельностью ниже ' + Format.fmtNum(threshold, 1, '%')
+      : '';
     var orders = filteredOrders();
     renderKpi(orders);
     var list = document.getElementById('o-list');
@@ -159,6 +229,7 @@
     document.getElementById('page-orders').innerHTML = HTML;
     document.getElementById('o-export-btn').addEventListener('click', exportToExcel);
     document.getElementById('o-plant-filter').addEventListener('change', function () { plantFilterValue = this.value; render(); });
+    document.addEventListener('click', function () { if (openMenuId) closeAllMenus(); });
   }
 
   // renderedMode: см. комментарий в screen-main.js — desktop-контроллер сам

@@ -37,6 +37,7 @@
   }
 
   function statusFor(order) {
+    if (order.cancelledAt) return { cls: 'mute', label: 'Отменён', pct: 0 };
     if (!order.tripCount) return { cls: 'ok', label: 'Самовывоз', pct: 100 };
     var allocated = WaybillCalc.allocatedForOrder(State.data.waybillEntries || [], order.id);
     var pct = order.tripCount > 0 ? Math.round((allocated / order.tripCount) * 100) : 0;
@@ -45,20 +46,34 @@
     return { cls: 'ok', label: 'Отгружен', pct: pct };
   }
 
+  async function handleCancel(orderId) {
+    if (!confirm('Отменить заказ? Бронь материалов будет снята.')) return;
+    try {
+      await Api.post('/orders/' + orderId + '/cancel', {});
+      await State.loadAll();
+      render();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function render() {
     var orders = filteredOrders();
     document.getElementById('mo-empty').hidden = orders.length > 0;
     var container = document.getElementById('mo-list');
+    var threshold = (State.data.config && State.data.config.rentabilityThresholdPercent) || 0;
     container.innerHTML = orders.map(function (o) {
       var st = statusFor(o);
       var remaining = o.tripCount ? WaybillCalc.remainingForOrder(State.data.waybillEntries || [], o) : 0;
       var allocated = o.tripCount ? WaybillCalc.allocatedForOrder(State.data.waybillEntries || [], o.id) : 0;
+      var canCancel = !o.cancelledAt && allocated === 0;
+      var belowThreshold = !o.cancelledAt && threshold > 0 && o.totalMarginPercent < threshold;
       var time = new Date(o.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       var meta = [Format.fmtNum(o.saleVolume, 1, 'м³'), Format.fmtNum(o.distanceKm, 0, 'км')];
       if (o.neighborCity) meta.push('соседний город');
       if (o.vatApplied) meta.push('с НДС');
       var rentColor = (o.totalMarginPercent || 0) >= 0 ? '#1C1D1B' : '#8C2217';
-      return '<article class="card stack g8" style="padding:12px 14px" data-order-id="' + o.id + '">' +
+      return '<article class="card stack g8" style="padding:12px 14px;' + (belowThreshold ? 'background:var(--act-bg);' : '') + (o.cancelledAt ? 'opacity:.6;' : '') + '" data-order-id="' + o.id + '">' +
         '<div class="spread" style="align-items:center;gap:8px"><span style="font-weight:600">' + o.recipeName + ' <span class="num hint" style="font-weight:400">' + time + '</span></span><span class="chip ' + st.cls + '">' + st.label + '</span></div>' +
         '<span class="hint">' + meta.join(' · ') + '</span>' +
         '<div style="display:grid;grid-template-columns:1.5fr 1fr auto;gap:8px;padding-top:8px;border-top:1px solid var(--border-soft)">' +
@@ -66,10 +81,20 @@
           '<div class="stack"><span class="cap" style="font-size:10px">Прибыль</span><span class="num" style="font-size:14px;font-weight:600;white-space:nowrap">' + Format.fmt(o.totalProfit, 0) + '</span></div>' +
           '<div class="stack" style="align-items:flex-end"><span class="cap" style="font-size:10px">Рент.</span><span class="num" style="font-size:14px;font-weight:600;color:' + rentColor + '">' + Format.fmtNum(o.totalMarginPercent, 1, '%') + '</span></div>' +
         '</div>' +
-        (o.tripCount ? '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><span style="width:' + st.pct + '%;background:var(--ink)"></span></div><span class="num hint">' + allocated + ' из ' + o.tripCount + ' рейс(ов)</span></div>' : '') +
-        (o.tripCount && remaining > 0 ? '<a href="#/waybills" class="btn sm" style="height:44px">Распределить рейсы</a>' : '') +
+        (o.tripCount && !o.cancelledAt ? '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><span style="width:' + st.pct + '%;background:var(--ink)"></span></div><span class="num hint">' + allocated + ' из ' + o.tripCount + ' рейс(ов)</span></div>' : '') +
+        ((remaining > 0 || canCancel) ? '<div style="display:grid;grid-template-columns:' + (remaining > 0 && canCancel ? '1fr 1fr' : '1fr') + ';gap:8px">' +
+          (remaining > 0 ? '<a href="#/waybills" class="btn sm" style="height:44px">Распределить рейсы</a>' : '') +
+          (canCancel ? '<button type="button" class="btn ghost sm o-cancel-btn" style="height:44px;color:#8C2217;border-color:#E3B8B1">Отменить</button>' : '') +
+        '</div>' : '') +
       '</article>';
     }).join('');
+
+    Array.prototype.forEach.call(container.querySelectorAll('.o-cancel-btn'), function (btn) {
+      btn.addEventListener('click', function () {
+        var orderId = btn.closest('[data-order-id]').dataset.orderId;
+        handleCancel(orderId);
+      });
+    });
   }
 
   function init() {

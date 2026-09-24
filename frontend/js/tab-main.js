@@ -208,7 +208,11 @@
     var saleVolume = parseFloat(document.getElementById('sale-volume').value) || 0;
 
     // Расход материалов на заказ (для истории/учёта инертов) — снимок:
-    // название/ед. на момент заказа, не ссылка на mat_id.
+    // название/ед. на момент заказа, не живая ссылка на материал (могли
+    // переименовать/удалить). materialId всё же передаём отдельно — по нему
+    // backend/handlers/stock.js бронирует остаток под заказ (модуль остатков
+    // v2, см. order_materials.material_id в schema.sql); если материал к
+    // моменту чтения истории удалён, это поле просто перестаёт что-то значить.
     var materialsById = {};
     data.materials.forEach(function (m) { materialsById[m.id] = m; });
     var materialsBreakdown = recipe.items.map(function (item) {
@@ -216,7 +220,8 @@
       return {
         name: mat ? mat.name : 'Неизвестный материал',
         unit: mat ? mat.unit : '',
-        qty: item.qty * saleVolume
+        qty: item.qty * saleVolume,
+        materialId: item.materialId || null
       };
     });
 

@@ -2,9 +2,7 @@
   // Порт расчёта из frontend/js/tab-main.js под новую вёрстку (см. план
   // v2/redesign — "пересобрать текущую логику tab-main.js... под новую
   // вёрстку"). Сама формула ни в чём не меняется — только DOM-обвязка и
-  // разметка. Склад — заглушка в Фазе 1 (реальные остатки появятся вместе
-  // со схемой в Фазе 2), поле "Дата отгрузки" из макета туда же — сейчас у
-  // заказа такого поля в БД ещё нет.
+  // разметка.
   var VAT_MULT = 1.22;
   var HTML =
     '<div class="page-head">' +
@@ -18,6 +16,9 @@
           '<div class="grid-3">' +
             '<div class="field"><label for="m-recipe">Рецепт</label><select id="m-recipe" class="inp"></select></div>' +
             '<div class="field"><label for="m-volume">Объём, м³</label><input id="m-volume" class="inp num" inputmode="decimal"></div>' +
+            '<div class="field"><label for="m-ship-date">Дата отгрузки</label><input id="m-ship-date" type="date" class="inp"></div>' +
+          '</div>' +
+          '<div class="grid-3">' +
             '<div class="field"><label for="m-price" id="m-price-label">Цена отпуска без НДС</label><input id="m-price" class="inp num" inputmode="decimal"></div>' +
           '</div>' +
           '<div class="field" style="max-width:280px"><span style="font-size:12px;color:var(--muted);font-weight:500">Цена указана</span>' +
@@ -47,12 +48,14 @@
             '<div class="field"><label for="m-urea-price">Цена мочевины <button type="button" class="hint" id="m-urea-reset" style="border:0;background:none;cursor:pointer;text-decoration:underline">сбросить</button></label><input id="m-urea-price" class="inp num" inputmode="decimal"></div>' +
           '</div>' +
         '</section>' +
-        '<section class="card" style="padding:0;overflow:hidden">' +
+        '<section class="card" style="padding:0;overflow:hidden" id="m-stock-section">' +
           '<div class="spread" style="padding:16px 20px">' +
             '<div class="card-h2"><span class="step-num">3</span><h2 id="m-stock-title">Склад после этого заказа</h2></div>' +
-            '<span class="chip mute" id="m-stock-chip">Фаза 2</span>' +
+            '<span class="chip mute" id="m-stock-chip"></span>' +
           '</div>' +
-          '<p class="hint" style="margin:0 20px 16px">Проверка остатков материалов появится вместе с модулем «Остатки» (см. вкладку в сайдбаре — пока пустая заготовка).</p>' +
+          '<div class="row head" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr"><div>Материал</div><div class="r">Нужно</div><div class="r">Доступно</div><div class="r">Останется</div><div>Статус</div></div>' +
+          '<div id="m-stock-rows"></div>' +
+          '<p class="hint" id="m-stock-empty" style="margin:0;padding:16px 20px" hidden>Выберите рецепт и объём.</p>' +
         '</section>' +
       '</div>' +
       '<aside class="card" style="padding:0;overflow:hidden;border-color:var(--ink)">' +
@@ -149,6 +152,67 @@
     document.getElementById('m-price-label').textContent = 'Цена отпуска ' + (vatGrossMode ? 'с НДС' : 'без НДС');
   }
 
+  // Реальные остатки (Фаза 2) — need считается на фронте (recipe.items[i].qty
+  // × saleVolume, та же арифметика, что и в materialsBreakdown выше), avail/
+  // after — из stock_on_hand/stock_reserved текущего материала (уже
+  // приходят с GET /api/materials, см. handlers/materials.js::rowToMaterial).
+  function renderStockTable(recipe, saleVolume) {
+    var rowsEl = document.getElementById('m-stock-rows');
+    var emptyEl = document.getElementById('m-stock-empty');
+    var chipEl = document.getElementById('m-stock-chip');
+    var bannerEl = document.getElementById('m-stock-banner');
+    if (!recipe || !(saleVolume > 0)) {
+      rowsEl.innerHTML = '';
+      emptyEl.hidden = false;
+      chipEl.hidden = true;
+      bannerEl.hidden = true;
+      return;
+    }
+    emptyEl.hidden = true;
+    var materialsById = {};
+    (State.data.materials || []).forEach(function (m) { materialsById[m.id] = m; });
+
+    var deficits = 0, warnings = 0;
+    var worstDeficit = null; // {name, shortage, unit} — самый большой дефицит, для баннера
+    rowsEl.innerHTML = recipe.items.map(function (item) {
+      var mat = materialsById[item.materialId];
+      var need = item.qty * saleVolume;
+      if (!mat) {
+        return '<div class="row" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr"><div>Неизвестный материал</div><div class="r num">' + Format.fmtNum(need, 2) + '</div><div class="r">—</div><div class="r">—</div><div><span class="chip mute">Нет данных</span></div></div>';
+      }
+      var avail = mat.stockOnHand - mat.stockReserved;
+      var after = avail - need;
+      var cls, label, color;
+      if (after < 0) {
+        cls = 'bad'; label = 'Дефицит'; color = '#8C2217'; deficits++;
+        if (!worstDeficit || -after > worstDeficit.shortage) worstDeficit = { name: mat.name, shortage: -after, unit: mat.unit };
+      } else if (after < mat.stockThreshold) { cls = 'warn'; label = 'Ниже порога ' + Format.fmtNum(mat.stockThreshold, 0, mat.unit); color = '#6E4700'; warnings++; }
+      else { cls = 'ok'; label = 'Хватает'; color = '#1C1D1B'; }
+      return '<div class="row" style="grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr">' +
+        '<div style="font-weight:500">' + mat.name + '</div>' +
+        '<div class="r num">' + Format.fmtNum(need, 2, mat.unit) + '</div>' +
+        '<div class="r num">' + Format.fmtNum(avail, 2, mat.unit) + '</div>' +
+        '<div class="r num" style="font-weight:600;color:' + color + '">' + Format.fmtNum(after, 2, mat.unit) + '</div>' +
+        '<div><span class="chip ' + cls + '">' + label + '</span></div>' +
+      '</div>';
+    }).join('');
+
+    if (deficits) { chipEl.hidden = false; chipEl.className = 'chip bad'; chipEl.textContent = deficits + ' дефицит' + (deficits > 1 ? 'а' : ''); }
+    else if (warnings) { chipEl.hidden = false; chipEl.className = 'chip warn'; chipEl.textContent = warnings + ' ниже порога'; }
+    else { chipEl.hidden = false; chipEl.className = 'chip ok'; chipEl.textContent = 'Хватает всего'; }
+
+    // Баннер — предупреждение, не блокировка (как в макете): заказ всё равно
+    // можно оформить, бронь просто уйдёт в минус, а в Telegram придёт
+    // уведомление (см. handlers/stock.js::adjustMaterial).
+    if (worstDeficit) {
+      bannerEl.hidden = false;
+      bannerEl.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>' +
+        '<span>' + worstDeficit.name + ' на складе не хватит на <b class="num">' + Format.fmtNum(worstDeficit.shortage, 1, worstDeficit.unit) + '</b>. Заказ оформится, бронь уйдёт в минус, а в Telegram придёт уведомление.</span>';
+    } else {
+      bannerEl.hidden = true;
+    }
+  }
+
   function recalc() {
     var data = State.data;
     var plant = State.currentPlant();
@@ -214,11 +278,13 @@
       placeOrderBtn.disabled = true;
       lastCalc = null;
       document.getElementById('m-breakdown').hidden = true;
+      renderStockTable(null, 0);
       return;
     }
 
     var saleVolume = parseFloat(document.getElementById('m-volume').value) || 0;
     document.getElementById('m-mix-vol').textContent = Format.fmtNum(saleVolume, 1, 'м³');
+    renderStockTable(recipe, saleVolume);
 
     var salePrice = recipe.salePrice || 0;
     var priceInput = document.getElementById('m-price');
@@ -297,10 +363,12 @@
       vatGrossMode: vatGrossMode
     }, calc);
     delete lastCalc.createdAt; // проставляется заново в момент нажатия «Оформить», а не на каждый пересчёт
+    lastCalc.shipDate = document.getElementById('m-ship-date').value || null;
   }
 
   function resetOrderForm() {
     ['m-dist', 'm-address', 'm-volume', 'm-delivery-charge'].forEach(function (id) { document.getElementById(id).value = ''; });
+    document.getElementById('m-ship-date').value = new Date().toISOString().slice(0, 10);
     document.getElementById('m-nb-city').checked = false;
     document.getElementById('m-self-pickup').classList.remove('on');
     document.getElementById('m-self-pickup').setAttribute('aria-pressed', 'false');
@@ -365,6 +433,9 @@
 
     NumericInput.attach(document.getElementById('m-delivery-charge'));
     document.getElementById('m-delivery-charge').addEventListener('input', recalc);
+
+    document.getElementById('m-ship-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('m-ship-date').addEventListener('change', recalc);
 
     ['m-dist', 'm-address', 'm-volume'].forEach(function (id) { document.getElementById(id).addEventListener('input', recalc); });
     document.getElementById('m-nb-city').addEventListener('change', recalc);

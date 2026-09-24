@@ -285,7 +285,7 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
      нужен, чтобы карточка на узком экране не сжималась в нулевую ширину
      вместо того чтобы просто встать в один столбец (то самое "не видно
      формы, только правая колонка"). */
-  .m-grid, .wb-grid, .set-grid { grid-template-columns: 1fr !important; }
+  .m-grid, .wb-grid, .set-grid, .stock-grid { grid-template-columns: 1fr !important; }
   .login-shell { grid-template-columns: 1fr; }
   .login-hero { padding: 32px 24px; }
   .login-card { width: auto; }

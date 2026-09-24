@@ -74,26 +74,32 @@ function sendOnce(botToken, payload, onDone) {
 // с части российских сетей отдельные из них не проходят на уровне TCP, хотя
 // другие — без проблем (проверено эмпирически). Повторная попытка делает
 // свежее DNS-резолвение и имеет шанс попасть на рабочий адрес, вместо того
-// чтобы просто один раз не повезло и тихо промолчать.
-function sendWithRetry(botToken, payload, attempt) {
+// чтобы просто один раз не повезло и тихо промолчать. resolve/reject —
+// опциональны: notifyOrderCreated и т.п. их не передают (fire-and-forget,
+// ошибка только в консоли), а send() ниже передаёт — нужно для кнопки
+// "Отправить тестовое" в Настройках, которая должна показать реальный
+// результат, а не всегда "успех".
+function sendWithRetry(botToken, payload, attempt, resolve, reject) {
   sendOnce(botToken, payload, (err) => {
-    if (!err) return;
+    if (!err) { if (resolve) resolve(); return; }
     if (attempt >= MAX_ATTEMPTS) {
       console.error('Telegram: ошибка отправки после ' + attempt + ' попыток (' + describeError(err) + ')');
+      if (reject) reject(err);
       return;
     }
-    setTimeout(() => sendWithRetry(botToken, payload, attempt + 1), RETRY_DELAY_MS);
+    setTimeout(() => sendWithRetry(botToken, payload, attempt + 1, resolve, reject), RETRY_DELAY_MS);
   });
 }
 
-// Best-effort: если токен/chat id не заданы (ни в config, ни в env) или
-// Telegram недоступен — молча пропускаем (только лог в консоль сервера),
-// это никогда не блокирует саму операцию (оформление заказа, списание и т.п.).
+// send() всегда возвращает Promise (резолвится/реджектится по итогам
+// реальной отправки) — вызывающие best-effort уведомления (notifyOrderCreated
+// и т.п.) просто вешают .catch(()=>{}) и не ждут результата, а sendTest()
+// ниже действительно ждёт и сообщает об ошибке.
 async function send(text) {
   const { botToken, chatId } = await getCredentials();
-  if (!botToken || !chatId) return;
+  if (!botToken || !chatId) throw new Error('Токен бота или ID чата не заданы');
   const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
-  sendWithRetry(botToken, payload, 1);
+  return new Promise((resolve, reject) => sendWithRetry(botToken, payload, 1, resolve, reject));
 }
 
 function notifyOrderCreated(order) {
@@ -124,4 +130,10 @@ function notifyStockDeficit(material, available, threshold, orderId) {
   send(lines.join('\n')).catch(() => {});
 }
 
-module.exports = { notifyOrderCreated, notifyStockDeficit };
+// Для кнопки "Отправить тестовое" в Настройках — в отличие от notify*
+// выше, реально дожидается результата и пробрасывает ошибку наверх.
+function sendTest() {
+  return send('✅ Тестовое сообщение из AdatBeton Calc. Если вы это видите — бот настроен верно.');
+}
+
+module.exports = { notifyOrderCreated, notifyStockDeficit, sendTest };

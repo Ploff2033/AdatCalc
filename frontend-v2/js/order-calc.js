@@ -28,9 +28,11 @@
 
     var materialsById = {};
     data.materials.forEach(function (m) { materialsById[m.id] = m; });
+    // materialId — без него backend/handlers/stock.js не может забронировать
+    // остаток под этот заказ (order_materials.material_id, см. schema.sql).
     var materialsBreakdown = recipe.items.map(function (item) {
       var mat = materialsById[item.materialId];
-      return { name: mat ? mat.name : 'Неизвестный материал', unit: mat ? mat.unit : '', qty: item.qty * saleVolume };
+      return { name: mat ? mat.name : 'Неизвестный материал', unit: mat ? mat.unit : '', qty: item.qty * saleVolume, materialId: item.materialId || null };
     });
 
     var priceNet = input.priceNet || 0;

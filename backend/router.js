@@ -14,6 +14,7 @@ const waybillEntries = require('./handlers/waybill-entries');
 const plants = require('./handlers/plants');
 const config = require('./handlers/config');
 const stockMovements = require('./handlers/stock-movements');
+const telegram = require('./telegram');
 const auth = require('./handlers/auth');
 const db = require('./db');
 const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
@@ -473,6 +474,26 @@ const routes = [
     pattern: /^\/api\/config\/reissue-universal-token$/,
     role: 'admin',
     handler: async (req, res) => sendJson(res, 200, await config.reissueUniversalToken())
+  },
+  // Тестовое сообщение — сохраняет токен/chat id, если пришли в теле (можно
+  // проверить ДО основного "Сохранить" в Настройках), и реально ждёт ответа
+  // Telegram, а не просто пишет в БД — см. telegram.js::sendTest.
+  {
+    method: 'POST',
+    pattern: /^\/api\/config\/telegram-test$/,
+    role: 'admin',
+    handler: async (req, res, m, role) => {
+      const body = await readBody(req);
+      if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined) {
+        await config.update(body, role);
+      }
+      try {
+        await telegram.sendTest();
+      } catch (err) {
+        throw new HttpError(502, 'Не удалось отправить сообщение: ' + err.message);
+      }
+      sendJson(res, 200, { ok: true });
+    }
   },
 
   {
