@@ -43,6 +43,12 @@
     if (wbLink) wbLink.hidden = !Auth.isAtLeast('manager');
     var bottomWbLink = document.querySelector('.bottom-nav a[data-route="waybills"]');
     if (bottomWbLink) bottomWbLink.hidden = !Auth.isAtLeast('manager');
+    // «Персонал» — как и в v1 (auth-ui.js: tabButton('personnel').hidden),
+    // весь раздел целиком admin (см. router.js::MIN_ROLE.personnel и
+    // screen-personnel.js — не-admin API отдаёт только водителей без
+    // оклада/должности, показывать тут менеджеру нечего).
+    var personnelLink = document.querySelector('#sb-nav-refs a[data-route="personnel"]');
+    if (personnelLink) personnelLink.hidden = !Auth.isAtLeast('admin');
   }
 
   function highlightActive(routeName) {

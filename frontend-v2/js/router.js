@@ -19,14 +19,20 @@
       settings: window.SettingsScreen,
       materials: window.MaterialsScreen,
       recipes: window.RecipesScreen,
-      fleet: window.FleetScreen
+      fleet: window.FleetScreen,
+      personnel: window.PersonnelScreen
     };
   }
   // Справочники (materials/recipes/fleet) — тот же уровень доступа, что и их
   // API на чтение сегодня (write у materials/recipes — manager, у fleet —
   // admin, но САМ экран техники доступен на просмотр и manager'у, кнопка
   // «Добавить» скрыта не-admin — см. screen-fleet.js::render).
-  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager' };
+  // personnel — единственный, целиком admin: GET /api/employees сам по себе
+  // отдаёт не-admin только водителей без оклада/должности (см.
+  // backend/handlers/employees.js::list), так что менеджеру тут просто
+  // нечего показать полноценно, экран скрыт целиком (см. и
+  // shell.js::applyRoleVisibility).
+  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin' };
   var current = null;
 
   function routeFromHash() {
