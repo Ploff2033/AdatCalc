@@ -427,3 +427,48 @@ CREATE TABLE IF NOT EXISTS clients (
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id TEXT REFERENCES clients(id) ON DELETE SET NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_type TEXT NOT NULL DEFAULT '';
+
+-- ==================== v2: модуль ДДС ====================
+-- См. документ "AdatBeton Calc — ДДС и Дашборд (MVP)". Вносится теми же
+-- работниками, что создают заказы, по той же токен-ссылке завода — поэтому
+-- plant_id тут того же типа доступа, что и orders.plant_id (не своя роль,
+-- а тот же токен-скоуп, см. handlers/cash-entries.js).
+--
+-- amount — ЗНАКОВАЯ величина (отрицательная = расход/отток, положительная
+-- = доход/приток), а не всегда-положительная с отдельным полем знака: так
+-- сторно считается тем же способом, что и обычная сумма — просто запись с
+-- противоположным знаком от исходной, и "Сальдо" = честная SUM(amount) без
+-- специального случая для сторно. type — по-прежнему хранится отдельно
+-- (для фильтра "Расход/Доход" в админском журнале; у сторно — тип
+-- сторнируемой записи, не новый третий тип).
+--
+-- occurred_at (DATE) — редактируемая "дата операции" из формы (по
+-- умолчанию сегодня, из неё же строится группировка по дням в ленте).
+-- inserted_at (TIMESTAMPTZ) — НЕ редактируется никогда, это и время в
+-- колонке "Время" ленты, и опорная точка для окна редактирования (15-30
+-- минут после создания, см. handlers/cash-entries.js) — разделены
+-- специально, иначе правка даты задним числом сдвигала бы окно редактирования.
+--
+-- receipt_path — относительный путь к фото чека на диске (см.
+-- backend/uploads.js), NULL если категория не требует чека или чек ещё не
+-- прикреплён. order_id — только для дохода категории "Продажа бетона";
+-- ON DELETE SET NULL — удаление заказа (админом) не должно ронять запись
+-- ДДС, просто теряется живая ссылка на заказ (сумма/комментарий остаются).
+-- storno_of_id — запись-сторно ссылается на то, что отменяет; у исходной
+-- записи "сторнирована" вычисляется (есть ли запись со storno_of_id = её id),
+-- отдельного флага не заводим, чтобы не рассинхронизировать.
+CREATE TABLE IF NOT EXISTS cash_entries (
+  id TEXT PRIMARY KEY,
+  plant_id TEXT NOT NULL REFERENCES plants(id) ON DELETE RESTRICT,
+  type TEXT NOT NULL,
+  category TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  comment TEXT NOT NULL DEFAULT '',
+  receipt_path TEXT,
+  order_id TEXT REFERENCES orders(id) ON DELETE SET NULL,
+  occurred_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  storno_of_id TEXT REFERENCES cash_entries(id) ON DELETE SET NULL,
+  inserted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_cash_entries_plant ON cash_entries(plant_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_entries_inserted ON cash_entries(inserted_at DESC);

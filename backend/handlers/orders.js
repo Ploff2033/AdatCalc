@@ -140,10 +140,10 @@ function rowToOrder(row, materialRows) {
   for (const [col, field] of ORDER_COLUMNS) {
     const v = row[col];
     if (col === 'created_at') out[field] = new Date(v).toISOString();
-    // ship_date — DATE, не TIMESTAMPTZ: то же "просто строка 'YYYY-MM-DD'",
-    // что и trip_date у waybill_entries (см. schema.sql) — Number(v) или
-    // toISOString() тут были бы неверны (Number(null)=0, а не "нет даты").
-    else if (col === 'ship_date') out[field] = v ? new Date(v).toISOString().slice(0, 10) : null;
+    // ship_date — DATE, не TIMESTAMPTZ: pg уже отдаёт его строкой
+    // 'YYYY-MM-DD' (см. types.setTypeParser в db.js) — просто пропускаем
+    // как есть, Number(v) тут было бы неверно (Number(null)=0, а не "нет даты").
+    else if (col === 'ship_date') out[field] = v || null;
     else if (col === 'neighbor_city' || col === 'vat_applied' || ORDER_TEXT_COLUMNS.has(col)) out[field] = v;
     else out[field] = Number(v);
   }

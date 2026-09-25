@@ -1,5 +1,6 @@
 data/db.json
 data/db.json.*
+backend/uploads/
 .DS_Store
 .claude/
 .env

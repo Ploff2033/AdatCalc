@@ -1,8 +1,19 @@
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const { hashPassword } = require('./auth');
 const { genToken } = require('./tokens');
+
+// node-postgres по умолчанию парсит DATE-колонки (OID 1082) в JS Date на
+// полночь ЛОКАЛЬНОГО часового пояса сервера — а любой код, который потом
+// зовёт .toISOString() (или просто пропускает Date-объект в JSON.stringify,
+// который делает то же самое неявно) получает дату со сдвигом на день назад
+// всякий раз, когда сервер в часовом поясе восточнее UTC (Москва — всегда).
+// Нашлось при отладке occurred_at в модуле ДДС; тем же путём ломался (молча,
+// без исключений — просто неверная дата) orders.ship_date и
+// waybill_entries.trip_date. Правим раз и навсегда здесь: DATE-колонки
+// приходят из pg уже строкой 'YYYY-MM-DD', без объекта Date и без сдвига.
+types.setTypeParser(1082, (val) => val);
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgres://localhost:5432/calc';
 

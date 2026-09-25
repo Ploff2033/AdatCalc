@@ -6,6 +6,11 @@ const zlib = require('zlib');
 const ROOT = path.join(__dirname, '..', 'frontend');
 const ROOT_V2 = path.join(__dirname, '..', 'frontend-v2');
 const ROOT_SHARED = path.join(__dirname, '..', 'frontend', 'js', 'shared');
+// Фото чеков ДДС (см. handlers/cash-entries.js) — сохраняются на диск вне
+// frontend/frontend-v2 (не должны попасть под их SPA-fallback), отдаются
+// отдельным префиксом, тем же serveStatic (кэш/gzip им не нужны — картинки,
+// а не текст, но остальная механика —304 по Last-Modified и т.п. — общая).
+const ROOT_UPLOADS = path.join(__dirname, 'uploads');
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -13,7 +18,11 @@ const CONTENT_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp'
 };
 
 // Сжимаем только текстовые форматы — картинки/иконки и так компактны,
@@ -25,6 +34,9 @@ const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.json', '.svg']);
 // /v2/* — новый интерфейс (frontend-v2/*) со своим SPA-fallback на
 // frontend-v2/index.html. Всё остальное — v1 (frontend/*) без изменений.
 function resolveRoot(pathname) {
+  if (pathname.startsWith('/uploads/')) {
+    return { root: ROOT_UPLOADS, relPath: pathname.slice('/uploads'.length) || '/', noFallback: true };
+  }
   if (pathname.startsWith('/v2/shared/')) {
     return { root: ROOT_SHARED, relPath: pathname.slice('/v2/shared'.length) || '/' };
   }
@@ -40,7 +52,7 @@ async function serveStatic(req, res, pathname, isFallback) {
     return;
   }
 
-  const { root, relPath: rawRelPath } = resolveRoot(pathname);
+  const { root, relPath: rawRelPath, noFallback } = resolveRoot(pathname);
   const relPath = rawRelPath === '/' ? '/index.html' : rawRelPath;
   const resolved = path.normalize(path.join(root, relPath));
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
@@ -97,7 +109,7 @@ async function serveStatic(req, res, pathname, isFallback) {
       // isFallback защищает от бесконечной рекурсии, если у фронтенда ещё
       // нет своего index.html (например frontend-v2/ до Фазы 1) — тогда
       // это настоящий 404, а не deep-link, который стоит подменить.
-      if (path.extname(pathname) || isFallback) {
+      if (noFallback || path.extname(pathname) || isFallback) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
       } else {
         // SPA deep-link fallback (e.g. a bookmarked #hash route) -> index.html

@@ -8,6 +8,7 @@ const personnelSummary = require('./handlers/personnel-summary');
 const materials = require('./handlers/materials');
 const recipes = require('./handlers/recipes');
 const clients = require('./handlers/clients');
+const cashEntries = require('./handlers/cash-entries');
 const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
 const orders = require('./handlers/orders');
@@ -61,11 +62,17 @@ function sendError(res, err) {
   }
 }
 
-function readBody(req) {
+// maxBytes — по умолчанию 1МБ хватает всем обычным JSON-телам этого API,
+// кроме фото чеков ДДС (см. cash-entries.js): те шлются base64-строкой в
+// том же JSON, и лимит для них выше (см. вызов в маршрутах ниже). Само
+// фото сжимается/уменьшается ещё на клиенте перед отправкой (см.
+// screen-cash.js/mobile-cash-form.js — canvas resize), это не единственная
+// защита, а дополнительная маржа на случай браузера без такого сжатия.
+function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
     let data = '';
     let size = 0;
-    const MAX_BYTES = 1e6;
+    const MAX_BYTES = maxBytes || 1e6;
     req.on('data', (chunk) => {
       size += chunk.length;
       if (size > MAX_BYTES) {
@@ -345,6 +352,68 @@ const routes = [
   // работника (выбор клиента при оформлении заказа обязателен для всех),
   // а переименовать/удалить существующего — только manager+.
   ...crudRoutes('/api/clients', clients, { read: null, create: null, write: 'manager' }),
+
+  // ДДС — модуль от 25.09.2026 (см. документ "AdatBeton Calc — ДДС и
+  // Дашборд (MVP)"). Вносят те же работники, что создают заказы, по той же
+  // токен-ссылке завода — поэтому весь доступ открыт (role: null), как и у
+  // /api/orders. Свои маршруты вместо crudRoutes(): нужен свой лимит тела
+  // запроса (фото чека, см. readBody выше) и отдельный /storno без аналога
+  // в стандартном CRUD.
+  {
+    method: 'GET',
+    pattern: /^\/api\/cash-entries$/,
+    handler: async (req, res, m, role, query) => {
+      // Тот же приём, что и scopeByToken в crudRoutes() выше — но строже:
+      // без роли plantId берётся ТОЛЬКО из проверенного токена, сырой
+      // ?plantId= из URL для анонимного игнорируется (иначе можно было бы
+      // подставить чужой завод и читать его расходы/чеки без токена).
+      // С ролью (manager/admin) — тот же принцип, что уже есть у
+      // /api/orders: plantId не задан → полный кросс-заводской список,
+      // фильтр по заводу на фронте (тут отдельно про это же говорит и сам
+      // документ — полный журнал по всем заводам зарезервирован под
+      // администратора, интерфейс менеджера всегда шлёт свой текущий завод).
+      if (!role) {
+        if (!query.token) throw new HttpError(400, 'Не выбран завод');
+        const resolved = await plants.resolveToken(query.token, clientIp(req));
+        const plantId = resolved.universal ? query.plantId : resolved.id;
+        if (!plantId) throw new HttpError(400, 'Не выбран завод');
+        query = { plantId: plantId };
+      }
+      sendJson(res, 200, await cashEntries.list(query));
+    }
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/cash-entries$/,
+    handler: async (req, res) => {
+      const body = await readBody(req, 4 * 1024 * 1024);
+      sendJson(res, 201, await cashEntries.create(body));
+    }
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/cash-entries\/([^/]+)$/,
+    handler: async (req, res, m) => {
+      const body = await readBody(req, 4 * 1024 * 1024);
+      sendJson(res, 200, await cashEntries.update(decodeURIComponent(m[1]), body));
+    }
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/cash-entries\/([^/]+)$/,
+    handler: async (req, res, m) => {
+      await cashEntries.remove(decodeURIComponent(m[1]));
+      sendJson(res, 204);
+    }
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/cash-entries\/([^/]+)\/storno$/,
+    handler: async (req, res, m) => {
+      const body = await readBody(req);
+      sendJson(res, 201, await cashEntries.storno(decodeURIComponent(m[1]), body && body.note));
+    }
+  },
 
   // Остатки — приход/корректировка (не сам CRUD над карточкой материала,
   // отдельные операции с журналом движений, см. handlers/stock.js).
