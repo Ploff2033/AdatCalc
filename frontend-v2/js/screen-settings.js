@@ -230,7 +230,8 @@
       NumericInput.setFormattedValue(document.getElementById('sp-lat'), plant.plantLocation.lat);
       NumericInput.setFormattedValue(document.getElementById('sp-lng'), plant.plantLocation.lng);
     }
-    document.getElementById('sp-link').value = plant.accessToken ? (location.origin + '/?token=' + encodeURIComponent(plant.accessToken)) : '';
+    // С 25.09.2026 — на v2, не на корень (модуль ДДС, см. app.js).
+    document.getElementById('sp-link').value = plant.accessToken ? (location.origin + '/v2/?token=' + encodeURIComponent(plant.accessToken)) : '';
 
     function updateDeprPreview() {
       var fake = {
@@ -400,7 +401,7 @@
       return;
     }
     var cfg = State.data.config || {};
-    var link = cfg.universalWorkerToken ? location.origin + '/?token=' + encodeURIComponent(cfg.universalWorkerToken) : '';
+    var link = cfg.universalWorkerToken ? location.origin + '/v2/?token=' + encodeURIComponent(cfg.universalWorkerToken) : '';
     section.innerHTML =
       '<div class="sec-h"><h2>Доступ</h2></div>' +
       '<div class="field"><label>Общая ссылка · все заводы (переключатель завода для работника-подмены)</label>' +

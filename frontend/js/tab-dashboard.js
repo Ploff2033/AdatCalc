@@ -7,8 +7,13 @@
   var nameInput = document.getElementById('plant-name');
   var submitBtn = document.getElementById('plant-form-submit');
 
+  // Ссылка работника переключена на v2 целиком (25.09.2026, модуль ДДС —
+  // его мобильные формы сделаны только под v2, см. app.js там же). Раньше
+  // было location.pathname (тот же путь, откуда сгенерирована ссылка — у
+  // v1 это всегда "/"), теперь всегда "/v2/" явно, даже если ссылку
+  // генерируют отсюда, из старого интерфейса.
   function plantLink(plant) {
-    return location.origin + location.pathname + '?token=' + encodeURIComponent(plant.accessToken);
+    return location.origin + '/v2/?token=' + encodeURIComponent(plant.accessToken);
   }
 
   async function copyPlantLink(plant, btn) {
@@ -144,7 +149,7 @@
   }
 
   function universalTokenLink(token) {
-    return location.origin + location.pathname + '?token=' + encodeURIComponent(token);
+    return location.origin + '/v2/?token=' + encodeURIComponent(token);
   }
 
   async function copyLink(url, btn) {

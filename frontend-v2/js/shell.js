@@ -36,13 +36,17 @@
     document.getElementById('sb-role-label').textContent = roleLabel(role);
     document.getElementById('sb-user-role').textContent = roleLabel(role);
     document.getElementById('sb-nav-admin').hidden = !Auth.isAtLeast('admin');
-    // «Путевые листы» и «Остатки» — как и в v1 (waybill-entries.js доступен
-    // только manager+) видимы менеджеру и выше; анонимный работник v2 не
-    // видит вообще (см. app.js — без роли сразу экран логина).
+    // «Путевые листы» и «Остатки» — видимы менеджеру и выше; до 25.09.2026
+    // анонимный работник вообще не попадал в v2 (см. app.js), поэтому
+    // скрытие «Остатки» тут было объявлено в комментарии, но не в коде —
+    // теперь, когда анонимная ссылка ведёт в v2 (модуль ДДС), это уже не
+    // теоретический случай, доскрываем по-настоящему.
     var wbLink = document.querySelector('#sb-nav-main a[data-route="waybills"]');
     if (wbLink) wbLink.hidden = !Auth.isAtLeast('manager');
     var bottomWbLink = document.querySelector('.bottom-nav a[data-route="waybills"]');
     if (bottomWbLink) bottomWbLink.hidden = !Auth.isAtLeast('manager');
+    var stockLink = document.querySelector('#sb-nav-main a[data-route="stock"]');
+    if (stockLink) stockLink.hidden = !Auth.isAtLeast('manager');
     // «Персонал» — как и в v1 (auth-ui.js: tabButton('personnel').hidden),
     // весь раздел целиком admin (см. router.js::MIN_ROLE.personnel и
     // screen-personnel.js — не-admin API отдаёт только водителей без
