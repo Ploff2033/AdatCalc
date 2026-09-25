@@ -21,6 +21,7 @@
       recipes: window.RecipesScreen,
       fleet: window.FleetScreen,
       clients: window.ClientsScreen,
+      cash: window.CashScreen,
       personnel: window.PersonnelScreen
     };
   }

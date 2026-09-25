@@ -267,6 +267,12 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
 }
 .pick.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .pick.off { background: var(--surface-3); color: #6B6E66; cursor: not-allowed; }
+/* Кнопки категорий ДДС (Cash.dc.html/MobileCashForm.dc.html) — тот же
+   визуальный язык, что и .seg, но самостоятельные кнопки в сетке, а не
+   одна полоса. */
+.cat { display: flex; align-items: center; justify-content: center; height: 48px; border: 1px solid #CFCAC0; border-radius: 4px; background: #fff; font: 500 14px 'Rubik', sans-serif; color: var(--ink); cursor: pointer; }
+.cat.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.req { color: #A64A12; }
 .mobile-page { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
 .mobile-page details.card { padding: 14px 16px; }
 .mobile-page details > summary { display: flex; justify-content: space-between; align-items: center; min-height: 32px; cursor: pointer; list-style: none; }

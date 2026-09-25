@@ -53,6 +53,15 @@
     // оклада/должности, показывать тут менеджеру нечего).
     var personnelLink = document.querySelector('#sb-nav-refs a[data-route="personnel"]');
     if (personnelLink) personnelLink.hidden = !Auth.isAtLeast('admin');
+    // Весь блок «Справочники» (Клиенты/Материалы/Смеси/Персонал/Техника) —
+    // каждый пункт и так manager+/admin в MIN_ROLE (router.js), но раньше
+    // анонимный работник не мог сюда попасть вообще, так что скрывать
+    // ссылки было незачем. Теперь может (см. app.js) — прячем группу
+    // целиком, а не оставляем видимыми, но ведущими в никуда ссылками
+    // (тот же принцип, что и с waybills/stock выше). Тот же приём, что и в
+    // v1 (auth-ui.js прячет вкладки Материалы/Техника/Персонал целиком).
+    var refsGroup = document.querySelector('.sidebar-refs');
+    if (refsGroup) refsGroup.hidden = !Auth.isAtLeast('manager');
   }
 
   // Колокольчик дефицита — материалы ТЕКУЩЕГО завода (State.data.materials
