@@ -201,6 +201,7 @@
     if (order.vatApplied) card.querySelector('[data-vat-badge]').hidden = false;
     var metaParts = [
       order.plantName,
+      order.clientName || 'Без клиента',
       formatDate(order.createdAt),
       Format.fmtNum(order.saleVolume, 1, 'м³'),
       Format.fmtNum(order.distanceKm, 1, 'км')
@@ -431,7 +432,7 @@
     if (!orders.length) return;
 
     var headers = [
-      'Завод', 'Дата', 'Марка', 'Миксер', 'Адрес доставки', 'Объём (м³)', 'Расстояние (км)', 'Рейс в другой город',
+      'Завод', 'Клиент', 'Тип клиента', 'Дата', 'Марка', 'Миксер', 'Адрес доставки', 'Объём (м³)', 'Расстояние (км)', 'Рейс в другой город',
       'Материалы (₽/м³)', 'ФОТ (₽/м³)', 'Амортизация завода (₽/м³)', 'Коммуналка (₽/м³)', 'Себестоимость 1м³ (₽)',
       'Себестоимость смеси (₽)', 'Цена (₽/м³)', 'Выручка со смеси (₽)', 'Прибыль от смеси (₽)', 'Рентабельность смеси (%)',
       'Пробег за рейс (км)', 'Топливо за рейс (₽)', 'Амортизация техники за рейс (₽)', 'Доплата водителю (₽)', 'Рейсов',
@@ -449,7 +450,8 @@
       // выручка без наценки налога, извлекать из неё нечего.
       var ndsAmount = o.vatApplied ? (o.totalRevenue || 0) * 22 / 122 : 0;
       return [
-        o.plantName, formatDate(o.createdAt), o.recipeName, o.mixerName, o.address || '', csvNum(o.saleVolume), csvNum(o.distanceKm), o.neighborCity ? 'да' : 'нет',
+        o.plantName, o.clientName || 'Без клиента', o.clientType === 'legal' ? 'Юрлицо' : (o.clientType === 'individual' ? 'Физлицо' : ''),
+        formatDate(o.createdAt), o.recipeName, o.mixerName, o.address || '', csvNum(o.saleVolume), csvNum(o.distanceKm), o.neighborCity ? 'да' : 'нет',
         csvNum(o.materialsCost), csvNum(o.payrollCost), csvNum(o.deprCost), csvNum(o.utilitiesCost), csvNum(o.costPerM3),
         csvNum(o.mixCost), csvNum(o.salePrice), csvNum(o.mixRevenue), csvNum(o.mixProfit), csvNum(o.mixMarginPercent),
         csvNum(o.roundTripKm), csvNum(o.fuelCostPerTrip), csvNum(o.amortCostPerTrip), csvNum(o.surchargePerTrip), csvNum(o.tripCount),

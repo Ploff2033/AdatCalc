@@ -128,7 +128,7 @@
       var canEditDate = Auth.isAtLeast('manager');
       var belowThreshold = !o.cancelledAt && threshold > 0 && o.totalMarginPercent < threshold;
       var time = new Date(o.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      var meta = [Format.fmtNum(o.saleVolume, 1, 'м³'), Format.fmtNum(o.distanceKm, 0, 'км')];
+      var meta = [o.clientName || 'Без клиента', Format.fmtNum(o.saleVolume, 1, 'м³'), Format.fmtNum(o.distanceKm, 0, 'км')];
       if (o.neighborCity) meta.push('соседний город');
       if (o.vatApplied) meta.push('с НДС');
       var rentColor = (o.totalMarginPercent || 0) >= 0 ? '#1C1D1B' : '#8C2217';

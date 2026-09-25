@@ -8,6 +8,9 @@ const stock = require('./stock');
 const ORDER_COLUMNS = [
   ['plant_id', 'plantId'],
   ['plant_name', 'plantName'],
+  ['client_id', 'clientId'],
+  ['client_name', 'clientName'],
+  ['client_type', 'clientType'],
   ['created_at', 'createdAt'],
   ['recipe_name', 'recipeName'],
   ['mixer_name', 'mixerName'],
@@ -73,6 +76,13 @@ function sanitize(body) {
     createdAt: str(body.createdAt, 'createdAt'),
     plantId: str(body.plantId, 'plantId'),
     plantName: str(body.plantName, 'plantName'),
+    // Клиент обязателен для новых заказов (модуль от 25.09.2026, см.
+    // schema.sql) — clientId проверяется на существование ниже, в create(),
+    // а не здесь, потому что это уже требует запроса к БД, а sanitize() —
+    // чисто синхронная валидация формы.
+    clientId: str(body.clientId, 'clientId'),
+    clientName: str(body.clientName, 'clientName'),
+    clientType: body.clientType === 'legal' ? 'legal' : 'individual',
     recipeName: str(body.recipeName, 'recipeName'),
     mixerName: str(body.mixerName, 'mixerName'),
     mixerPlate: (body.mixerPlate || '').trim(),
@@ -123,7 +133,7 @@ function sanitize(body) {
 // (NaN — falsy, поэтому `order.address ? ... : ''` во фронтенде просто
 // молча скрывал адрес, а не показывал "NaN"). Заказы БЕЗ адреса — те же
 // самые '' → Number('')=0, тоже falsy — оттого баг был не видно на глаз.
-const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address']);
+const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'client_id', 'client_name', 'client_type', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address']);
 
 function rowToOrder(row, materialRows) {
   const out = { id: row.id };
@@ -188,6 +198,8 @@ async function create(body) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    const { rows: clientRows } = await client.query('SELECT id FROM clients WHERE id = $1', [f.clientId]);
+    if (!clientRows.length) throw new HttpError(400, 'Неизвестный клиент');
     const id = db.genId('ord');
     const cols = ['id', ...ORDER_COLUMNS.map((c) => c[0])];
     const values = [id, ...ORDER_COLUMNS.map((c) => f[c[1]])];

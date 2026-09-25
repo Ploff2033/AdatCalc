@@ -14,6 +14,11 @@
           '<div class="field"><label for="mc-volume">Объём</label><div class="unit"><input id="mc-volume" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>м³</span></div></div>' +
         '</div>' +
         '<div class="field"><label for="mc-ship-date">Дата отгрузки</label><input id="mc-ship-date" type="date" class="inp" style="height:48px"></div>' +
+        '<div class="field"><label for="mc-client">Клиент</label><select id="mc-client" class="inp" style="height:48px"></select></div>' +
+        '<div class="stack g8" id="mc-client-new-fields" hidden>' +
+          '<div class="field"><label for="mc-client-new-name">Название нового клиента</label><input id="mc-client-new-name" class="inp" style="height:48px" placeholder="ФИО или организация"></div>' +
+          '<div class="field"><label for="mc-client-new-type">Тип</label><select id="mc-client-new-type" class="inp" style="height:48px"><option value="individual">Физлицо</option><option value="legal">Юрлицо</option></select></div>' +
+        '</div>' +
         '<div class="field"><label for="mc-price">Цена за м³</label>' +
           '<div style="display:grid;grid-template-columns:minmax(0,1fr) 138px;gap:8px">' +
             '<div class="unit"><input id="mc-price" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>₽</span></div>' +
@@ -79,6 +84,7 @@
     '</div>';
 
   var selectedRecipeId = '', selectedMixerId = '';
+  var selectedClientId = ''; // '' | реальный id | '__new__'
   var vatGrossMode = false, priceDirty = false, priceNetStored = 0;
   var fuelPriceDirty = false, ureaPriceDirty = false, lastPricePlantId = null;
   var lastCalc = null;
@@ -102,6 +108,43 @@
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
     select.value = validId;
     return validId;
+  }
+
+  // Клиент — модуль от 25.09.2026 (запрошен Капланом), обязателен у любого
+  // заказа, в т.ч. и с этого экрана. НЕ привязан к заводу (общий список,
+  // см. shared/state.js). Та же логика, что в screen-main.js/tab-main.js.
+  function populateClientSelect() {
+    var select = document.getElementById('mc-client');
+    var prev = selectedClientId || select.value;
+    select.innerHTML = '<option value="">— выберите —</option>' +
+      (State.data.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); }).map(function (c) {
+        return '<option value="' + c.id + '">' + c.name + (c.type === 'legal' ? ' (юрлицо)' : '') + '</option>';
+      }).join('') + '<option value="__new__">+ Новый клиент</option>';
+    var valid = Array.prototype.some.call(select.options, function (o) { return o.value === prev; });
+    select.value = valid ? prev : '';
+    selectedClientId = select.value;
+    document.getElementById('mc-client-new-fields').hidden = selectedClientId !== '__new__';
+  }
+
+  function clientSelectionMissing() {
+    var select = document.getElementById('mc-client');
+    return !select.value || (select.value === '__new__' && !document.getElementById('mc-client-new-name').value.trim());
+  }
+
+  // Резолвится только при реальном оформлении — см. комментарий в
+  // screen-main.js::resolveClientForSubmit.
+  async function resolveClientForSubmit() {
+    var select = document.getElementById('mc-client');
+    if (select.value === '__new__') {
+      var name = document.getElementById('mc-client-new-name').value.trim();
+      if (!name) return null;
+      var type = document.getElementById('mc-client-new-type').value;
+      var created = await Api.post('/clients', { name: name, type: type });
+      return { clientId: created.id, clientName: created.name, clientType: created.type };
+    }
+    var client = (State.data.clients || []).find(function (c) { return c.id === select.value; });
+    if (!client) return null;
+    return { clientId: client.id, clientName: client.name, clientType: client.type };
   }
 
   function netFromField(input) {
@@ -130,6 +173,7 @@
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
+    populateClientSelect();
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
@@ -247,10 +291,23 @@
       errorEl.hidden = false;
       return;
     }
+    if (clientSelectionMissing()) {
+      errorEl.textContent = 'Выберите клиента или укажите название нового.';
+      errorEl.hidden = false;
+      return;
+    }
     var btn = document.getElementById('mc-place-order-btn');
     btn.disabled = true;
     try {
-      await Api.post('/orders', Object.assign({}, lastCalc, { createdAt: new Date().toISOString() }));
+      // Резолвится тут (не в render()) — новый клиент создаётся в БД только
+      // в момент реального оформления, см. screen-main.js за тем же приёмом.
+      var clientPayload = await resolveClientForSubmit();
+      if (!clientPayload) {
+        errorEl.textContent = 'Выберите клиента или укажите название нового.';
+        errorEl.hidden = false;
+        return;
+      }
+      await Api.post('/orders', Object.assign({}, lastCalc, clientPayload, { createdAt: new Date().toISOString() }));
       await State.loadAll();
       selectedRecipeId = '';
       priceDirty = false;
@@ -258,6 +315,12 @@
       document.getElementById('mc-dist').value = '';
       document.getElementById('mc-address').value = '';
       document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
+      // Клиент тоже сбрасывается (в отличие от миксера) — см. tab-main.js.
+      selectedClientId = '';
+      document.getElementById('mc-client').value = '';
+      document.getElementById('mc-client-new-name').value = '';
+      document.getElementById('mc-client-new-type').value = 'individual';
+      document.getElementById('mc-client-new-fields').hidden = true;
       render();
     } catch (err) {
       errorEl.textContent = 'Не удалось оформить заказ: ' + err.message;
@@ -303,6 +366,8 @@
     document.getElementById('mc-nb-city').addEventListener('change', render);
     document.getElementById('mc-recipe').addEventListener('change', function () { selectedRecipeId = this.value; priceDirty = false; render(); });
     document.getElementById('mc-mixer').addEventListener('change', function () { selectedMixerId = this.value; render(); });
+    document.getElementById('mc-client').addEventListener('change', function () { selectedClientId = this.value; render(); });
+    document.getElementById('mc-client-new-name').addEventListener('input', render);
 
     document.getElementById('mc-toggle-prices').addEventListener('click', function () {
       document.getElementById('mc-price-fields').hidden = !document.getElementById('mc-price-fields').hidden;

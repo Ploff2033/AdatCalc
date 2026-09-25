@@ -20,6 +20,7 @@
       materials: window.MaterialsScreen,
       recipes: window.RecipesScreen,
       fleet: window.FleetScreen,
+      clients: window.ClientsScreen,
       personnel: window.PersonnelScreen
     };
   }
@@ -32,7 +33,7 @@
   // backend/handlers/employees.js::list), так что менеджеру тут просто
   // нечего показать полноценно, экран скрыт целиком (см. и
   // shell.js::applyRoleVisibility).
-  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin' };
+  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager' };
   var current = null;
 
   function routeFromHash() {

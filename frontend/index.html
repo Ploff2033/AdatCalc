@@ -190,6 +190,21 @@
             </div>
           </div>
 
+          <div class="field-group">
+            <label for="main-client">Клиент</label>
+            <select class="select" id="main-client"></select>
+          </div>
+          <div class="two-col" id="main-client-new-fields" hidden>
+            <div class="field-group">
+              <label for="main-client-new-name">Название нового клиента</label>
+              <div class="field"><input type="text" id="main-client-new-name" placeholder="ФИО или организация"></div>
+            </div>
+            <div class="field-group">
+              <label for="main-client-new-type">Тип</label>
+              <select class="select" id="main-client-new-type"><option value="individual">Физлицо</option><option value="legal">Юрлицо</option></select>
+            </div>
+          </div>
+
           <div class="checkbox-row">
             <input type="checkbox" id="self-pickup">
             <label for="self-pickup">Самовывоз (клиент забирает сам)</label>

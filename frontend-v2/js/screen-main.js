@@ -18,6 +18,11 @@
             '<div class="field"><label for="m-volume">Объём, м³</label><input id="m-volume" class="inp num" inputmode="decimal"></div>' +
             '<div class="field"><label for="m-ship-date">Дата отгрузки</label><input id="m-ship-date" type="date" class="inp"></div>' +
           '</div>' +
+          '<div class="field"><label for="m-client">Клиент</label><select id="m-client" class="inp"></select></div>' +
+          '<div class="grid-2" id="m-client-new-fields" hidden>' +
+            '<div class="field"><label for="m-client-new-name">Название нового клиента</label><input id="m-client-new-name" class="inp" placeholder="ФИО или организация"></div>' +
+            '<div class="field"><label for="m-client-new-type">Тип</label><select id="m-client-new-type" class="inp"><option value="individual">Физлицо</option><option value="legal">Юрлицо</option></select></div>' +
+          '</div>' +
           '<div class="grid-3">' +
             '<div class="field"><label for="m-price" id="m-price-label">Цена отпуска без НДС</label><input id="m-price" class="inp num" inputmode="decimal"></div>' +
           '</div>' +
@@ -109,6 +114,7 @@
 
   var selectedRecipeId = '';
   var selectedMixerId = '';
+  var selectedClientId = ''; // '' | реальный id | '__new__' (см. populateClientSelect)
   var vatGrossMode = false;
   var priceDirty = false;
   var priceNetStored = 0;
@@ -137,6 +143,40 @@
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
     select.value = validId;
     return validId;
+  }
+
+  // Клиент — модуль от 25.09.2026 (запрошен Капланом), обязателен у любого
+  // заказа. НЕ привязан к заводу (State.data.clients — общий список для
+  // всех заводов, см. shared/state.js), плюс пункт "+ Новый клиент",
+  // раскрывающий два поля прямо в форме — та же логика, что в v1
+  // (frontend/js/tab-main.js), просто под v2-разметку.
+  function populateClientSelect() {
+    var select = document.getElementById('m-client');
+    var prev = selectedClientId || select.value;
+    select.innerHTML = '<option value="">— выберите —</option>' +
+      (State.data.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); }).map(function (c) {
+        return '<option value="' + c.id + '">' + c.name + (c.type === 'legal' ? ' (юрлицо)' : '') + '</option>';
+      }).join('') + '<option value="__new__">+ Новый клиент</option>';
+    var valid = Array.prototype.some.call(select.options, function (o) { return o.value === prev; });
+    select.value = valid ? prev : '';
+    selectedClientId = select.value;
+    document.getElementById('m-client-new-fields').hidden = selectedClientId !== '__new__';
+  }
+
+  // Резолвится только в момент реального оформления (не на каждый recalc())
+  // — иначе карточка нового клиента плодилась бы в БД от одной смены select'а.
+  async function resolveClientForSubmit() {
+    var select = document.getElementById('m-client');
+    if (select.value === '__new__') {
+      var name = document.getElementById('m-client-new-name').value.trim();
+      if (!name) return null;
+      var type = document.getElementById('m-client-new-type').value;
+      var created = await Api.post('/clients', { name: name, type: type });
+      return { clientId: created.id, clientName: created.name, clientType: created.type };
+    }
+    var client = (State.data.clients || []).find(function (c) { return c.id === select.value; });
+    if (!client) return null;
+    return { clientId: client.id, clientName: client.name, clientType: client.type };
   }
 
   function netFromField(input) {
@@ -234,6 +274,7 @@
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
+    populateClientSelect();
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
 
@@ -259,18 +300,23 @@
     var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
     document.getElementById('m-nb-badge').textContent = '(+' + Format.fmt(neighborCitySurcharge, 0) + '/рейс)';
 
+    var clientSelect = document.getElementById('m-client');
+    var clientNewNameField = document.getElementById('m-client-new-name').closest('.field');
+    var clientMissing = !clientSelect.value || (clientSelect.value === '__new__' && !document.getElementById('m-client-new-name').value.trim());
+
     var missingDelivery = [];
     if (!selfPickup && !mixer) missingDelivery.push(mixerSelect);
     if (distMissing) missingDelivery.push(distInput.closest('.field'));
     if (addressMissing) missingDelivery.push(addressInput.closest('.field'));
+    if (clientMissing) missingDelivery.push(clientSelect.value === '__new__' ? clientNewNameField : clientSelect);
     var missing = recipe ? missingDelivery : [recipeSelect].concat(missingDelivery);
 
-    [recipeSelect, mixerSelect, distInput.closest('.field'), addressInput.closest('.field')].forEach(function (el) { el.style.borderColor = ''; });
+    [recipeSelect, mixerSelect, distInput.closest('.field'), addressInput.closest('.field'), clientSelect, clientNewNameField].forEach(function (el) { el.style.borderColor = ''; });
     if (submitAttempted && missing.length) {
       missing.forEach(function (el) { if (el.style) el.style.borderColor = '#8C2217'; });
       banner.textContent = selfPickup
-        ? 'Заполните обязательное поле: марка/рецепт.'
-        : 'Заполните обязательные поля: марка/рецепт, миксер, расстояние и адрес доставки.';
+        ? 'Заполните обязательные поля: марка/рецепт и клиент.'
+        : 'Заполните обязательные поля: марка/рецепт, клиент, миксер, расстояние и адрес доставки.';
       banner.hidden = false;
     } else {
       banner.hidden = true;
@@ -394,6 +440,13 @@
     submitAttempted = false;
     selectedRecipeId = '';
     document.getElementById('m-recipe').value = '';
+    // Клиент тоже сбрасывается (в отличие от миксера) — иначе легко
+    // машинально приписать следующий заказ прошлому клиенту.
+    selectedClientId = '';
+    document.getElementById('m-client').value = '';
+    document.getElementById('m-client-new-name').value = '';
+    document.getElementById('m-client-new-type').value = 'individual';
+    document.getElementById('m-client-new-fields').hidden = true;
   }
 
   async function handlePlaceOrder() {
@@ -402,7 +455,9 @@
     var hint = document.getElementById('m-order-placed-hint');
     btn.disabled = true;
     try {
-      var payload = Object.assign({}, lastCalc, { createdAt: new Date().toISOString() });
+      var clientPayload = await resolveClientForSubmit();
+      if (!clientPayload) { submitAttempted = true; recalc(); return; }
+      var payload = Object.assign({}, lastCalc, clientPayload, { createdAt: new Date().toISOString() });
       await Api.post('/orders', payload);
       await State.loadAll();
       resetOrderForm();
@@ -455,6 +510,8 @@
     document.getElementById('m-nb-city').addEventListener('change', recalc);
     document.getElementById('m-recipe').addEventListener('change', function () { selectedRecipeId = this.value; priceDirty = false; recalc(); });
     document.getElementById('m-mixer').addEventListener('change', function () { selectedMixerId = this.value; recalc(); });
+    document.getElementById('m-client').addEventListener('change', function () { selectedClientId = this.value; recalc(); });
+    document.getElementById('m-client-new-name').addEventListener('input', recalc);
     document.getElementById('m-place-order-btn').addEventListener('click', handlePlaceOrder);
     document.getElementById('m-reset-btn').addEventListener('click', function () { resetOrderForm(); recalc(); });
   }

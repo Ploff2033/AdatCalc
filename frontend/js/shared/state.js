@@ -9,7 +9,10 @@
     mixers: [],
     aggregateTrucks: [],
     orders: [],
-    waybillEntries: []
+    waybillEntries: [],
+    // Клиенты — не привязаны к заводу (см. schema.sql), поэтому без
+    // withPlantFilter, как mixers/aggregateTrucks ниже (общий список сразу).
+    clients: []
   };
 
   var listeners = [];
@@ -64,7 +67,8 @@
       Api.get('/aggregate-trucks'),
       Api.get(ordersPath),
       Api.get('/plants'),
-      Api.get('/waybill-entries')
+      Api.get('/waybill-entries'),
+      Api.get('/clients')
     ]);
     var allFailed = results.every(function (r) { return r.status === 'rejected'; });
     if (allFailed) throw results[0].reason;
@@ -79,6 +83,7 @@
     data.orders = results[7].status === 'fulfilled' ? results[7].value : [];
     data.plants = results[8].status === 'fulfilled' ? results[8].value : [];
     data.waybillEntries = results[9].status === 'fulfilled' ? results[9].value : [];
+    data.clients = results[10].status === 'fulfilled' ? results[10].value : [];
     notify();
   }
 

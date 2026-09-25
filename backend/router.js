@@ -7,6 +7,7 @@ const employees = require('./handlers/employees');
 const personnelSummary = require('./handlers/personnel-summary');
 const materials = require('./handlers/materials');
 const recipes = require('./handlers/recipes');
+const clients = require('./handlers/clients');
 const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
 const orders = require('./handlers/orders');
@@ -118,7 +119,13 @@ function crudRoutes(base, mod, opts) {
     {
       method: 'POST',
       pattern: single,
-      role: opts.write,
+      // opts.create — своя роль конкретно для создания, отдельно от
+      // остального opts.write (по умолчанию совпадает с write, если не
+      // задана явно) — нужно для /api/clients: создать нового клиента
+      // прямо на месте может кто угодно (даже анонимный работник по
+      // ссылке — выбор клиента при оформлении заказа обязателен для всех),
+      // а вот переименовать/удалить существующего — это уже manager+.
+      role: opts.create !== undefined ? opts.create : opts.write,
       handler: async (req, res) => {
         const body = await readBody(req);
         sendJson(res, 201, await mod.create(body));
@@ -331,6 +338,13 @@ const routes = [
   // plantId на бэкенде, см. scopeByToken в crudRoutes).
   ...crudRoutes('/api/materials', materials, { read: null, write: 'manager', scopeByToken: true }),
   ...crudRoutes('/api/recipes', recipes, { read: null, write: 'manager', scopeByToken: true }),
+
+  // Клиенты — модуль от 25.09.2026 (см. схему/документ). НЕ привязан к
+  // заводу (нет scopeByToken — list() и так не фильтрует по плантId),
+  // читать и заводить нового может кто угодно, включая анонимного
+  // работника (выбор клиента при оформлении заказа обязателен для всех),
+  // а переименовать/удалить существующего — только manager+.
+  ...crudRoutes('/api/clients', clients, { read: null, create: null, write: 'manager' }),
 
   // Остатки — приход/корректировка (не сам CRUD над карточкой материала,
   // отдельные операции с журналом движений, см. handlers/stock.js).

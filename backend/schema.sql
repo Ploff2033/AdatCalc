@@ -401,3 +401,29 @@ END $$;
 -- смысл и не участвует в дефицитных предупреждениях (фронтенд/бэкенд
 -- одинаково пропускают такие материалы при подсчёте дефицита).
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS stock_unlimited BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ==================== v2: модуль клиентов ====================
+-- Запрошено Капланом 25.09.2026 (см. документ "AdatBeton Calc v2 —
+-- архитектура модулей"): справочник клиентов для понимания распределения
+-- отгруженных объёмов. НЕ привязан к заводу (в отличие от материалов/
+-- рецептов/сотрудников) — один и тот же клиент может заказывать с разных
+-- заводов, поэтому отдельной колонки plant_id здесь нет.
+CREATE TABLE IF NOT EXISTS clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'individual', -- 'legal' (юрлицо) | 'individual' (физлицо)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- client_id — для фильтрации/группировки отчёта по клиенту; client_name/
+-- client_type — снимок на момент заказа (тот же приём, что и с plant_name/
+-- recipe_name/mixer_name выше — переименование или удаление клиента задним
+-- числом не должно портить исторические заказы). ON DELETE SET NULL:
+-- удаление клиента из справочника не трогает прошлые заказы, просто эта
+-- позиция перестаёт быть связана с живой карточкой клиента (снимок имени
+-- остаётся). DEFAULT '' у client_name/client_type — для уже существующих
+-- заказов (клиент обязателен только для НОВЫХ, начиная с этой миграции;
+-- старые заказы показываются в отчёте как "Без клиента").
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id TEXT REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_type TEXT NOT NULL DEFAULT '';

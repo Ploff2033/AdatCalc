@@ -3,6 +3,7 @@
 
   var selectedRecipeId = '';
   var selectedMixerId = '';
+  var selectedClientId = ''; // '' | реальный id клиента | '__new__' (см. populateClientSelect)
   var inputIds = ['dist', 'delivery-charge', 'sale-volume'];
   var vatGrossMode = false;
   var testPriceDirty = false;
@@ -39,6 +40,54 @@
     var validId = items.some(function (i) { return i.id === preferredId; }) ? preferredId : '';
     select.value = validId;
     return validId;
+  }
+
+  // Клиент — модуль от 25.09.2026 (запрошен Капланом), обязательное поле у
+  // любого заказа. НЕ привязан к заводу (State.data.clients — общий список
+  // для всех заводов сразу, см. shared/state.js), поэтому свой список, а не
+  // populateSelect() выше — плюс специальный пункт "+ Новый клиент",
+  // раскрывающий два доп. поля прямо в форме (см. index.html).
+  function populateClientSelect() {
+    var select = document.getElementById('main-client');
+    var prev = selectedClientId || select.value;
+    select.innerHTML = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— выберите —';
+    select.appendChild(placeholder);
+    (State.data.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); }).forEach(function (c) {
+      var opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name + (c.type === 'legal' ? ' (юрлицо)' : '');
+      select.appendChild(opt);
+    });
+    var newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ Новый клиент';
+    select.appendChild(newOpt);
+    var valid = Array.prototype.some.call(select.options, function (o) { return o.value === prev; });
+    select.value = valid ? prev : '';
+    selectedClientId = select.value;
+    document.getElementById('main-client-new-fields').hidden = selectedClientId !== '__new__';
+  }
+
+  // Резолвит выбор клиента в payload для POST /orders — только в момент
+  // реального оформления (не на каждый recalc()), чтобы карточка нового
+  // клиента не плодилась в БД от одной лишь смены select'а. Возвращает null,
+  // если выбор невалиден (ничего не выбрано, либо "новый" без названия) —
+  // тогда handlePlaceOrder() просто подсвечивает поле, как остальные обязательные.
+  async function resolveClientForSubmit() {
+    var select = document.getElementById('main-client');
+    if (select.value === '__new__') {
+      var name = document.getElementById('main-client-new-name').value.trim();
+      if (!name) return null;
+      var type = document.getElementById('main-client-new-type').value;
+      var created = await Api.post('/clients', { name: name, type: type });
+      return { clientId: created.id, clientName: created.name, clientType: created.type };
+    }
+    var client = (State.data.clients || []).find(function (c) { return c.id === select.value; });
+    if (!client) return null;
+    return { clientId: client.id, clientName: client.name, clientType: client.type };
   }
 
   // Гос. номер в списке — чтобы отличить одинаковые модели миксеров друг от
@@ -128,6 +177,7 @@
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
+    populateClientSelect();
     var plantId = plant ? plant.id : null;
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });
     var mixer = data.mixers.find(function (m) { return m.id === selectedMixerId; });
@@ -171,21 +221,26 @@
     // больше не фиксируется — кто фактически повезёт и когда, назначается
     // отдельно во вкладке «Путевые листы» (см. tab-waybills.js), т.к. рейсы
     // одного заказа могут разъехаться по разным дням/водителям/машинам.
+    var clientSelect = document.getElementById('main-client');
+    var clientNewNameInput = document.getElementById('main-client-new-name');
+    var clientMissing = !clientSelect.value || (clientSelect.value === '__new__' && !clientNewNameInput.value.trim());
+
     var missingDelivery = [];
     if (!selfPickup && !mixer) missingDelivery.push(mixerSelect);
     if (distMissing) missingDelivery.push(distField);
     if (addressMissing) missingDelivery.push(addressField);
+    if (clientMissing) missingDelivery.push(clientSelect.value === '__new__' ? clientNewNameInput.closest('.field') : clientSelect);
     var missing = recipe ? missingDelivery : [recipeSelect].concat(missingDelivery);
 
     // Баннер и красная обводка — только после попытки оформить заказ с
     // незаполненными полями, а не сразу при открытии формы: иначе баннер
     // занимает место и вёрстка прыгает при каждом вводе.
-    [recipeSelect, mixerSelect, distField, addressField].forEach(function (el) { el.classList.remove('invalid'); });
+    [recipeSelect, mixerSelect, distField, addressField, clientSelect, clientNewNameInput.closest('.field')].forEach(function (el) { el.classList.remove('invalid'); });
     if (submitAttempted && missing.length) {
       missing.forEach(function (el) { el.classList.add('invalid'); });
       errorEl.textContent = selfPickup
-        ? 'Заполните обязательное поле: марка/рецепт — оно выделено красным.'
-        : 'Заполните обязательные поля: марка/рецепт, миксер, расстояние и адрес доставки — они выделены красным.';
+        ? 'Заполните обязательные поля: марка/рецепт и клиент — они выделены красным.'
+        : 'Заполните обязательные поля: марка/рецепт, клиент, миксер, расстояние и адрес доставки — они выделены красным.';
       errorEl.hidden = false;
     } else {
       errorEl.hidden = true;
@@ -420,6 +475,14 @@
     submitAttempted = false;
     selectedRecipeId = '';
     document.getElementById('main-recipe').value = '';
+    // Клиент тоже сбрасывается (в отличие от миксера, который обычно тот же
+    // на следующий заказ) — иначе легко машинально оставить прошлого
+    // клиента и приписать ему чужой объём.
+    selectedClientId = '';
+    document.getElementById('main-client').value = '';
+    document.getElementById('main-client-new-name').value = '';
+    document.getElementById('main-client-new-type').value = 'individual';
+    document.getElementById('main-client-new-fields').hidden = true;
   }
 
   async function handlePlaceOrder() {
@@ -432,7 +495,15 @@
     var hintEl = document.getElementById('order-placed-hint');
     placeOrderBtn.disabled = true;
     try {
-      var payload = Object.assign({}, lastCalc, { createdAt: new Date().toISOString() });
+      // Резолвится тут, а не в recalc() — см. комментарий у самой функции:
+      // "новый клиент" создаётся в БД только в момент реального оформления.
+      var clientPayload = await resolveClientForSubmit();
+      if (!clientPayload) {
+        submitAttempted = true;
+        recalc();
+        return;
+      }
+      var payload = Object.assign({}, lastCalc, clientPayload, { createdAt: new Date().toISOString() });
       await Api.post('/orders', payload);
       await State.loadAll();
       resetOrderForm();
@@ -525,6 +596,11 @@
       selectedMixerId = this.value;
       recalc();
     });
+    document.getElementById('main-client').addEventListener('change', function () {
+      selectedClientId = this.value;
+      recalc();
+    });
+    document.getElementById('main-client-new-name').addEventListener('input', recalc);
 
     document.getElementById('place-order-btn').addEventListener('click', handlePlaceOrder);
   }
