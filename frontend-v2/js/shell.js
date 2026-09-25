@@ -51,6 +51,56 @@
     if (personnelLink) personnelLink.hidden = !Auth.isAtLeast('admin');
   }
 
+  // Колокольчик дефицита — материалы ТЕКУЩЕГО завода (State.data.materials
+  // уже отфильтрован по нему на бэкенде, см. shared/state.js::withPlantFilter,
+  // отдельный запрос не нужен) ниже порога или уже в минусе. Докупить =
+  // max(0, порог - доступно) — то же правило, что и в баннере на экране
+  // «Остатки» (screen-stock.js), просто вынесено на видное место в сайдбаре.
+  function renderBell() {
+    var wrap = document.getElementById('sb-bell-wrap');
+    var visible = Auth.isAtLeast('manager');
+    wrap.hidden = !visible;
+    if (!visible) return;
+
+    var materials = (State.data.materials || []).filter(function (m) { return !m.stockUnlimited; });
+    var deficit = [];
+    var warn = [];
+    materials.forEach(function (m) {
+      var avail = m.stockOnHand - m.stockReserved;
+      if (avail < 0) deficit.push(m);
+      else if (avail < m.stockThreshold) warn.push(m);
+    });
+    var total = deficit.length + warn.length;
+
+    var badge = document.getElementById('sb-bell-badge');
+    badge.hidden = total === 0;
+    badge.textContent = total;
+    document.getElementById('sb-bell-btn').classList.toggle('act', total > 0);
+
+    var panel = document.getElementById('sb-bell-panel');
+    if (!total) {
+      panel.innerHTML = '<div class="sidebar-bell-empty">Дефицита нет — все материалы в норме.</div>';
+      return;
+    }
+    panel.innerHTML = deficit.concat(warn).map(function (m) {
+      var avail = m.stockOnHand - m.stockReserved;
+      var need = Math.max(0, m.stockThreshold - avail);
+      var isDeficit = avail < 0;
+      return '<div class="bell-row">' +
+        '<div class="stack" style="gap:1px;min-width:0">' +
+          '<span style="font-weight:600;font-size:13px">' + m.name + '</span>' +
+          '<span class="hint" style="font-size:11px">доступно ' + Format.fmtNum(avail, 1, m.unit) + ' · порог ' + Format.fmtNum(m.stockThreshold, 1, m.unit) + '</span>' +
+        '</div>' +
+        '<span class="chip ' + (isDeficit ? 'bad' : 'warn') + '" style="flex:none;white-space:nowrap">докупить ' + Format.fmtNum(need, 1, m.unit) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  function toggleBellPanel(force) {
+    var panel = document.getElementById('sb-bell-panel');
+    panel.hidden = force === undefined ? !panel.hidden : !force;
+  }
+
   function highlightActive(routeName) {
     Array.prototype.forEach.call(document.querySelectorAll('nav.nav a[data-route]'), function (a) {
       a.classList.toggle('on', a.dataset.route === routeName);
@@ -62,6 +112,7 @@
   function render() {
     renderPlantSwitch();
     applyRoleVisibility();
+    renderBell();
   }
 
   function init() {
@@ -73,6 +124,15 @@
 
     document.getElementById('sb-logout-btn').addEventListener('click', async function () {
       await Auth.logout();
+    });
+
+    document.getElementById('sb-bell-btn').addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleBellPanel();
+    });
+    document.addEventListener('click', function (e) {
+      var wrap = document.getElementById('sb-bell-wrap');
+      if (!wrap.contains(e.target)) toggleBellPanel(false);
     });
   }
 

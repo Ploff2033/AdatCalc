@@ -42,4 +42,86 @@ async function list(query) {
   }));
 }
 
-module.exports = { list };
+// Дневной срез остатка одного материала за последние N дней — для графика
+// динамики на дашборде (см. план v2/redesign: "график динамики движения
+// ресурсов" — GET /api/stock-movements обычной лентой для этого не годится,
+// она с LIMIT 200 и не сгруппирована по дням). Берём последнее движение
+// каждого дня (его on_hand_after/reserved_after — это и есть остаток на
+// конец дня), дни без движений допериод-заполняем предыдущим известным
+// значением, а до самого первого движения в окне — текущим on_hand/reserved
+// материала (наименее ошибочное предположение: остаток тогда либо был
+// таким же, либо мы просто не знаем и не хотим рисовать провал в ноль).
+async function dailySnapshot(query) {
+  const materialId = query && query.materialId;
+  if (!materialId) return { days: [], materialName: '', unit: '' };
+  const days = Math.max(1, Math.min(90, Number(query.days) || 30));
+
+  const { rows: matRows } = await db.pool.query(
+    'SELECT name, unit, stock_on_hand, stock_reserved FROM materials WHERE id = $1',
+    [materialId]
+  );
+  if (!matRows.length) return { days: [], materialName: '', unit: '' };
+  const material = matRows[0];
+
+  const { rows } = await db.pool.query(
+    `SELECT
+       to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
+       (array_agg(on_hand_after ORDER BY created_at DESC))[1] AS on_hand_end,
+       (array_agg(reserved_after ORDER BY created_at DESC))[1] AS reserved_end,
+       COUNT(*)::int AS movements,
+       COALESCE(SUM(CASE WHEN kind = 'receipt' THEN qty ELSE 0 END), 0) AS received,
+       COALESCE(SUM(CASE WHEN kind = 'writeoff' THEN -qty ELSE 0 END), 0) AS consumed
+     FROM stock_movements
+     WHERE material_id = $1 AND created_at >= now() - ($2 || ' days')::interval
+     GROUP BY day
+     ORDER BY day`,
+    [materialId, days]
+  );
+  const byDay = {};
+  rows.forEach((r) => { byDay[r.day] = r; });
+
+  const result = [];
+  let lastOnHand = Number(material.stock_on_hand);
+  let lastReserved = Number(material.stock_reserved);
+  // Идём от старого дня к today: пока не встретили первую реальную запись,
+  // текущий остаток материала — единственная опорная точка, что есть.
+  // Как только встретили запись — от неё дальше и отталкиваемся вперёд.
+  const today = new Date();
+  const series = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    series.push(key);
+  }
+  // Если в окне вообще есть движения — базовая точка "до окна" берётся из
+  // on_hand_before самого первого движения этого материала (а не из
+  // текущего on_hand, которое отражает уже сегодняшнее состояние).
+  const { rows: firstRow } = await db.pool.query(
+    `SELECT on_hand_before, reserved_before FROM stock_movements
+     WHERE material_id = $1 AND created_at >= now() - ($2 || ' days')::interval
+     ORDER BY created_at ASC LIMIT 1`,
+    [materialId, days]
+  );
+  if (firstRow.length) {
+    lastOnHand = Number(firstRow[0].on_hand_before);
+    lastReserved = Number(firstRow[0].reserved_before);
+  }
+  series.forEach((day) => {
+    const row = byDay[day];
+    if (row) {
+      lastOnHand = Number(row.on_hand_end);
+      lastReserved = Number(row.reserved_end);
+      result.push({
+        date: day, onHand: lastOnHand, reserved: lastReserved,
+        movements: row.movements, received: Number(row.received), consumed: Number(row.consumed)
+      });
+    } else {
+      result.push({ date: day, onHand: lastOnHand, reserved: lastReserved, movements: 0, received: 0, consumed: 0 });
+    }
+  });
+
+  return { days: result, materialName: material.name, unit: material.unit };
+}
+
+module.exports = { list, dailySnapshot };

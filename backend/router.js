@@ -349,6 +349,16 @@ const routes = [
     role: 'manager',
     handler: async (req, res, m, role, query) => sendJson(res, 200, await stockMovements.list(query))
   },
+  // Дневной срез остатка одного материала — для графика динамики на
+  // дашборде (см. handlers/stock-movements.js::dailySnapshot). Отдельный
+  // путь, а не query-параметр у GET /api/stock-movements — разная форма
+  // ответа (сгруппировано по дням, а не лента событий).
+  {
+    method: 'GET',
+    pattern: /^\/api\/stock-movements\/daily$/,
+    role: 'manager',
+    handler: async (req, res, m, role, query) => sendJson(res, 200, await stockMovements.dailySnapshot(query))
+  },
 
   // Техника — общая на все заводы. Читать может кто угодно, менять — только админ.
   ...crudRoutes('/api/mixers', mixers, { read: null, write: 'admin' }),
