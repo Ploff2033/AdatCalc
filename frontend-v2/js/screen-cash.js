@@ -220,7 +220,10 @@
     Array.prototype.forEach.call(document.querySelectorAll('.c-menu-btn'), function (btn) {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        var menu = document.getElementById('c-shared-menu');
+        // ensureSharedMenu(), а не getElementById — при самом первом клике
+        // за сессию #c-shared-menu ещё не создан (создаётся лениво), и
+        // .hidden на null падал с TypeError.
+        var menu = ensureSharedMenu();
         var willOpen = menu.hidden || menu.dataset.entryId !== btn.dataset.entryId;
         closeAllMenus();
         if (willOpen) openSharedMenu(btn);
