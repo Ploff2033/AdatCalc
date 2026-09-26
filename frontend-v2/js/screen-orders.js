@@ -34,8 +34,48 @@
       '<p class="empty-state" id="o-empty" hidden>Заказов пока нет.</p>' +
     '</section>';
 
+  // Общее плавающее меню ⋯ — тот же приём и по той же причине, что и
+  // c-shared-menu в screen-cash.js: раньше меню лежало прямо в строке
+  // таблицы, а строка — внутри <section class="card" style="overflow:hidden">,
+  // и это overflow обрезало/прятало popup у строк ближе к концу списка.
+  // Одно меню в <body> с position:fixed ничем не обрезается.
+  function ensureSharedMenu() {
+    var menu = document.getElementById('o-shared-menu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'o-shared-menu';
+    menu.className = 'card stack g4';
+    menu.style.cssText = 'position:fixed;z-index:50;padding:6px;min-width:190px';
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
+    return menu;
+  }
+
+  function openSharedMenu(btn, order, perms) {
+    var menu = ensureSharedMenu();
+    menu.innerHTML =
+      (perms.canEditDate ? '<button type="button" class="btn ghost sm" id="o-shared-edit-date" style="justify-content:flex-start">Изменить дату/завод</button>' : '') +
+      (perms.canCancel ? '<button type="button" class="btn ghost sm" id="o-shared-cancel" style="justify-content:flex-start">Отменить заказ</button>' : '') +
+      (perms.canDelete ? '<button type="button" class="btn ghost sm" id="o-shared-delete" style="justify-content:flex-start;color:#8C2217">Удалить насовсем</button>' : '');
+    var editDateBtn = document.getElementById('o-shared-edit-date');
+    if (editDateBtn) editDateBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); openEditDate(order); });
+    var cancelBtn = document.getElementById('o-shared-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); handleCancel(order); });
+    var deleteBtn = document.getElementById('o-shared-delete');
+    if (deleteBtn) deleteBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); handleDelete(order); });
+    var rect = btn.getBoundingClientRect();
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = 'auto';
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.dataset.orderId = order.id;
+    menu.hidden = false;
+    openMenuId = order.id;
+  }
+
   function closeAllMenus() {
-    Array.prototype.forEach.call(document.querySelectorAll('.o-menu'), function (m) { m.hidden = true; });
+    var menu = document.getElementById('o-shared-menu');
+    if (menu) menu.hidden = true;
     openMenuId = null;
   }
 
@@ -176,47 +216,78 @@
       '<div class="r num" style="font-size:15px;font-weight:500">' + Format.fmt(order.totalRevenue, 0) + '</div>' +
       '<div class="r num" style="font-weight:500;color:' + sign + '">' + Format.fmt(order.totalProfit, 0) + '</div>' +
       '<div class="r num" style="font-weight:600;color:' + sign + '">' + Format.fmtNum(order.totalMarginPercent, 1, '%') + '</div>' +
-      '<div style="position:relative;display:flex;justify-content:flex-end">' +
-        ((canCancel || canDelete || canEditDate) ? '<button type="button" class="btn ghost icon o-menu-btn" aria-label="Действия" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' +
-          '<div class="card stack g4 o-menu" style="position:absolute;right:0;top:36px;z-index:6;padding:6px;min-width:190px" hidden>' +
-            (canEditDate ? '<button type="button" class="btn ghost sm o-edit-date-btn" style="justify-content:flex-start">Изменить дату/завод</button>' : '') +
-            (canCancel ? '<button type="button" class="btn ghost sm o-cancel-btn" style="justify-content:flex-start">Отменить заказ</button>' : '') +
-            (canDelete ? '<button type="button" class="btn ghost sm o-delete-btn" style="justify-content:flex-start;color:#8C2217">Удалить насовсем</button>' : '') +
-          '</div>' : '') +
+      '<div style="display:flex;justify-content:flex-end">' +
+        ((canCancel || canDelete || canEditDate) ? '<button type="button" class="btn ghost icon o-menu-btn" aria-label="Действия" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' : '') +
       '</div>';
 
     if (canCancel || canDelete || canEditDate) {
       var menuBtn = row.querySelector('.o-menu-btn');
-      var menu = row.querySelector('.o-menu');
       menuBtn.addEventListener('click', function (e) {
         e.stopPropagation();
-        var willOpen = menu.hidden;
+        var menu = document.getElementById('o-shared-menu');
+        var willOpen = !menu || menu.hidden || menu.dataset.orderId !== order.id;
         closeAllMenus();
-        if (willOpen) { menu.hidden = false; openMenuId = order.id; }
+        if (willOpen) openSharedMenu(menuBtn, order, { canEditDate: canEditDate, canCancel: canCancel, canDelete: canDelete });
       });
-      var editDateBtn = row.querySelector('.o-edit-date-btn');
-      if (editDateBtn) editDateBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); openEditDate(order); });
-      var cancelBtn = row.querySelector('.o-cancel-btn');
-      if (cancelBtn) cancelBtn.addEventListener('click', function (e) { e.stopPropagation(); handleCancel(order); });
-      var deleteBtn = row.querySelector('.o-delete-btn');
-      if (deleteBtn) deleteBtn.addEventListener('click', function (e) { e.stopPropagation(); handleDelete(order); });
     }
 
     var details = document.createElement('div');
     details.hidden = true;
-    details.style.cssText = 'grid-column:1/-1;padding:12px 16px;background:var(--surface-2);border-bottom:1px solid var(--border-soft);font-size:13px';
+    details.style.cssText = 'grid-column:1/-1;padding:16px 20px;background:var(--surface-2);border-bottom:1px solid var(--border-soft);font-size:13px';
     var materialsHtml = (order.materials || []).map(function (m) {
       return '<div class="spread"><span>' + m.name + '</span><span class="num">' + Format.fmtNum(m.qty, 2, m.unit) + '</span></div>';
     }).join('');
+    var mixSign = (order.mixProfit || 0) >= 0 ? 'var(--ink)' : '#8C2217';
+    var deliverySign = (order.deliveryProfit || 0) >= 0 ? 'var(--ink)' : '#8C2217';
+    var totalSign = (order.totalProfit || 0) >= 0 ? 'var(--ink)' : '#8C2217';
+    // Подробный вид заказа — по отзыву пользователя перенесён из v1
+    // (frontend/js/tab-orders.js::buildOrderCard): раньше тут была только
+    // себестоимость 1 м³ и расход материалов, без разбивки дохода по
+    // категориям (сколько именно с бетона, сколько с доставки — доставка в
+    // v1 отдельная услуга без НДС, см. order-calc.js) и без цены/прибыли на
+    // куб — "по какой цене отдали" не было видно вообще.
     details.innerHTML =
-      '<div class="grid-2" style="max-width:640px">' +
-        '<div class="stack g6"><b>Себестоимость 1 м³</b>' +
-          '<div class="spread"><span>Материалы</span><span class="num">' + Format.fmt(order.materialsCost, 2) + '</span></div>' +
-          '<div class="spread"><span>ФОТ</span><span class="num">' + Format.fmt(order.payrollCost, 2) + '</span></div>' +
-          '<div class="spread"><span>Амортизация</span><span class="num">' + Format.fmt(order.deprCost, 2) + '</span></div>' +
-          '<div class="spread"><span>Коммуналка</span><span class="num">' + Format.fmt(order.utilitiesCost, 2) + '</span></div>' +
+      '<div class="stack g16">' +
+        '<div class="grid-2">' +
+          '<div class="stack g6"><b>Себестоимость 1 м³</b>' +
+            '<div class="spread"><span>Материалы</span><span class="num">' + Format.fmt(order.materialsCost, 2) + '</span></div>' +
+            '<div class="spread"><span>ФОТ</span><span class="num">' + Format.fmt(order.payrollCost, 2) + '</span></div>' +
+            '<div class="spread"><span>Амортизация</span><span class="num">' + Format.fmt(order.deprCost, 2) + '</span></div>' +
+            '<div class="spread"><span>Коммуналка</span><span class="num">' + Format.fmt(order.utilitiesCost, 2) + '</span></div>' +
+          '</div>' +
+          '<div class="stack g6"><b>Расход материалов (заказ)</b>' + materialsHtml + '</div>' +
         '</div>' +
-        '<div class="stack g6"><b>Расход материалов (заказ)</b>' + materialsHtml + '</div>' +
+        '<div class="grid-2">' +
+          '<div class="stack g6"><b>Бетон — расход</b>' +
+            '<div class="spread"><span>Себестоимость смеси</span><span class="num">' + Format.fmt(order.mixCost, 2) + '</span></div>' +
+          '</div>' +
+          '<div class="stack g6"><b>Бетон — доход</b>' +
+            '<div class="spread"><span>Цена, по которой отдали</span><span class="num">' + Format.fmt(order.salePrice, 2) + '/м³</span></div>' +
+            '<div class="spread"><span>Выручка</span><span class="num">' + Format.fmt(order.mixRevenue, 2) + '</span></div>' +
+            (order.vatApplied ? '<div class="spread hint"><span>в т.ч. НДС</span><span class="num">' + Format.fmt((order.mixRevenue || 0) * 0.22, 2) + '</span></div>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="spread" style="padding:6px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)"><b>Прибыль от бетона</b><span class="num" style="font-weight:600;color:' + mixSign + '">' + Format.fmt(order.mixProfit, 2) + ' · ' + Format.fmtNum(order.mixMarginPercent, 1, '%') + '</span></div>' +
+        '<div class="grid-2">' +
+          '<div class="stack g6"><b>Доставка — расход</b>' +
+            '<div class="spread"><span>Пробег (1 рейс)</span><span class="num">' + Format.fmtNum(order.roundTripKm, 0, 'км') + '</span></div>' +
+            '<div class="spread"><span>Топливо (1 рейс)</span><span class="num">' + Format.fmt(order.fuelCostPerTrip, 2) + '</span></div>' +
+            '<div class="spread"><span>Амортизация (1 рейс)</span><span class="num">' + Format.fmt(order.amortCostPerTrip, 2) + '</span></div>' +
+            '<div class="spread"><span>Доплата водителю (1 рейс)</span><span class="num">' + Format.fmt(order.surchargePerTrip, 2) + '</span></div>' +
+            '<div class="spread"><span>Рейсов</span><span class="num">' + Format.fmtNum(order.tripCount, 0) + '</span></div>' +
+            '<div class="spread" style="font-weight:600"><span>Итого расход</span><span class="num">' + Format.fmt(order.deliveryCostTotal, 2) + '</span></div>' +
+          '</div>' +
+          '<div class="stack g6"><b>Доставка — доход</b>' +
+            '<div class="spread"><span>Сколько с доставки</span><span class="num">' + Format.fmt(order.deliveryRevenue, 2) + '</span></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="spread" style="padding:6px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)"><b>Прибыль от доставки</b><span class="num" style="font-weight:600;color:' + deliverySign + '">' + Format.fmt(order.deliveryProfit, 2) + ' · ' + Format.fmtNum(order.deliveryMarginPercent, 1, '%') + '</span></div>' +
+        '<div class="grid-4">' +
+          '<div class="stack" style="gap:2px"><span class="cap">К оплате</span><span class="num" style="font-size:16px;font-weight:600">' + Format.fmt(order.totalRevenue, 0) + '</span></div>' +
+          '<div class="stack" style="gap:2px"><span class="cap">Чистая прибыль</span><span class="num" style="font-size:16px;font-weight:600;color:' + totalSign + '">' + Format.fmt(order.totalProfit, 0) + '</span></div>' +
+          '<div class="stack" style="gap:2px"><span class="cap">Прибыль на 1 м³</span><span class="num" style="font-size:16px;font-weight:600;color:' + totalSign + '">' + Format.fmt(order.profitPerM3, 2) + '</span></div>' +
+          '<div class="stack" style="gap:2px"><span class="cap">Рентабельность</span><span class="num" style="font-size:16px;font-weight:600;color:' + totalSign + '">' + Format.fmtNum(order.totalMarginPercent, 1, '%') + '</span></div>' +
+        '</div>' +
       '</div>';
     var wrap = document.createElement('div');
     wrap.style.display = 'contents';

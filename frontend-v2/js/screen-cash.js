@@ -40,10 +40,14 @@
           '<div class="field"><label for="c-f-amount">Сумма</label><div class="unit"><input id="c-f-amount" class="inp num" inputmode="decimal"><span>₽</span></div></div>' +
           '<div class="field"><label for="c-f-date">Дата</label><input id="c-f-date" type="date" class="inp"></div>' +
           '<div class="field" id="c-f-receipt-field"><label>Фото чека <span class="req" id="c-f-receipt-req">*</span></label>' +
-            '<div id="c-f-receipt-preview" class="hint">Не прикреплено</div>' +
-            '<input type="file" id="c-f-receipt-input" accept="image/*" class="inp" style="padding:8px">' +
+            '<div class="card" style="display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px">' +
+              '<div id="c-f-receipt-thumb" style="width:72px;height:72px;border-radius:4px;background:repeating-linear-gradient(0deg,var(--border-soft) 0 6px,var(--surface-2) 6px 12px);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none"></div>' +
+              '<span class="stack" style="gap:2px;min-width:0"><span id="c-f-receipt-status" style="font-weight:600">Нет фото</span><span id="c-f-receipt-hint" class="hint">Прикрепите фото чека</span></span>' +
+              '<button type="button" class="btn ghost sm" id="c-f-receipt-btn" style="height:44px;flex:none">Прикрепить</button>' +
+            '</div>' +
+            '<input type="file" id="c-f-receipt-input" accept="image/*" style="display:none">' +
           '</div>' +
-          '<div class="field"><label for="c-f-comment">Комментарий <span class="req" id="c-f-comment-req">*</span></label><textarea id="c-f-comment" class="inp" style="height:72px;padding:10px 12px;resize:vertical"></textarea></div>' +
+          '<div class="field" id="c-f-comment-field"><label for="c-f-comment">Комментарий <span class="req" id="c-f-comment-req">*</span></label><textarea id="c-f-comment" class="inp" style="height:72px;padding:10px 12px;resize:vertical"></textarea></div>' +
         '</div>' +
         '<div class="drawer-foot">' +
           '<p class="banner" id="c-form-error" hidden></p>' +
@@ -202,12 +206,8 @@
           '<div>' + receiptChip + '</div>' +
           '<div class="r num" style="font-size:15px;font-weight:600;color:' + color + ';text-decoration:' + (isStornoed ? 'line-through' : 'none') + ';white-space:nowrap">' + (e.amount >= 0 ? '+' : '') + Format.fmtNum(e.amount, 2) + ' ₽</div>' +
           '<div><span class="chip ' + st.cls + '">' + st.label + '</span></div>' +
-          '<div style="position:relative;display:flex;justify-content:flex-end">' +
-            (canAct ? '<button type="button" class="btn ghost icon c-menu-btn" aria-label="Действия" style="width:32px;height:32px" data-entry-id="' + e.id + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' +
-              '<div class="card stack g4 c-menu" style="position:absolute;right:0;top:36px;z-index:6;padding:6px;min-width:150px" hidden data-entry-id="' + e.id + '">' +
-                '<button type="button" class="btn ghost sm c-edit-btn" data-entry-id="' + e.id + '" style="justify-content:flex-start">Изменить</button>' +
-                '<button type="button" class="btn ghost sm c-storno-btn" data-entry-id="' + e.id + '" style="justify-content:flex-start">Сторно</button>' +
-              '</div>' : '') +
+          '<div style="display:flex;justify-content:flex-end">' +
+            (canAct ? '<button type="button" class="btn ghost icon c-menu-btn" aria-label="Действия" style="width:32px;height:32px" data-entry-id="' + e.id + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' : '') +
           '</div>' +
         '</div>';
       }).join('');
@@ -220,31 +220,62 @@
     Array.prototype.forEach.call(document.querySelectorAll('.c-menu-btn'), function (btn) {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        var menu = document.querySelector('.c-menu[data-entry-id="' + btn.dataset.entryId + '"]');
-        var willOpen = menu.hidden;
+        var menu = document.getElementById('c-shared-menu');
+        var willOpen = menu.hidden || menu.dataset.entryId !== btn.dataset.entryId;
         closeAllMenus();
-        if (willOpen) menu.hidden = false;
-      });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('.c-edit-btn'), function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        closeAllMenus();
-        var entry = entries.find(function (x) { return x.id === btn.dataset.entryId; });
-        if (entry) openForEdit(entry);
-      });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('.c-storno-btn'), function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        closeAllMenus();
-        handleStorno(btn.dataset.entryId);
+        if (willOpen) openSharedMenu(btn);
       });
     });
   }
 
+  // Общее плавающее меню ⋯ для всей таблицы (одно на страницу, а не по
+  // одному на строку) — по отзыву пользователя ("действия открываются как
+  // бы на слое ниже"): раньше каждое меню лежало внутри строки, а строка —
+  // внутри <section class="card" style="overflow:hidden">, и это overflow
+  // обрезал/прятал popup, стоило ему хоть немного выйти за нижний край
+  // секции (обычный случай — последние строки таблицы). Одно меню, живущее
+  // прямо в <body> с position:fixed и координатами по клику, ничем не
+  // обрезается и не зависит от того, в какой строке его открыли.
+  function ensureSharedMenu() {
+    var menu = document.getElementById('c-shared-menu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'c-shared-menu';
+    menu.className = 'card stack g4';
+    menu.style.cssText = 'position:fixed;z-index:50;padding:6px;min-width:150px';
+    menu.hidden = true;
+    menu.innerHTML =
+      '<button type="button" class="btn ghost sm" id="c-shared-edit-btn" style="justify-content:flex-start">Изменить</button>' +
+      '<button type="button" class="btn ghost sm" id="c-shared-storno-btn" style="justify-content:flex-start">Сторно</button>';
+    document.body.appendChild(menu);
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.getElementById('c-shared-edit-btn').addEventListener('click', function () {
+      var id = menu.dataset.entryId;
+      closeAllMenus();
+      var entry = entries.find(function (x) { return x.id === id; });
+      if (entry) openForEdit(entry);
+    });
+    document.getElementById('c-shared-storno-btn').addEventListener('click', function () {
+      var id = menu.dataset.entryId;
+      closeAllMenus();
+      handleStorno(id);
+    });
+    return menu;
+  }
+
+  function openSharedMenu(btn) {
+    var menu = ensureSharedMenu();
+    var rect = btn.getBoundingClientRect();
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = 'auto';
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.dataset.entryId = btn.dataset.entryId;
+    menu.hidden = false;
+  }
+
   function closeAllMenus() {
-    Array.prototype.forEach.call(document.querySelectorAll('.c-menu'), function (m) { m.hidden = true; });
+    var menu = document.getElementById('c-shared-menu');
+    if (menu) menu.hidden = true;
   }
 
   async function handleStorno(id) {
@@ -324,8 +355,15 @@
   function applyCategoryRules() {
     renderCategoryGrid();
     var rule = categoryRule(draftType, draftCategory);
-    document.getElementById('c-f-receipt-field').hidden = !(draftType === 'expense');
-    document.getElementById('c-f-receipt-req').hidden = !rule.receiptRequired;
+    // По отзыву пользователя: раньше поле "Фото чека" было видно всегда
+    // (только звёздочка "*" появлялась/пропадала), непонятно было,
+    // обязательно оно или просто не нужно — "а то будут вопросы". Чек
+    // либо нужен категории, либо нет вообще (ЗП/Прочее/Продажа бетона) —
+    // поэтому поле целиком показываем только когда rule.receiptRequired.
+    // Комментарий — по отдельному отзыву — наоборот уместен всегда (даже
+    // необязательный, например "аванс за май" к топливу), поэтому его НЕ
+    // прячем, меняется только звёздочка "обязательно".
+    document.getElementById('c-f-receipt-field').hidden = !(draftType === 'expense' && rule.receiptRequired);
     document.getElementById('c-f-comment-req').hidden = !rule.commentRequired;
     document.getElementById('c-f-order-field').hidden = draftCategory !== 'concrete_sale';
     if (draftCategory === 'concrete_sale') renderOrderPicker();
@@ -333,8 +371,14 @@
 
   function recentPlantOrders() {
     var plantId = document.getElementById('c-f-plant').value;
-    return (State.data.orders || []).filter(function (o) { return o.plantId === plantId && !o.cancelledAt; })
-      .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 8);
+    // По отзыву пользователя: "продажа бетона" — это заказы буквально за
+    // 1-3 дня (это и есть "последние"), и только без НДС — заказы с НДС
+    // проходят по безналу/счёту, а не наличкой в кассу. Раньше сюда попадали
+    // вообще все незаказ-отменённые заказы завода, включая старые и с НДС.
+    var cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+    return (State.data.orders || []).filter(function (o) {
+      return o.plantId === plantId && !o.cancelledAt && !o.vatApplied && new Date(o.createdAt).getTime() >= cutoff;
+    }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 8);
   }
 
   function renderOrderPicker() {
@@ -369,11 +413,26 @@
     select.value = valid ? preferredId : (Plant.currentPlantId() || (plants[0] && plants[0].id) || '');
   }
 
+  // Карточка "Фото чека" — вид один в один по макету (Cash.dc.html/
+  // MobileCashForm.dc.html: превью 72×72 + статус/подсказка + кнопка
+  // справа) вместо голого <input type="file">, который был раньше —
+  // по отзыву пользователя ("прикрепление фото более симпатичным, более
+  // похожим на макет").
+  var RECEIPT_PLACEHOLDER_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.4"/></svg>';
+  function renderReceiptPreview(imgSrc, statusText, hintText, btnLabel) {
+    document.getElementById('c-f-receipt-thumb').innerHTML = imgSrc
+      ? '<img src="' + imgSrc + '" style="width:100%;height:100%;object-fit:cover;display:block">'
+      : RECEIPT_PLACEHOLDER_ICON;
+    document.getElementById('c-f-receipt-status').textContent = statusText;
+    document.getElementById('c-f-receipt-hint').textContent = hintText;
+    document.getElementById('c-f-receipt-btn').textContent = btnLabel;
+  }
+
   function resetReceiptField() {
     draftReceiptDataUrl = null;
     draftReceiptCleared = false;
     document.getElementById('c-f-receipt-input').value = '';
-    document.getElementById('c-f-receipt-preview').textContent = 'Не прикреплено';
+    renderReceiptPreview(null, 'Нет фото', 'Прикрепите фото чека', 'Прикрепить');
   }
 
   function openForCreate() {
@@ -414,7 +473,7 @@
     document.getElementById('c-f-date').value = entry.occurredAt;
     document.getElementById('c-f-comment').value = entry.comment || '';
     resetReceiptField();
-    if (entry.receiptPath) document.getElementById('c-f-receipt-preview').innerHTML = '<a href="' + entry.receiptPath + '" target="_blank" rel="noopener">Текущее фото чека →</a>';
+    if (entry.receiptPath) renderReceiptPreview(entry.receiptPath, 'Чек прикреплён', 'Текущее фото', 'Переснять');
     document.getElementById('c-drawer').hidden = false;
   }
 
@@ -480,25 +539,85 @@
     }
   }
 
-  function exportToExcel() {
+  // Экспорт — по отзыву пользователя ("сделать фото чеков в столбце") CSV
+  // тут не годится в принципе: это чистый текст, картинку в ячейку не
+  // положить. Вместо .csv собираем HTML-таблицу и отдаём файл с
+  // расширением .xls — Excel открывает такое как обычную книгу
+  // (стандартный приём, "HTML прикидывается xls") и рисует <img> прямо в
+  // ячейке. Каждое фото на момент экспорта перекодируется в base64
+  // (data:-URL) — так готовый файл самодостаточен и открывается даже
+  // если сервер потом недоступен (например, файл ушёл бухгалтеру).
+  async function photoDataUrl(cache, path) {
+    if (cache[path] !== undefined) return cache[path];
+    try {
+      var res = await fetch(path);
+      if (!res.ok) throw new Error('http ' + res.status);
+      var blob = await res.blob();
+      var dataUrl = await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      cache[path] = dataUrl;
+      return dataUrl;
+    } catch (err) {
+      cache[path] = null;
+      return null;
+    }
+  }
+
+  async function exportToExcel() {
     if (!entries.length) return;
+    var btn = document.getElementById('c-export-btn');
+    var originalLabel = btn.textContent;
+    btn.disabled = true;
     var headers = ['Дата', 'Время', 'Завод', 'Тип', 'Категория', 'Сумма', 'Комментарий', 'Чек', 'Статус'];
-    function csvEscape(v) { var s = String(v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     function csvNum(n) { return (Math.round((n || 0) * 100) / 100).toString().replace('.', ','); }
-    var rows = entries.map(function (e) {
-      var st = statusFor(e);
-      return [e.occurredAt, timeLabel(e.insertedAt), e.plantName, e.type === 'income' ? 'Доход' : 'Расход', CATEGORY_LABELS[e.category], csvNum(e.amount), e.comment || '', e.receiptPath ? 'есть' : 'нет', st.label];
-    });
-    var csv = '﻿' + [headers].concat(rows).map(function (r) { return r.map(csvEscape).join(';'); }).join('\r\n');
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'dds-' + new Date().toISOString().slice(0, 10) + '.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    var cache = {};
+    var rowsHtml = '';
+    try {
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        btn.textContent = 'Готовим файл… ' + (i + 1) + '/' + entries.length;
+        var st = statusFor(e);
+        var photoCell = '—';
+        if (e.receiptPath) {
+          var dataUrl = await photoDataUrl(cache, e.receiptPath);
+          photoCell = dataUrl ? '<img src="' + dataUrl + '" width="80" height="80" style="width:80px;height:80px;object-fit:cover">' : 'ошибка загрузки фото';
+        }
+        rowsHtml +=
+          '<tr>' +
+            '<td>' + esc(e.occurredAt) + '</td>' +
+            '<td>' + esc(timeLabel(e.insertedAt)) + '</td>' +
+            '<td>' + esc(e.plantName) + '</td>' +
+            '<td>' + (e.type === 'income' ? 'Доход' : 'Расход') + '</td>' +
+            '<td>' + esc(CATEGORY_LABELS[e.category]) + '</td>' +
+            '<td>' + csvNum(e.amount) + '</td>' +
+            '<td>' + esc(e.comment || '') + '</td>' +
+            '<td>' + photoCell + '</td>' +
+            '<td>' + esc(st.label) + '</td>' +
+          '</tr>';
+      }
+      var html =
+        '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' +
+        '<head><meta charset="utf-8">' +
+        '<style>td{font-family:Calibri,Arial,sans-serif;font-size:12px;vertical-align:middle;padding:4px 6px} th{font-family:Calibri,Arial,sans-serif;font-size:12px;background:#1C1D1B;color:#fff;padding:4px 6px;text-align:left}</style>' +
+        '</head><body><table border="1" cellspacing="0"><thead><tr>' + headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></body></html>';
+      var blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'dds-' + new Date().toISOString().slice(0, 10) + '.xls';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   }
 
   function render() {
@@ -526,16 +645,20 @@
     });
     document.getElementById('c-f-plant').addEventListener('change', function () { if (draftCategory === 'concrete_sale') { draftOrderId = null; renderOrderPicker(); } });
     NumericInput.attach(document.getElementById('c-f-amount'));
+    document.getElementById('c-f-receipt-btn').addEventListener('click', function () {
+      document.getElementById('c-f-receipt-input').click();
+    });
     document.getElementById('c-f-receipt-input').addEventListener('change', function (e) {
       var file = e.target.files && e.target.files[0];
       if (!file) return;
-      document.getElementById('c-f-receipt-preview').textContent = 'Сжимаем фото…';
+      renderReceiptPreview(null, 'Обработка…', 'Сжимаем фото', 'Прикрепить');
       PhotoCompress.fromFile(file).then(function (dataUrl) {
         draftReceiptDataUrl = dataUrl;
         draftReceiptCleared = false;
-        document.getElementById('c-f-receipt-preview').innerHTML = '<img src="' + dataUrl + '" style="max-width:120px;max-height:90px;border-radius:4px;display:block">';
+        var now = new Date();
+        renderReceiptPreview(dataUrl, 'Чек прикреплён', 'сегодня, ' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'Переснять');
       }).catch(function (err) {
-        document.getElementById('c-f-receipt-preview').textContent = 'Не удалось прочитать фото: ' + err.message;
+        renderReceiptPreview(null, 'Не удалось прочитать фото', err.message, 'Прикрепить');
       });
     });
     document.addEventListener('click', closeAllMenus);

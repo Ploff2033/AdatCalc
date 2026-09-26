@@ -23,10 +23,14 @@
         '</div>' +
         '<div class="field"><label for="mc-cash-date">Дата</label><input id="mc-cash-date" type="date" class="inp" style="height:48px"></div>' +
         '<div class="field" id="mc-receipt-field"><label>Фото чека <span class="req" id="mc-receipt-req">*</span></label>' +
-          '<div id="mc-receipt-preview" class="hint">Не прикреплено</div>' +
-          '<input type="file" id="mc-receipt-input" accept="image/*" capture="environment" class="inp" style="padding:8px">' +
+          '<div class="card" style="display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px">' +
+            '<div id="mc-receipt-thumb" style="width:72px;height:72px;border-radius:4px;background:repeating-linear-gradient(0deg,var(--border-soft) 0 6px,var(--surface-2) 6px 12px);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none"></div>' +
+            '<span class="stack" style="gap:2px;min-width:0"><span id="mc-receipt-status" style="font-weight:600">Нет фото</span><span id="mc-receipt-hint" class="hint">Прикрепите фото чека</span></span>' +
+            '<button type="button" class="btn ghost sm" id="mc-receipt-btn" style="height:44px;flex:none">Прикрепить</button>' +
+          '</div>' +
+          '<input type="file" id="mc-receipt-input" accept="image/*" capture="environment" style="display:none">' +
         '</div>' +
-        '<div class="field"><label for="mc-cash-comment">Комментарий <span class="req" id="mc-comment-req">*</span></label><textarea id="mc-cash-comment" class="inp" style="height:72px;padding:10px 12px;resize:none"></textarea></div>' +
+        '<div class="field" id="mc-comment-field"><label for="mc-cash-comment">Комментарий <span class="req" id="mc-comment-req">*</span></label><textarea id="mc-cash-comment" class="inp" style="height:72px;padding:10px 12px;resize:none"></textarea></div>' +
         '<p class="banner" id="mc-cash-error" hidden></p>' +
         '<button type="button" class="btn ghost sm" id="mc-cancel-edit-btn" style="height:44px" hidden>Отменить редактирование</button>' +
         '<button type="button" class="btn pri" id="mc-cash-save-btn" style="height:52px;width:100%;font-size:16px">Сохранить</button>' +
@@ -101,8 +105,14 @@
   function applyCategoryRules() {
     renderCategoryGrid();
     var rule = categoryRule(draftType, draftCategory);
-    document.getElementById('mc-receipt-field').hidden = draftType !== 'expense';
-    document.getElementById('mc-receipt-req').hidden = !rule.receiptRequired;
+    // Фото чека — поле целиком, а не только звёздочка "*" (см. тот же
+    // приём и комментарий в screen-cash.js::applyCategoryRules): иначе на
+    // телефоне работник видит поле даже для ЗП/Прочего, где чека не бывает
+    // вообще, и не понимает, обязательно оно или нет. Комментарий, по
+    // отдельному отзыву, наоборот не прячем никогда — уместен и как
+    // необязательный (например к топливу/запчастям), меняется только
+    // звёздочка.
+    document.getElementById('mc-receipt-field').hidden = !(draftType === 'expense' && rule.receiptRequired);
     document.getElementById('mc-comment-req').hidden = !rule.commentRequired;
     var isOrder = draftCategory === 'concrete_sale';
     document.getElementById('mc-order-field').hidden = !isOrder;
@@ -112,8 +122,13 @@
 
   function recentOrders() {
     var plantId = Plant.currentPlantId();
-    return (State.data.orders || []).filter(function (o) { return o.plantId === plantId && !o.cancelledAt; })
-      .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 6);
+    // См. тот же приём в screen-cash.js::recentPlantOrders — только
+    // недавние (3 дня) заказы без НДС: с НДС идут по безналу, наличка в
+    // кассу с них не может числиться.
+    var cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+    return (State.data.orders || []).filter(function (o) {
+      return o.plantId === plantId && !o.cancelledAt && !o.vatApplied && new Date(o.createdAt).getTime() >= cutoff;
+    }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 6);
   }
 
   function renderOrderPicker() {
@@ -141,6 +156,19 @@
     });
   }
 
+  // Карточка "Фото чека" — по макету (MobileCashForm.dc.html: превью 72×72
+  // + статус/подсказка + кнопка справа), см. тот же приём и комментарий в
+  // screen-cash.js::renderReceiptPreview.
+  var RECEIPT_PLACEHOLDER_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.6-2.2h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.4"/></svg>';
+  function renderReceiptPreview(imgSrc, statusText, hintText, btnLabel) {
+    document.getElementById('mc-receipt-thumb').innerHTML = imgSrc
+      ? '<img src="' + imgSrc + '" style="width:100%;height:100%;object-fit:cover;display:block">'
+      : RECEIPT_PLACEHOLDER_ICON;
+    document.getElementById('mc-receipt-status').textContent = statusText;
+    document.getElementById('mc-receipt-hint').textContent = hintText;
+    document.getElementById('mc-receipt-btn').textContent = btnLabel;
+  }
+
   function setDraftType(type) {
     draftType = type;
     var seg = document.getElementById('mc-type-seg');
@@ -163,7 +191,7 @@
     document.getElementById('mc-cash-date').value = new Date().toISOString().slice(0, 10);
     document.getElementById('mc-cash-comment').value = '';
     document.getElementById('mc-receipt-input').value = '';
-    document.getElementById('mc-receipt-preview').textContent = 'Не прикреплено';
+    renderReceiptPreview(null, 'Нет фото', 'Прикрепите фото чека', 'Прикрепить');
     document.getElementById('mc-cash-error').hidden = true;
   }
 
@@ -182,7 +210,8 @@
     document.getElementById('mc-cash-date').value = entry.occurredAt;
     document.getElementById('mc-cash-comment').value = entry.comment || '';
     document.getElementById('mc-receipt-input').value = '';
-    document.getElementById('mc-receipt-preview').innerHTML = entry.receiptPath ? '<a href="' + entry.receiptPath + '" target="_blank" rel="noopener">Текущее фото чека →</a>' : 'Не прикреплено';
+    if (entry.receiptPath) renderReceiptPreview(entry.receiptPath, 'Чек прикреплён', 'Текущее фото', 'Переснять');
+    else renderReceiptPreview(null, 'Нет фото', 'Прикрепите фото чека', 'Прикрепить');
     document.getElementById('mc-cash-save-btn').textContent = 'Сохранить изменения';
     document.getElementById('mc-cancel-edit-btn').hidden = false;
     document.getElementById('mc-cash-error').hidden = true;
@@ -345,15 +374,19 @@
     });
     NumericInput.attach(document.getElementById('mc-cash-amount'));
     document.getElementById('mc-cash-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('mc-receipt-btn').addEventListener('click', function () {
+      document.getElementById('mc-receipt-input').click();
+    });
     document.getElementById('mc-receipt-input').addEventListener('change', function (e) {
       var file = e.target.files && e.target.files[0];
       if (!file) return;
-      document.getElementById('mc-receipt-preview').textContent = 'Сжимаем фото…';
+      renderReceiptPreview(null, 'Обработка…', 'Сжимаем фото', 'Прикрепить');
       PhotoCompress.fromFile(file).then(function (dataUrl) {
         draftReceiptDataUrl = dataUrl;
-        document.getElementById('mc-receipt-preview').innerHTML = '<img src="' + dataUrl + '" style="max-width:120px;max-height:90px;border-radius:4px;display:block">';
+        var now = new Date();
+        renderReceiptPreview(dataUrl, 'Чек прикреплён', 'сегодня, ' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'Переснять');
       }).catch(function (err) {
-        document.getElementById('mc-receipt-preview').textContent = 'Не удалось прочитать фото: ' + err.message;
+        renderReceiptPreview(null, 'Не удалось прочитать фото', err.message, 'Прикрепить');
       });
     });
     document.getElementById('mc-cash-save-btn').addEventListener('click', handleSubmit);
