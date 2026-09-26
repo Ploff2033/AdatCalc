@@ -294,16 +294,19 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   #sb-plant-switch { width: auto; gap: 0; }
   #sb-plant-switch > .cap { display: none; }
   .plant-select-pill { width: auto; height: 36px; }
-  .bottom-nav {
-    display: flex; position: sticky; bottom: 0; z-index: 5; background: var(--sidebar-bg);
+  /* .bottom-nav.nav (обе присутствующие на элементе классы: разметка —
+     <nav class="bottom-nav nav">), а не просто .bottom-nav — иначе
+     специфичность (0,1,0) проигрывала базовому "nav.nav" (0,1,1) для
+     flex-direction: сам контейнер молча оставался колонкой (как обычный
+     сайдбар-nav), и все 4 пункта рисовались полноширинными строками одна
+     под другой вместо горизонтального ряда. */
+  .bottom-nav.nav {
+    display: flex; flex-direction: row; position: sticky; bottom: 0; z-index: 5; background: var(--sidebar-bg);
     border-top: 1px solid var(--sidebar-border); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   }
-  /* .bottom-nav.nav (обе присутствующие на элементе классы), а не просто
-     .bottom-nav — иначе специфичность (0,1,1) проигрывала базовому
-     "nav.nav a" (0,1,2) для height/padding/gap (свойства, заданные в
-     обоих правилах: конфликт решается специфичностью, а не порядком
-     объявления) — на телефоне пункты нижнего меню превращались в
-     полноширинные блоки по 40px вместо компактных колонок иконка+подпись. */
+  /* Тот же приём для самих ссылок/кнопок — .bottom-nav a (0,1,1) проигрывала
+     "nav.nav a" (0,1,2) для height/padding/gap, из-за чего пункты были
+     полноширинными блоками по 40px вместо компактных колонок иконка+подпись. */
   .bottom-nav.nav a, .bottom-nav.nav button.navlink {
     flex: 1; flex-direction: column; height: auto; padding: 6px 2px; font-size: 10px; gap: 3px; text-align: center; justify-content: center;
   }
