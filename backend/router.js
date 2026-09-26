@@ -393,16 +393,18 @@ const routes = [
   {
     method: 'PUT',
     pattern: /^\/api\/cash-entries\/([^/]+)$/,
-    handler: async (req, res, m) => {
+    // role передаётся дальше в update() — admin правит записи когда угодно,
+    // без 15-30-минутного окна (см. cash-entries.js::assertEditable).
+    handler: async (req, res, m, role) => {
       const body = await readBody(req, 4 * 1024 * 1024);
-      sendJson(res, 200, await cashEntries.update(decodeURIComponent(m[1]), body));
+      sendJson(res, 200, await cashEntries.update(decodeURIComponent(m[1]), body, role));
     }
   },
   {
     method: 'DELETE',
     pattern: /^\/api\/cash-entries\/([^/]+)$/,
-    handler: async (req, res, m) => {
-      await cashEntries.remove(decodeURIComponent(m[1]));
+    handler: async (req, res, m, role) => {
+      await cashEntries.remove(decodeURIComponent(m[1]), role);
       sendJson(res, 204);
     }
   },

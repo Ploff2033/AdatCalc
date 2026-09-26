@@ -50,12 +50,19 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function assertEditable(row) {
+// role === 'admin' обходит окно по времени (по просьбе пользователя —
+// "Админ может править информацию когда угодно"): у него в принципе есть
+// полный доступ к данным, временное окно — защита от чужой правки для
+// вносящего "на месте", не от админа. Запись сторно не редактируется и не
+// удаляется НИКЕМ, включая admin — это уже не окно по времени, а сама суть
+// сторно как неизменяемой записи-исправления.
+async function assertEditable(row, role) {
+  if (row.storno_of_id) throw new HttpError(409, 'Запись сторно не редактируется и не удаляется');
+  if (role === 'admin') return;
   const ageMinutes = (Date.now() - new Date(row.inserted_at).getTime()) / 60000;
   if (ageMinutes > EDIT_WINDOW_MINUTES) {
     throw new HttpError(409, 'Окно редактирования (' + EDIT_WINDOW_MINUTES + ' мин) истекло — исправьте через «Сторно»');
   }
-  if (row.storno_of_id) throw new HttpError(409, 'Запись сторно не редактируется и не удаляется');
 }
 
 // query.plantId — задан почти всегда (менеджер/админ выбрали завод на
@@ -148,11 +155,11 @@ async function create(body) {
   return rowToEntry(rows[0]);
 }
 
-async function update(id, body) {
+async function update(id, body, role) {
   const { rows } = await db.pool.query('SELECT * FROM cash_entries WHERE id = $1', [id]);
   if (!rows.length) throw new HttpError(404, 'Запись не найдена');
   const current = rows[0];
-  await assertEditable(current);
+  await assertEditable(current, role);
 
   // Тип и завод не меняются при правке — только категория/сумма/
   // комментарий/чек/дата (тот же принцип, что у заказов: у сущности есть
@@ -191,10 +198,10 @@ async function update(id, body) {
   return rowToEntry(full[0]);
 }
 
-async function remove(id) {
+async function remove(id, role) {
   const { rows } = await db.pool.query('SELECT * FROM cash_entries WHERE id = $1', [id]);
   if (!rows.length) throw new HttpError(404, 'Запись не найдена');
-  await assertEditable(rows[0]);
+  await assertEditable(rows[0], role);
   await uploads.deleteReceiptPhoto(rows[0].receipt_path);
   await db.pool.query('DELETE FROM cash_entries WHERE id = $1', [id]);
 }

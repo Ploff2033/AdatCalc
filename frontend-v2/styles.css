@@ -177,33 +177,6 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
 .sidebar-user .btn.sm { height: 36px; padding: 0 10px; }
 .sidebar-user .btn.sm.ghost-dark { background: transparent; border-color: #4A4D47; color: var(--sidebar-fg); }
 
-/* Колокольчик дефицита (Shell — окно уведомлений об остатках ниже порога).
-   Кнопка живёт в тёмном сайдбаре, сама панель — светлая карточка-флайаут,
-   выезжающая вправо поверх основного контента (в узком сайдбаре списку
-   материалов с цифрами просто не хватило бы ширины). */
-.sidebar-bell-btn {
-  display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 12px;
-  border-radius: 4px; border: 1px solid var(--sidebar-border); background: var(--sidebar-item-bg);
-  color: var(--sidebar-fg); font: 500 13px 'Rubik', sans-serif; cursor: pointer; text-align: left;
-}
-.sidebar-bell-btn:hover { background: #2C2E2A; }
-.sidebar-bell-btn.act { border-color: #8A3410; color: #fff; }
-.sidebar-bell-btn span:nth-child(2) { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-bell-badge {
-  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px;
-  border-radius: 10px; background: var(--bad-bg); color: var(--bad-fg); font-size: 11px; font-weight: 700;
-}
-.sidebar-bell-panel {
-  position: absolute; left: calc(100% + 10px); top: 0; width: 340px; max-height: 420px; overflow-y: auto;
-  z-index: 20; padding: 4px; box-shadow: 0 12px 28px rgba(28,29,27,.18);
-}
-.sidebar-bell-panel .bell-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px;
-  border-bottom: 1px solid var(--border-soft);
-}
-.sidebar-bell-panel .bell-row:last-child { border-bottom: 0; }
-.sidebar-bell-empty { padding: 16px 14px; color: var(--muted); font-size: 13px; }
-
 .main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; box-sizing: border-box; }
 .page { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 28px 36px; gap: 22px; box-sizing: border-box; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
@@ -325,7 +298,13 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
     display: flex; position: sticky; bottom: 0; z-index: 5; background: var(--sidebar-bg);
     border-top: 1px solid var(--sidebar-border); padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   }
-  .bottom-nav a, .bottom-nav button.navlink {
+  /* .bottom-nav.nav (обе присутствующие на элементе классы), а не просто
+     .bottom-nav — иначе специфичность (0,1,1) проигрывала базовому
+     "nav.nav a" (0,1,2) для height/padding/gap (свойства, заданные в
+     обоих правилах: конфликт решается специфичностью, а не порядком
+     объявления) — на телефоне пункты нижнего меню превращались в
+     полноширинные блоки по 40px вместо компактных колонок иконка+подпись. */
+  .bottom-nav.nav a, .bottom-nav.nav button.navlink {
     flex: 1; flex-direction: column; height: auto; padding: 6px 2px; font-size: 10px; gap: 3px; text-align: center; justify-content: center;
   }
   .page { padding: 16px; gap: 16px; }

@@ -158,6 +158,9 @@
     if (e.category === 'storno') return { label: 'Сторно', cls: 'warn' };
     if (e.stornoed) return { label: 'Сторнирована', cls: 'mute' };
     if (!e.stornoOfId && ageMinutes <= 20) return { label: 'Правка ' + Math.max(0, Math.round(20 - ageMinutes)) + ' мин', cls: 'act' };
+    // admin правит без окна (см. openForEdit) — "Закрыта" тут было бы
+    // неверно, обычная запись открыта для правки ему всегда.
+    if (!e.stornoOfId && Auth.isAtLeast('admin')) return { label: 'Открыта (админ)', cls: 'mute' };
     return { label: 'Закрыта', cls: 'mute' };
   }
 
@@ -177,12 +180,25 @@
         var st = statusFor(e);
         var isStornoed = e.stornoed;
         var color = e.amount >= 0 ? '#1F5239' : 'var(--ink)';
-        var receiptChip = e.receiptPath ? '<span class="chip ok">есть</span>' : ((e.category === 'fuel' || e.category === 'parts') ? '<span class="chip bad">нет чека</span>' : '<span class="chip mute">—</span>');
+        // Кликабельная миниатюра, а не просто текстовый статус — по отзыву
+        // пользователя ("нет подробного вида") фото раньше нельзя было
+        // посмотреть прямо из журнала.
+        var receiptChip = e.receiptPath
+          ? '<a href="' + e.receiptPath + '" target="_blank" rel="noopener" title="Открыть фото чека"><img src="' + e.receiptPath + '" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border);display:block"></a>'
+          : ((e.category === 'fuel' || e.category === 'parts') ? '<span class="chip bad">нет чека</span>' : '<span class="chip mute">—</span>');
         var canAct = !e.stornoOfId; // сторно-записи не редактируются и сами не сторнируются
+        var detailLine = e.comment || '';
+        if (e.orderId) {
+          var order2 = (State.data.orders || []).find(function (o) { return o.id === e.orderId; });
+          if (order2) {
+            var orderDetail = order2.recipeName + ' · ' + Format.fmtNum(order2.saleVolume, 1, 'м³') + ' · ' + new Date(order2.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+            detailLine = orderDetail + (detailLine ? ' · ' + detailLine : '');
+          }
+        }
         return '<div class="row" style="grid-template-columns:70px 90px minmax(0,1fr) 70px 130px 130px 44px;min-height:54px;opacity:' + (isStornoed ? '.6' : '1') + '">' +
           '<div class="num hint">' + timeLabel(e.insertedAt) + '</div>' +
           '<div>' + e.plantName + '</div>' +
-          '<div class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + CATEGORY_LABELS[e.category] + '</span><span class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (e.comment || '') + '</span></div>' +
+          '<div class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + CATEGORY_LABELS[e.category] + '</span><span class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + detailLine + '</span></div>' +
           '<div>' + receiptChip + '</div>' +
           '<div class="r num" style="font-size:15px;font-weight:600;color:' + color + ';text-decoration:' + (isStornoed ? 'line-through' : 'none') + ';white-space:nowrap">' + (e.amount >= 0 ? '+' : '') + Format.fmtNum(e.amount, 2) + ' ₽</div>' +
           '<div><span class="chip ' + st.cls + '">' + st.label + '</span></div>' +
@@ -379,8 +395,10 @@
   }
 
   function openForEdit(entry) {
+    // admin правит когда угодно, без окна (см. backend/handlers/cash-entries.js
+    // ::assertEditable — тот же бэкенд всё равно проверит ещё раз).
     var ageMinutes = (Date.now() - new Date(entry.insertedAt).getTime()) / 60000;
-    if (ageMinutes > 20) { alert('Окно редактирования (20 мин) истекло — используйте «Сторно».'); return; }
+    if (!Auth.isAtLeast('admin') && ageMinutes > 20) { alert('Окно редактирования (20 мин) истекло — используйте «Сторно».'); return; }
     editingId = entry.id;
     draftType = entry.type;
     draftCategory = entry.category;

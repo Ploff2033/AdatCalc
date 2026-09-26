@@ -168,8 +168,10 @@
   }
 
   function openForEdit(entry) {
+    // admin правит когда угодно, без окна — см. тот же комментарий в
+    // screen-cash.js и backend/handlers/cash-entries.js::assertEditable.
     var ageMinutes = (Date.now() - new Date(entry.insertedAt).getTime()) / 60000;
-    if (ageMinutes > 20) { alert('Окно редактирования (20 мин) истекло — используйте «Сторно».'); return; }
+    if (!Auth.isAtLeast('admin') && ageMinutes > 20) { alert('Окно редактирования (20 мин) истекло — используйте «Сторно».'); return; }
     editingId = entry.id;
     draftOrderId = entry.orderId;
     draftReceiptDataUrl = null;
@@ -241,6 +243,7 @@
     if (e.category === 'storno') return { label: 'Сторно', cls: 'warn' };
     if (e.stornoed) return { label: 'Сторнирована', cls: 'mute' };
     if (!e.stornoOfId && ageMinutes <= 20) return { label: 'Правка ещё ' + Math.max(0, Math.round(20 - ageMinutes)) + ' мин', cls: 'act' };
+    if (!e.stornoOfId && Auth.isAtLeast('admin')) return { label: 'Открыта (админ)', cls: 'mute' };
     return { label: 'Сохранено', cls: 'mute' };
   }
 
@@ -267,24 +270,46 @@
     }
   }
 
+  function orderDetailFor(orderId) {
+    var order = (State.data.orders || []).find(function (o) { return o.id === orderId; });
+    if (!order) return null;
+    return order.recipeName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + ' · ' + new Date(order.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  }
+
   function renderHistory() {
     document.getElementById('mc-history-empty').hidden = entries.length > 0;
     var list = document.getElementById('mc-history-list');
+    var isAdmin = Auth.isAtLeast('admin');
     // entries уже отсортированы бэкендом по inserted_at DESC — тут просто
     // берём верхушку ("последние записи за смену/день", см. документ).
     var recent = entries.slice(0, 20);
     list.innerHTML = recent.map(function (e) {
       var st = statusFor(e);
       var ageMinutes = (Date.now() - new Date(e.insertedAt).getTime()) / 60000;
-      var canEdit = !e.stornoOfId && !e.stornoed && ageMinutes <= 20;
+      var canEdit = !e.stornoOfId && !e.stornoed && (isAdmin || ageMinutes <= 20);
       var canStorno = !e.stornoOfId && !e.stornoed;
       var color = e.amount >= 0 ? '#1F5239' : 'var(--ink)';
+      var when = new Date(e.insertedAt);
+      var dateTime = when.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ', ' + when.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      // "Подробный вид" — по отзыву пользователя: раньше карточка истории
+      // показывала только категорию/время/сумму, без даты (при списке за
+      // несколько дней непонятно, какой это день), без самого фото чека
+      // (только текст "чек прикреплён", без возможности его посмотреть) и
+      // без деталей заказа у "Продажи бетона". Теперь дата всегда полная,
+      // фото — кликабельная миниатюра, у заказа — марка/объём/дата.
+      var detailLine = e.comment || '';
+      if (e.orderId) {
+        var orderDetail = orderDetailFor(e.orderId);
+        if (orderDetail) detailLine = orderDetail + (detailLine ? ' · ' + detailLine : '');
+      }
       return '<article class="card stack g8" style="padding:12px 14px;opacity:' + (e.stornoed ? '.6' : '1') + '" data-entry-id="' + e.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">' +
-          '<span style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + CATEGORY_LABELS[e.category] + ' <span class="num hint" style="font-weight:400">' + new Date(e.insertedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + '</span></span>' +
+          '<span style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + CATEGORY_LABELS[e.category] + '</span>' +
           '<span class="num" style="font-size:17px;font-weight:600;color:' + color + ';text-decoration:' + (e.stornoed ? 'line-through' : 'none') + ';white-space:nowrap;flex:none">' + (e.amount >= 0 ? '+' : '') + Format.fmtNum(e.amount, 2) + '</span>' +
         '</div>' +
-        (e.comment ? '<span class="hint">' + e.comment + (e.receiptPath ? ' · чек' : '') + '</span>' : (e.receiptPath ? '<span class="hint">чек прикреплён</span>' : '')) +
+        '<span class="hint num">' + dateTime + '</span>' +
+        (detailLine ? '<span class="hint">' + detailLine + '</span>' : '') +
+        (e.receiptPath ? '<a href="' + e.receiptPath + '" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit"><img src="' + e.receiptPath + '" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"><span class="hint" style="text-decoration:underline">Открыть фото чека</span></a>' : '') +
         '<span class="chip ' + st.cls + '" style="align-self:flex-start">' + st.label + '</span>' +
         (canEdit ? '<div class="grid-2" style="gap:8px"><button type="button" class="btn ghost sm mc-hist-edit" style="height:44px">Изменить</button><button type="button" class="btn ghost sm mc-hist-delete" style="height:44px;color:#8C2217;border-color:#E3B8B1">Удалить</button></div>' : '') +
         (!canEdit && canStorno ? '<button type="button" class="btn ghost sm mc-hist-storno" style="height:44px;width:100%">Сторно</button>' : '') +
