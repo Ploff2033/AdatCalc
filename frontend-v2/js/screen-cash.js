@@ -567,11 +567,25 @@
     return 'Всё время';
   }
 
-  function receiptFileName(e, ext) {
+  // По отзыву пользователя: имя файла должно нести дату записи и её текст
+  // (комментарий — если пусто, категория), чтобы по одному только списку
+  // файлов в папке было видно, к какой записи какое фото и было ли оно
+  // вообще, без сверки с CSV. Время — до секунд (не до минуты, как раньше)
+  // + usedNames ниже — двойная защита от совпадений имён, а не просто
+  // "обычно не совпадёт": секунда почти никогда не повторяется, а на тот
+  // редкий случай, когда всё-таки совпало (дата+текст+сумма один в один),
+  // usedNames гарантированно различит их суффиксом "-2", "-3"...
+  function receiptFileName(e, usedNames, ext) {
     var d = new Date(e.insertedAt);
-    var stamp = e.occurredAt + '_' + d.toTimeString().slice(0, 5).replace(':', '-');
-    var cat = (CATEGORY_LABELS[e.category] || e.category).replace(/[\\/:*?"<>|]/g, '');
-    return stamp + '_' + cat + '_' + Math.round(Math.abs(e.amount)) + 'р' + ext;
+    var stamp = e.occurredAt + '_' + d.toTimeString().slice(0, 8).replace(/:/g, '-');
+    var text = (e.comment || '').trim() || (CATEGORY_LABELS[e.category] || e.category);
+    text = text.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+    var base = stamp + '_' + text + '_' + Math.round(Math.abs(e.amount)) + 'р';
+    var name = base + ext;
+    var n = 2;
+    while (usedNames[name]) { name = base + '-' + n + ext; n++; }
+    usedNames[name] = true;
+    return name;
   }
 
   async function exportToExcel() {
@@ -585,6 +599,7 @@
     function csvNum(n) { return (Math.round((n || 0) * 100) / 100).toString().replace('.', ','); }
     var zipFiles = [];
     var rows = [];
+    var usedNames = {};
     try {
       for (var i = 0; i < entries.length; i++) {
         var e = entries[i];
@@ -597,7 +612,7 @@
             if (!res.ok) throw new Error('http ' + res.status);
             var buf = await res.arrayBuffer();
             var ext = (e.receiptPath.match(/\.[a-zA-Z0-9]+$/) || ['.jpg'])[0];
-            var fname = receiptFileName(e, ext);
+            var fname = receiptFileName(e, usedNames, ext);
             zipFiles.push({ name: folderName + '/' + fname, data: new Uint8Array(buf) });
             receiptCell = fname;
           } catch (err) {
