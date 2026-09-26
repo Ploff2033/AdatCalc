@@ -259,7 +259,11 @@
         '</div>' +
         '<div class="grid-2">' +
           '<div class="stack g6"><b>Бетон — расход</b>' +
-            '<div class="spread"><span>Себестоимость смеси</span><span class="num">' + Format.fmt(order.mixCost, 2) + '</span></div>' +
+            '<div class="spread"><span>Материалы</span><span class="num">' + Format.fmt((order.materialsCost || 0) * (order.saleVolume || 0), 2) + '</span></div>' +
+            '<div class="spread"><span>ФОТ</span><span class="num">' + Format.fmt((order.payrollCost || 0) * (order.saleVolume || 0), 2) + '</span></div>' +
+            '<div class="spread"><span>Амортизация</span><span class="num">' + Format.fmt((order.deprCost || 0) * (order.saleVolume || 0), 2) + '</span></div>' +
+            '<div class="spread"><span>Коммуналка</span><span class="num">' + Format.fmt((order.utilitiesCost || 0) * (order.saleVolume || 0), 2) + '</span></div>' +
+            '<div class="spread" style="font-weight:600;border-top:1px solid var(--border-soft);padding-top:4px"><span>Себестоимость смеси</span><span class="num">' + Format.fmt(order.mixCost, 2) + '</span></div>' +
           '</div>' +
           '<div class="stack g6"><b>Бетон — доход</b>' +
             '<div class="spread"><span>Цена, по которой отдали</span><span class="num">' + Format.fmt(order.salePrice, 2) + '/м³</span></div>' +

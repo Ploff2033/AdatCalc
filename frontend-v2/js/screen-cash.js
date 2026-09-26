@@ -11,7 +11,7 @@
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap" id="c-scope">Все заводы</span><h1>ДДС</h1></div>' +
-      '<div class="page-head-actions"><button class="btn ghost sm" id="c-export-btn">Экспорт в Excel</button><button class="btn pri sm" id="c-add-btn">Новая запись</button></div>' +
+      '<div class="page-head-actions"><button class="btn ghost sm" id="c-export-btn">Экспорт (ZIP)</button><button class="btn pri sm" id="c-add-btn">Новая запись</button></div>' +
     '</div>' +
     '<div class="grid-4" id="c-summary" style="gap:12px"></div>' +
     '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
@@ -542,32 +542,36 @@
     }
   }
 
-  // Экспорт — по отзыву пользователя ("сделать фото чеков в столбце") CSV
-  // тут не годится в принципе: это чистый текст, картинку в ячейку не
-  // положить. Вместо .csv собираем HTML-таблицу и отдаём файл с
-  // расширением .xls — Excel открывает такое как обычную книгу
-  // (стандартный приём, "HTML прикидывается xls") и рисует <img> прямо в
-  // ячейке. Каждое фото на момент экспорта перекодируется в base64
-  // (data:-URL) — так готовый файл самодостаточен и открывается даже
-  // если сервер потом недоступен (например, файл ушёл бухгалтеру).
-  async function photoDataUrl(cache, path) {
-    if (cache[path] !== undefined) return cache[path];
-    try {
-      var res = await fetch(path);
-      if (!res.ok) throw new Error('http ' + res.status);
-      var blob = await res.blob();
-      var dataUrl = await new Promise(function (resolve, reject) {
-        var reader = new FileReader();
-        reader.onload = function () { resolve(reader.result); };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      cache[path] = dataUrl;
-      return dataUrl;
-    } catch (err) {
-      cache[path] = null;
-      return null;
+  // Экспорт — по отзыву пользователя ("фото в столбце не работает, давай
+  // тогда отдельно папку с названием месяца"): попытка вписать base64-фото
+  // прямо в ячейку HTML-как-бы-xls оказалась ненадёжной (Excel далеко не
+  // всегда рисует data:-картинку в такой "маскировке"). Вместо этого —
+  // честный .zip: CSV-ведомость в корне + рядом папка с реальными файлами
+  // фото чеков, названная по текущему периоду. Тут же и второе требование
+  // ("выгрузка должна совпадать с тем что на экране") — reflowFolderName()
+  // берёт то же periodValue, что сейчас выбрано в фильтре периода, а сами
+  // entries уже отфильтрованы currentQueryString() ровно так же, как для
+  // отрисовки таблицы (см. loadEntries()) — экспортируется штатно то же,
+  // что показано.
+  function periodFolderName() {
+    var now = new Date();
+    if (periodValue === 'month') {
+      var label = now.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+      return label.charAt(0).toUpperCase() + label.slice(1);
     }
+    if (periodValue === '30d') {
+      var range = periodRange();
+      var f = range.from.split('-'), t = range.to.split('-');
+      return '30 дней (' + f[2] + '.' + f[1] + '–' + t[2] + '.' + t[1] + '.' + t[0] + ')';
+    }
+    return 'Всё время';
+  }
+
+  function receiptFileName(e, ext) {
+    var d = new Date(e.insertedAt);
+    var stamp = e.occurredAt + '_' + d.toTimeString().slice(0, 5).replace(':', '-');
+    var cat = (CATEGORY_LABELS[e.category] || e.category).replace(/[\\/:*?"<>|]/g, '');
+    return stamp + '_' + cat + '_' + Math.round(Math.abs(e.amount)) + 'р' + ext;
   }
 
   async function exportToExcel() {
@@ -575,44 +579,40 @@
     var btn = document.getElementById('c-export-btn');
     var originalLabel = btn.textContent;
     btn.disabled = true;
+    var folderName = periodFolderName();
     var headers = ['Дата', 'Время', 'Завод', 'Тип', 'Категория', 'Сумма', 'Комментарий', 'Чек', 'Статус'];
-    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function csvEscape(v) { var s = String(v == null ? '' : v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
     function csvNum(n) { return (Math.round((n || 0) * 100) / 100).toString().replace('.', ','); }
-    var cache = {};
-    var rowsHtml = '';
+    var zipFiles = [];
+    var rows = [];
     try {
       for (var i = 0; i < entries.length; i++) {
         var e = entries[i];
         btn.textContent = 'Готовим файл… ' + (i + 1) + '/' + entries.length;
         var st = statusFor(e);
-        var photoCell = '—';
+        var receiptCell = 'нет';
         if (e.receiptPath) {
-          var dataUrl = await photoDataUrl(cache, e.receiptPath);
-          photoCell = dataUrl ? '<img src="' + dataUrl + '" width="80" height="80" style="width:80px;height:80px;object-fit:cover">' : 'ошибка загрузки фото';
+          try {
+            var res = await fetch(e.receiptPath);
+            if (!res.ok) throw new Error('http ' + res.status);
+            var buf = await res.arrayBuffer();
+            var ext = (e.receiptPath.match(/\.[a-zA-Z0-9]+$/) || ['.jpg'])[0];
+            var fname = receiptFileName(e, ext);
+            zipFiles.push({ name: folderName + '/' + fname, data: new Uint8Array(buf) });
+            receiptCell = fname;
+          } catch (err) {
+            receiptCell = 'ошибка загрузки фото';
+          }
         }
-        rowsHtml +=
-          '<tr>' +
-            '<td>' + esc(e.occurredAt) + '</td>' +
-            '<td>' + esc(timeLabel(e.insertedAt)) + '</td>' +
-            '<td>' + esc(e.plantName) + '</td>' +
-            '<td>' + (e.type === 'income' ? 'Доход' : 'Расход') + '</td>' +
-            '<td>' + esc(CATEGORY_LABELS[e.category]) + '</td>' +
-            '<td>' + csvNum(e.amount) + '</td>' +
-            '<td>' + esc(e.comment || '') + '</td>' +
-            '<td>' + photoCell + '</td>' +
-            '<td>' + esc(st.label) + '</td>' +
-          '</tr>';
+        rows.push([e.occurredAt, timeLabel(e.insertedAt), e.plantName, e.type === 'income' ? 'Доход' : 'Расход', CATEGORY_LABELS[e.category], csvNum(e.amount), e.comment || '', receiptCell, st.label]);
       }
-      var html =
-        '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' +
-        '<head><meta charset="utf-8">' +
-        '<style>td{font-family:Calibri,Arial,sans-serif;font-size:12px;vertical-align:middle;padding:4px 6px} th{font-family:Calibri,Arial,sans-serif;font-size:12px;background:#1C1D1B;color:#fff;padding:4px 6px;text-align:left}</style>' +
-        '</head><body><table border="1" cellspacing="0"><thead><tr>' + headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></body></html>';
-      var blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+      var csv = '﻿' + [headers].concat(rows).map(function (r) { return r.map(csvEscape).join(';'); }).join('\r\n');
+      zipFiles.unshift({ name: 'ДДС ' + folderName + '.csv', data: new TextEncoder().encode(csv) });
+      var blob = ZipWriter.build(zipFiles);
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'dds-' + new Date().toISOString().slice(0, 10) + '.xls';
+      a.download = 'dds-' + new Date().toISOString().slice(0, 10) + '.zip';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
