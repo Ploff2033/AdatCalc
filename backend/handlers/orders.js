@@ -181,7 +181,13 @@ async function list(query, role) {
       conditions.push(`plant_id = $${params.length}`);
     }
     if (!role) {
-      conditions.push(`created_at >= (date_trunc('week', now() AT TIME ZONE 'Europe/Moscow') AT TIME ZONE 'Europe/Moscow')`);
+      // Раньше — "с начала ТЕКУЩЕЙ календарной недели" (date_trunc('week', …)):
+      // граница обнулялась каждый понедельник, и работник, зашедший в
+      // понедельник утром, разом терял видимость заказов за всё воскресенье
+      // (и вообще всю прошлую неделю) — "не видит уже заполненных заказов",
+      // реальный баг, найден пользователем. Скользящее окно "последние 7
+      // дней" не привязано к границе недели и не проседает так резко.
+      conditions.push(`created_at >= now() - interval '7 days'`);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await client.query(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, params);
