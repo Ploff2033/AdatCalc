@@ -649,16 +649,19 @@
       var byId = {};
       allEntries.forEach(function (e) { byId[e.id] = e; });
 
+      // Хронологический порядок + баланс СРАЗУ ПОСЛЕ КАЖДОЙ ОПЕРАЦИИ (не раз
+      // в день) — по образцу, который прислал пользователь: реальная
+      // кассовая книга, каждая операция своей строкой, остаток обновляется
+      // после каждой, а не сведён в одно число на весь день.
       var sorted = allEntries.slice().sort(function (a, b) {
         if (a.occurredAt !== b.occurredAt) return a.occurredAt < b.occurredAt ? -1 : 1;
         return new Date(a.insertedAt) - new Date(b.insertedAt);
       });
-      var runningByDate = {};
       var running = 0;
-      sorted.forEach(function (e) { running += e.amount; runningByDate[e.occurredAt] = running; });
+      sorted.forEach(function (e) { running += e.amount; e.balanceAfter = running; });
 
       var range = periodRange();
-      var visible = allEntries.filter(function (e) {
+      var visible = sorted.filter(function (e) {
         return (!range.from || e.occurredAt >= range.from) && (!range.to || e.occurredAt <= range.to);
       });
       if (!visible.length) { alert('За выбранный период нет записей по этому заводу.'); return; }
@@ -684,40 +687,6 @@
         }
       }
 
-      var byDate = {};
-      visible.forEach(function (e) {
-        var d = e.occurredAt;
-        if (!byDate[d]) byDate[d] = { expense: {}, income: {}, notes: [] };
-        // Сторно НЕ добавляем в колонки категорий — иначе на дату
-        // исправления это выглядело бы как ещё одна такая же операция (тот
-        // же Топливо/ЗП/…), хотя на самом деле это возврат денег в кассу.
-        // На "Текущий остаток" она и так уже повлияла (runningByDate
-        // считается по всем записям без исключения, см. выше) — тут только
-        // текстом, чтобы было видно, что и почему исправлено.
-        if (e.category === 'storno') {
-          var orig = e.stornoOfId && byId[e.stornoOfId];
-          var origLabel = orig ? (CATEGORY_LABELS[orig.category] || orig.category) : '';
-          byDate[d].notes.push('Сторно' + (origLabel ? ' (' + origLabel + ')' : '') + ': ' + (e.amount >= 0 ? '+' : '') + Format.fmtNum(e.amount, 2) + ' ₽' + (e.comment ? ' — ' + e.comment : ''));
-          return;
-        }
-        var bucket = e.type === 'income' ? byDate[d].income : byDate[d].expense;
-        bucket[e.category] = (bucket[e.category] || 0) + e.amount;
-        var noteBits = [];
-        // Привязка к заказу бетона — прямо в примечание (по отзыву
-        // пользователя): "Продажа бетона" сама по себе не требует ни чека,
-        // ни комментария (см. категорийные правила), так что без этого
-        // строка дохода в ведомости не несла бы вообще никакой конкретики,
-        // хотя заказ, к которому она привязана, известен.
-        if (e.orderId) {
-          var order = (State.data.orders || []).find(function (o) { return o.id === e.orderId; });
-          if (order) noteBits.push('заказ: ' + order.recipeName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + (order.clientName ? ' · ' + order.clientName : ''));
-        }
-        if (e.comment) noteBits.push(e.comment);
-        if (e.receiptPath) noteBits.push(receiptNameById[e.id] ? 'фото: ' + receiptNameById[e.id] : 'фото не загрузилось');
-        if (noteBits.length) byDate[d].notes.push((CATEGORY_LABELS[e.category] || e.category) + ' — ' + noteBits.join(', '));
-      });
-      var dates = Object.keys(byDate).sort();
-
       // Настоящий .xlsx (см. js/xlsx-writer.js) вместо HTML-таблицы под
       // видом .xls — по отзыву пользователя ("что-то наломано в экспорте"):
       // приём "HTML прикидывается книгой Excel" ненадёжен, Excel не всегда
@@ -734,13 +703,44 @@
         .concat(LEDGER_INCOME_COLUMNS.map(function (c) { return head(LEDGER_INCOME_LABELS[c], S.HEAD_INCOME); }))
         .concat(LEDGER_EXPENSE_COLUMNS.map(function (c) { return head(LEDGER_EXPENSE_LABELS[c], S.HEAD_EXPENSE); }))
         .concat([blankHead(S.HEAD_PLAIN), blankHead(S.HEAD_PLAIN)]);
-      var dataRows = dates.map(function (d) {
-        var g = byDate[d];
-        var row = [{ v: ledgerDateLabel(d), style: S.TEXT }];
-        LEDGER_INCOME_COLUMNS.forEach(function (c) { row.push({ v: g.income[c] ? Math.abs(g.income[c]) : '', num: true, style: S.NUM }); });
-        LEDGER_EXPENSE_COLUMNS.forEach(function (c) { row.push({ v: g.expense[c] ? Math.abs(g.expense[c]) : '', num: true, style: S.NUM }); });
-        row.push({ v: g.notes.join('; '), style: S.NOTE });
-        row.push({ v: runningByDate[d], num: true, style: S.NUM });
+      // Одна строка — одна операция (не один день): по образцу, который
+      // прислал пользователь — несколько операций в один день не сводятся
+      // в одну строку с суммой (раньше это выглядело так, будто часть
+      // записей "пропала", хотя их сумма была верна — просто конкретная
+      // операция без комментария/чека/заказа не оставляла в "Примечании"
+      // вообще никакого следа). Теперь у каждой операции своя строка и свой
+      // остаток сразу после неё.
+      var dataRows = visible.map(function (e) {
+        var income = {}, expense = {}, note;
+        if (e.category === 'storno') {
+          // Сторно — в ту сторону (приход/расход), куда реально сдвинулась
+          // касса, колонкой "Прочее" (не в колонку исходной категории —
+          // иначе выглядело бы как повторная такая же операция), с пометкой
+          // какую именно запись и почему исправили.
+          var orig = e.stornoOfId && byId[e.stornoOfId];
+          var origLabel = orig ? (CATEGORY_LABELS[orig.category] || orig.category) : '';
+          if (e.amount >= 0) income.other = Math.abs(e.amount); else expense.other = Math.abs(e.amount);
+          note = 'Сторно' + (origLabel ? ' (' + origLabel + ')' : '') + (e.comment ? ': ' + e.comment : '');
+        } else {
+          if (e.type === 'income') income[e.category] = Math.abs(e.amount); else expense[e.category] = Math.abs(e.amount);
+          var bits = [];
+          // Привязка к заказу бетона — прямо в примечание (по отзыву
+          // пользователя): "Продажа бетона" сама по себе не требует ни
+          // чека, ни комментария, так что без этого строка дохода не несла
+          // бы вообще никакой конкретики, хотя заказ известен.
+          if (e.orderId) {
+            var order = (State.data.orders || []).find(function (o) { return o.id === e.orderId; });
+            if (order) bits.push('заказ: ' + order.recipeName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + (order.clientName ? ' · ' + order.clientName : ''));
+          }
+          if (e.comment) bits.push(e.comment);
+          if (e.receiptPath) bits.push(receiptNameById[e.id] ? 'фото: ' + receiptNameById[e.id] : 'фото не загрузилось');
+          note = bits.join(', ');
+        }
+        var row = [{ v: ledgerDateLabel(e.occurredAt), style: S.TEXT }];
+        LEDGER_INCOME_COLUMNS.forEach(function (c) { row.push({ v: income[c] || '', num: true, style: S.NUM }); });
+        LEDGER_EXPENSE_COLUMNS.forEach(function (c) { row.push({ v: expense[c] || '', num: true, style: S.NUM }); });
+        row.push({ v: note, style: S.NOTE });
+        row.push({ v: e.balanceAfter, num: true, style: S.NUM });
         return row;
       });
 
