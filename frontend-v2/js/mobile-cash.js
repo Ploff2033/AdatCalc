@@ -42,10 +42,13 @@
       '</div>' +
     '</div>';
 
+  // Топливо/Автозапчасти — фото чека не обязательно (не везде дают чек), но
+  // поле всё равно показываем (receiptOptional), см. тот же приём в
+  // screen-cash.js.
   var EXPENSE_CATEGORIES = [
-    { id: 'fuel', label: 'Топливо', receiptRequired: true, commentRequired: false },
+    { id: 'fuel', label: 'Топливо', receiptRequired: false, receiptOptional: true, commentRequired: false },
     { id: 'salary', label: 'ЗП', receiptRequired: false, commentRequired: true },
-    { id: 'parts', label: 'Автозапчасти', receiptRequired: true, commentRequired: false },
+    { id: 'parts', label: 'Автозапчасти', receiptRequired: false, receiptOptional: true, commentRequired: false },
     { id: 'other', label: 'Другое', receiptRequired: false, commentRequired: true }
   ];
   var INCOME_CATEGORIES = [
@@ -108,11 +111,13 @@
     // Фото чека — поле целиком, а не только звёздочка "*" (см. тот же
     // приём и комментарий в screen-cash.js::applyCategoryRules): иначе на
     // телефоне работник видит поле даже для ЗП/Прочего, где чека не бывает
-    // вообще, и не понимает, обязательно оно или нет. Комментарий, по
-    // отдельному отзыву, наоборот не прячем никогда — уместен и как
-    // необязательный (например к топливу/запчастям), меняется только
+    // вообще, и не понимает, обязательно оно или нет. Показываем и когда
+    // обязательно (receiptRequired), и когда просто разрешено приложить
+    // (receiptOptional — Топливо/Автозапчасти: чек не везде дают, но если
+    // есть, пусть прикрепит). Комментарий, по отдельному отзыву, наоборот
+    // не прячем никогда — уместен и как необязательный, меняется только
     // звёздочка.
-    document.getElementById('mc-receipt-field').hidden = !(draftType === 'expense' && rule.receiptRequired);
+    document.getElementById('mc-receipt-field').hidden = !(draftType === 'expense' && (rule.receiptRequired || rule.receiptOptional));
     document.getElementById('mc-comment-req').hidden = !rule.commentRequired;
     var isOrder = draftCategory === 'concrete_sale';
     document.getElementById('mc-order-field').hidden = !isOrder;

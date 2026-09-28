@@ -7,10 +7,15 @@ const uploads = require('../uploads');
 // (MVP)", таблицы "Категории расхода"/"Категории дохода". Продублировано
 // на фронте (та же практика, что и с VAT_MULT в нескольких файлах уже) —
 // бэкенд остаётся источником истины для валидации.
+// Топливо/Автозапчасти — по отзыву пользователя фото чека больше не
+// обязательно ("не везде дают" — часть заправок/магазинов чек просто не
+// выдаёт): было receiptRequired: true, стало false. Поле в форме всё равно
+// показывается (см. receiptOptional во фронтовых копиях этой таблицы) —
+// просто не блокирует отправку записи при отсутствии фото.
 const EXPENSE_CATEGORIES = {
-  fuel: { label: 'Топливо', receiptRequired: true, commentRequired: false },
+  fuel: { label: 'Топливо', receiptRequired: false, commentRequired: false },
   salary: { label: 'ЗП', receiptRequired: false, commentRequired: true },
-  parts: { label: 'Автозапчасти', receiptRequired: true, commentRequired: false },
+  parts: { label: 'Автозапчасти', receiptRequired: false, commentRequired: false },
   other: { label: 'Другое', receiptRequired: false, commentRequired: true }
 };
 const INCOME_CATEGORIES = {

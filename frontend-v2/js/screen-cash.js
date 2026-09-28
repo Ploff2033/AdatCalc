@@ -62,10 +62,13 @@
   // Тот же справочник правил, что в backend/handlers/cash-entries.js —
   // бэкенд остаётся источником истины для валидации, тут только для UI
   // (какие поля показать/потребовать).
+  // Топливо/Автозапчасти — фото чека не обязательно (не везде дают чек), но
+  // поле всё равно показываем (receiptOptional) — можно приложить, если
+  // есть, просто не блокирует отправку записи при его отсутствии.
   var EXPENSE_CATEGORIES = [
-    { id: 'fuel', label: 'Топливо', receiptRequired: true, commentRequired: false },
+    { id: 'fuel', label: 'Топливо', receiptRequired: false, receiptOptional: true, commentRequired: false },
     { id: 'salary', label: 'ЗП', receiptRequired: false, commentRequired: true },
-    { id: 'parts', label: 'Автозапчасти', receiptRequired: true, commentRequired: false },
+    { id: 'parts', label: 'Автозапчасти', receiptRequired: false, receiptOptional: true, commentRequired: false },
     { id: 'other', label: 'Другое', receiptRequired: false, commentRequired: true }
   ];
   var INCOME_CATEGORIES = [
@@ -360,13 +363,16 @@
     var rule = categoryRule(draftType, draftCategory);
     // По отзыву пользователя: раньше поле "Фото чека" было видно всегда
     // (только звёздочка "*" появлялась/пропадала), непонятно было,
-    // обязательно оно или просто не нужно — "а то будут вопросы". Чек
-    // либо нужен категории, либо нет вообще (ЗП/Прочее/Продажа бетона) —
-    // поэтому поле целиком показываем только когда rule.receiptRequired.
-    // Комментарий — по отдельному отзыву — наоборот уместен всегда (даже
-    // необязательный, например "аванс за май" к топливу), поэтому его НЕ
-    // прячем, меняется только звёздочка "обязательно".
-    document.getElementById('c-f-receipt-field').hidden = !(draftType === 'expense' && rule.receiptRequired);
+    // обязательно оно или просто не нужно — "а то будут вопросы". Поле
+    // целиком показываем, когда категория его вообще предполагает —
+    // обязательно (receiptRequired) или просто разрешено приложить
+    // (receiptOptional, например Топливо/Автозапчасти: чек не везде дают,
+    // но если есть — пусть прикрепит); для ЗП/Прочего/Продажи бетона поле
+    // не показываем вообще. Звёздочка "*" — только когда реально
+    // обязательно. Комментарий — по отдельному отзыву — наоборот уместен
+    // всегда (даже необязательный, например "аванс за май" к топливу),
+    // поэтому его НЕ прячем, меняется только звёздочка "обязательно".
+    document.getElementById('c-f-receipt-field').hidden = !(draftType === 'expense' && (rule.receiptRequired || rule.receiptOptional));
     document.getElementById('c-f-comment-req').hidden = !rule.commentRequired;
     document.getElementById('c-f-order-field').hidden = draftCategory !== 'concrete_sale';
     if (draftCategory === 'concrete_sale') renderOrderPicker();
