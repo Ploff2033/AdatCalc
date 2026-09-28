@@ -26,6 +26,11 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/app/data
+      # Фото чеков ДДС (backend/uploads.js пишет их в backend/uploads/receipts
+      # внутри контейнера) — без этого тома пересборка/пересоздание
+      # контейнера (docker compose up -d --build) стирала бы все загруженные
+      # фото, файловая система контейнера сама по себе не сохраняется.
+      - ./uploads:/app/backend/uploads
     environment:
       - PORT=3000
       - HOST=0.0.0.0
