@@ -99,16 +99,30 @@
   var draftReceiptDataUrl = null; // новое фото, выбранное в этой сессии редактирования (ещё не отправлено)
   var draftReceiptCleared = false;
 
+  // Локальная календарная дата 'YYYY-MM-DD' БЕЗ ухода через UTC — тот же
+  // класс бага, что уже чинили в backend/db.js для DATE-колонок Postgres.
+  // .toISOString().slice(0,10) сначала переводит момент времени в UTC, а
+  // Москва на +3: с полуночи до ~3 утра МСК локальная календарная дата уже
+  // "сегодня", а её UTC-эквивалент — ещё "вчера". До этой правки periodRange()
+  // в это окно молча резал "to" на день назад, и записи, внесённые с утра,
+  // выпадали из выборки — ровно то, что нашёл пользователь ("не все записи
+  // экспортируется").
+  function localDateStr(d) {
+    d = d || new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
   function periodRange() {
     var now = new Date();
     if (periodValue === 'month') {
       var start = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { from: start.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+      return { from: localDateStr(start), to: localDateStr(now) };
     }
     if (periodValue === '30d') {
       var d = new Date(now);
       d.setDate(d.getDate() - 29);
-      return { from: d.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+      return { from: localDateStr(d), to: localDateStr(now) };
     }
     return { from: '', to: '' };
   }
@@ -152,10 +166,10 @@
   function dayLabel(occurredAt) {
     var d = new Date(occurredAt + 'T00:00:00');
     var now = new Date();
-    var todayStr = now.toISOString().slice(0, 10);
+    var todayStr = localDateStr(now);
     var y = new Date(now); y.setDate(y.getDate() - 1);
     if (occurredAt === todayStr) return 'Сегодня, ' + d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' });
-    if (occurredAt === y.toISOString().slice(0, 10)) return 'Вчера, ' + d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' });
+    if (occurredAt === localDateStr(y)) return 'Вчера, ' + d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' });
     return d.toLocaleDateString('ru-RU', { weekday: 'long', day: '2-digit', month: 'long' });
   }
   function timeLabel(insertedAt) { return new Date(insertedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
@@ -456,7 +470,7 @@
     renderPlantSelect(plantFilterValue || Plant.currentPlantId());
     setDraftType('expense');
     NumericInput.setFormattedValue(document.getElementById('c-f-amount'), '');
-    document.getElementById('c-f-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('c-f-date').value = localDateStr();
     document.getElementById('c-f-comment').value = '';
     resetReceiptField();
     document.getElementById('c-drawer').hidden = false;
@@ -758,7 +772,7 @@
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'dds-' + new Date().toISOString().slice(0, 10) + '.zip';
+      a.download = 'dds-' + localDateStr() + '.zip';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

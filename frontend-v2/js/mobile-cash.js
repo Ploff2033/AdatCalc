@@ -59,6 +59,16 @@
   EXPENSE_CATEGORIES.concat(INCOME_CATEGORIES).forEach(function (c) { CATEGORY_LABELS[c.id] = c.label; });
   CATEGORY_LABELS.storno = 'Сторно';
 
+  // Локальная календарная дата 'YYYY-MM-DD' без ухода через UTC — см. тот
+  // же приём и комментарий в screen-cash.js::localDateStr. new Date()
+  // .toISOString().slice(0,10) с полуночи до ~3 утра МСК тихо подставлял
+  // ВЧЕРАШНЮЮ дату в поле "Дата" новой записи (Москва — UTC+3).
+  function localDateStr(d) {
+    d = d || new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
   function categoriesFor(type) { return type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES; }
   function categoryRule(type, id) {
     var found = categoriesFor(type).filter(function (c) { return c.id === id; })[0];
@@ -193,7 +203,7 @@
     document.getElementById('mc-cancel-edit-btn').hidden = true;
     setDraftType('expense');
     NumericInput.setFormattedValue(document.getElementById('mc-cash-amount'), '');
-    document.getElementById('mc-cash-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('mc-cash-date').value = localDateStr();
     document.getElementById('mc-cash-comment').value = '';
     document.getElementById('mc-receipt-input').value = '';
     renderReceiptPreview(null, 'Нет фото', 'Прикрепите фото чека', 'Прикрепить');
@@ -378,7 +388,7 @@
       btn.addEventListener('click', function () { setDraftType(btn.dataset.type); });
     });
     NumericInput.attach(document.getElementById('mc-cash-amount'));
-    document.getElementById('mc-cash-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('mc-cash-date').value = localDateStr();
     document.getElementById('mc-receipt-btn').addEventListener('click', function () {
       document.getElementById('mc-receipt-input').click();
     });
