@@ -689,44 +689,71 @@
         var bucket = e.type === 'income' ? byDate[d].income : byDate[d].expense;
         bucket[e.category] = (bucket[e.category] || 0) + e.amount;
         var noteBits = [];
+        // Привязка к заказу бетона — прямо в примечание (по отзыву
+        // пользователя): "Продажа бетона" сама по себе не требует ни чека,
+        // ни комментария (см. категорийные правила), так что без этого
+        // строка дохода в ведомости не несла бы вообще никакой конкретики,
+        // хотя заказ, к которому она привязана, известен.
+        if (e.orderId) {
+          var order = (State.data.orders || []).find(function (o) { return o.id === e.orderId; });
+          if (order) noteBits.push('заказ: ' + order.recipeName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + (order.clientName ? ' · ' + order.clientName : ''));
+        }
         if (e.comment) noteBits.push(e.comment);
         if (e.receiptPath) noteBits.push(receiptNameById[e.id] ? 'фото: ' + receiptNameById[e.id] : 'фото не загрузилось');
         if (noteBits.length) byDate[d].notes.push((CATEGORY_LABELS[e.category] || e.category) + ' — ' + noteBits.join(', '));
       });
       var dates = Object.keys(byDate).sort();
 
-      function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-      function money(n) { return n ? (Math.round(Math.abs(n) * 100) / 100).toString().replace('.', ',') : ''; }
-
-      var rowsHtml = dates.map(function (d) {
+      // Настоящий .xlsx (см. js/xlsx-writer.js) вместо HTML-таблицы под
+      // видом .xls — по отзыву пользователя ("что-то наломано в экспорте"):
+      // приём "HTML прикидывается книгой Excel" ненадёжен, Excel не всегда
+      // корректно его открывает. Двухуровневая шапка — через настоящие
+      // merge-ячейки, суммы — настоящие числа (формат "#,##0.00"), а не
+      // текстовые строки с запятой вместо точки.
+      var S = XlsxWriter.STYLE;
+      var head = function (v, style) { return { v: v, style: style }; };
+      var blankHead = function (style) { return { v: '', style: style }; };
+      var row1 = [head('Дата', S.HEAD_PLAIN), head('Приход наличными', S.HEAD_INCOME), blankHead(S.HEAD_INCOME),
+        head('Расход наличных', S.HEAD_EXPENSE), blankHead(S.HEAD_EXPENSE), blankHead(S.HEAD_EXPENSE), blankHead(S.HEAD_EXPENSE),
+        head('Примечание', S.HEAD_PLAIN), head('Текущий остаток', S.HEAD_PLAIN)];
+      var row2 = [blankHead(S.HEAD_PLAIN)]
+        .concat(LEDGER_INCOME_COLUMNS.map(function (c) { return head(LEDGER_INCOME_LABELS[c], S.HEAD_INCOME); }))
+        .concat(LEDGER_EXPENSE_COLUMNS.map(function (c) { return head(LEDGER_EXPENSE_LABELS[c], S.HEAD_EXPENSE); }))
+        .concat([blankHead(S.HEAD_PLAIN), blankHead(S.HEAD_PLAIN)]);
+      var dataRows = dates.map(function (d) {
         var g = byDate[d];
-        var cells = [ledgerDateLabel(d)];
-        LEDGER_INCOME_COLUMNS.forEach(function (c) { cells.push(money(g.income[c])); });
-        LEDGER_EXPENSE_COLUMNS.forEach(function (c) { cells.push(money(g.expense[c])); });
-        cells.push(esc(g.notes.join('; ')));
-        cells.push(money(runningByDate[d]));
-        return '<tr>' + cells.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
-      }).join('');
+        var row = [{ v: ledgerDateLabel(d), style: S.TEXT }];
+        LEDGER_INCOME_COLUMNS.forEach(function (c) { row.push({ v: g.income[c] ? Math.abs(g.income[c]) : '', num: true, style: S.NUM }); });
+        LEDGER_EXPENSE_COLUMNS.forEach(function (c) { row.push({ v: g.expense[c] ? Math.abs(g.expense[c]) : '', num: true, style: S.NUM }); });
+        row.push({ v: g.notes.join('; '), style: S.NOTE });
+        row.push({ v: runningByDate[d], num: true, style: S.NUM });
+        return row;
+      });
 
-      var html =
-        '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' +
-        '<head><meta charset="utf-8"><style>' +
-        'td,th{font-family:Calibri,Arial,sans-serif;font-size:12px;padding:4px 6px;border:1px solid #999}' +
-        'th{text-align:center;font-weight:bold}' +
-        '.inc{background:#C6E0B4}.exp{background:#F8CBAD;color:#843C0C}' +
-        '</style></head><body><table border="1" cellspacing="0">' +
-        '<thead><tr>' +
-          '<th rowspan="2">Дата</th>' +
-          '<th class="inc" colspan="' + LEDGER_INCOME_COLUMNS.length + '">Приход наличными</th>' +
-          '<th class="exp" colspan="' + LEDGER_EXPENSE_COLUMNS.length + '">Расход наличных</th>' +
-          '<th rowspan="2">Примечание</th>' +
-          '<th rowspan="2">Текущий остаток</th>' +
-        '</tr><tr>' +
-          LEDGER_INCOME_COLUMNS.map(function (c) { return '<th class="inc">' + LEDGER_INCOME_LABELS[c] + '</th>'; }).join('') +
-          LEDGER_EXPENSE_COLUMNS.map(function (c) { return '<th class="exp">' + LEDGER_EXPENSE_LABELS[c] + '</th>'; }).join('') +
-        '</tr></thead><tbody>' + rowsHtml + '</tbody></table></body></html>';
+      var xlsxBlob = XlsxWriter.build({
+        sheetName: 'ДДС',
+        rows: [row1, row2].concat(dataRows),
+        merges: ['A1:A2', 'B1:C1', 'D1:G1', 'H1:H2', 'I1:I2'],
+        colWidths: [12, 16, 12, 12, 12, 20, 12, 42, 14]
+      });
+      var xlsxName = 'ДДС ' + folderName + '.xlsx';
 
-      zipFiles.unshift({ name: 'ДДС ' + folderName + '.xls', data: new TextEncoder().encode('﻿' + html) });
+      // Если фото прикладывать не к чему — отдаём сразу .xlsx без лишней
+      // обёртки в .zip (по отзыву "сделай просто xlsx"); zip нужен только
+      // когда реально есть чек, который нужно приложить рядом файлом.
+      if (!zipFiles.length) {
+        var url1 = URL.createObjectURL(xlsxBlob);
+        var a1 = document.createElement('a');
+        a1.href = url1;
+        a1.download = xlsxName;
+        document.body.appendChild(a1);
+        a1.click();
+        document.body.removeChild(a1);
+        URL.revokeObjectURL(url1);
+        return;
+      }
+      var xlsxBytes = new Uint8Array(await xlsxBlob.arrayBuffer());
+      zipFiles.unshift({ name: xlsxName, data: xlsxBytes });
       var blob = ZipWriter.build(zipFiles);
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
