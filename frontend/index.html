@@ -119,15 +119,15 @@
       <div class="config-grid">
         <div class="field-group">
           <label for="fuel-price-default" id="fuel-price-default-label">Цена топлива</label>
-          <div class="field"><input type="number" id="fuel-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
+          <div class="field"><input type="text" id="fuel-price-default" min="0" step="any" inputmode="decimal"><span class="unit">₽/л</span></div>
         </div>
         <div class="field-group">
           <label for="urea-price-default" id="urea-price-default-label">Цена мочевины (AdBlue)</label>
-          <div class="field"><input type="number" id="urea-price-default" min="0" step="any"><span class="unit">₽/л</span></div>
+          <div class="field"><input type="text" id="urea-price-default" min="0" step="any" inputmode="decimal"><span class="unit">₽/л</span></div>
         </div>
         <div class="field-group">
           <label for="neighbor-city-surcharge" id="neighbor-city-surcharge-label">Надбавка за рейс в другой город</label>
-          <div class="field"><input type="number" id="neighbor-city-surcharge" min="0" step="any"><span class="unit">₽/рейс</span></div>
+          <div class="field"><input type="text" id="neighbor-city-surcharge" min="0" step="any" inputmode="decimal"><span class="unit">₽/рейс</span></div>
         </div>
       </div>
       <p class="hint">Все три поля — для завода, выбранного сверху: цена топлива/мочевины используется в расчётах доставки (бетона и инертных), надбавка — доплата водителю за рейс в соседний город, применяется на Главной по чекбоксу.</p>
@@ -187,7 +187,7 @@
             </div>
             <div class="field-group">
               <label for="sale-volume">Объём заказа</label>
-              <div class="field"><input type="number" id="sale-volume" min="0" step="any" inputmode="decimal"><span class="unit">м³</span></div>
+              <div class="field"><input type="text" id="sale-volume" min="0" step="any" inputmode="decimal"><span class="unit">м³</span></div>
             </div>
           </div>
 
@@ -223,7 +223,7 @@
 
           <div class="field-group">
             <label for="dist">Расстояние (в одну сторону)</label>
-            <div class="field"><input type="number" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
+            <div class="field"><input type="text" id="dist" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
           </div>
 
           <div class="field-group">
@@ -706,7 +706,7 @@
       </div>
       <div class="field-group">
         <label for="material-loss">Потери при хранении/дозировке</label>
-        <div class="field"><input type="number" id="material-loss" min="0" step="any" value="0"><span class="unit">%</span></div>
+        <div class="field"><input type="text" id="material-loss" min="0" step="any" value="0" inputmode="decimal"><span class="unit">%</span></div>
       </div>
     </div>
 
@@ -720,7 +720,7 @@
     <div id="material-delivery-manual-field">
       <div class="field-group">
         <label for="material-delivery-manual-cost">Стоимость доставки за единицу</label>
-        <div class="field"><input type="number" id="material-delivery-manual-cost" min="0" step="any" value="0"><span class="unit" id="material-delivery-manual-unit">₽/т</span></div>
+        <div class="field"><input type="text" id="material-delivery-manual-cost" min="0" step="any" value="0" inputmode="decimal"><span class="unit" id="material-delivery-manual-unit">₽/т</span></div>
       </div>
     </div>
 
@@ -818,7 +818,7 @@
     </div>
     <div class="field-group">
       <label for="mixer-capacity">Объём кузова (обычно до 10 м³)</label>
-      <div class="field"><input type="number" id="mixer-capacity" min="0" step="any" required><span class="unit">м³</span></div>
+      <div class="field"><input type="text" id="mixer-capacity" min="0" step="any" required inputmode="decimal"><span class="unit">м³</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-balance">Балансовая стоимость</label>
@@ -830,23 +830,23 @@
     </div>
     <div class="field-group">
       <label for="mixer-mileage">Нормативный пробег до списания</label>
-      <div class="field"><input type="number" id="mixer-mileage" min="0" step="any" required><span class="unit">км</span></div>
+      <div class="field"><input type="text" id="mixer-mileage" min="0" step="any" required inputmode="decimal"><span class="unit">км</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-fuel-rate">Расход топлива</label>
-      <div class="field"><input type="number" id="mixer-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
+      <div class="field"><input type="text" id="mixer-fuel-rate" min="0" step="any" required inputmode="decimal"><span class="unit">л/100км</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-urea-rate">Расход мочевины (AdBlue)</label>
-      <div class="field"><input type="number" id="mixer-urea-rate" min="0" step="any" value="0"><span class="unit">л/100км</span></div>
+      <div class="field"><input type="text" id="mixer-urea-rate" min="0" step="any" value="0" inputmode="decimal"><span class="unit">л/100км</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-platon-rate">Платон</label>
-      <div class="field"><input type="number" id="mixer-platon-rate" min="0" step="any" value="0"><span class="unit">₽/км</span></div>
+      <div class="field"><input type="text" id="mixer-platon-rate" min="0" step="any" value="0" inputmode="decimal"><span class="unit">₽/км</span></div>
     </div>
     <div class="field-group">
       <label for="mixer-odometer-baseline">Начальный одометр (для путевых листов)</label>
-      <div class="field"><input type="number" id="mixer-odometer-baseline" min="0" step="any" value="0"><span class="unit">км</span></div>
+      <div class="field"><input type="text" id="mixer-odometer-baseline" min="0" step="any" value="0" inputmode="decimal"><span class="unit">км</span></div>
     </div>
     <p class="dialog-error" id="mixer-dialog-error" hidden></p>
     <div class="dialog-actions">
@@ -866,7 +866,7 @@
     </div>
     <div class="field-group">
       <label for="aggregate-truck-capacity">Грузоподъёмность</label>
-      <div class="field"><input type="number" id="aggregate-truck-capacity" min="0" step="any" required><span class="unit">т</span></div>
+      <div class="field"><input type="text" id="aggregate-truck-capacity" min="0" step="any" required inputmode="decimal"><span class="unit">т</span></div>
     </div>
     <div class="field-group">
       <label for="aggregate-truck-balance">Балансовая стоимость</label>
@@ -878,19 +878,19 @@
     </div>
     <div class="field-group">
       <label for="aggregate-truck-mileage">Нормативный пробег до списания</label>
-      <div class="field"><input type="number" id="aggregate-truck-mileage" min="0" step="any" required><span class="unit">км</span></div>
+      <div class="field"><input type="text" id="aggregate-truck-mileage" min="0" step="any" required inputmode="decimal"><span class="unit">км</span></div>
     </div>
     <div class="field-group">
       <label for="aggregate-truck-fuel-rate">Расход топлива</label>
-      <div class="field"><input type="number" id="aggregate-truck-fuel-rate" min="0" step="any" required><span class="unit">л/100км</span></div>
+      <div class="field"><input type="text" id="aggregate-truck-fuel-rate" min="0" step="any" required inputmode="decimal"><span class="unit">л/100км</span></div>
     </div>
     <div class="field-group">
       <label for="aggregate-truck-urea-rate">Расход мочевины (AdBlue)</label>
-      <div class="field"><input type="number" id="aggregate-truck-urea-rate" min="0" step="any" value="0"><span class="unit">л/100км</span></div>
+      <div class="field"><input type="text" id="aggregate-truck-urea-rate" min="0" step="any" value="0" inputmode="decimal"><span class="unit">л/100км</span></div>
     </div>
     <div class="field-group">
       <label for="aggregate-truck-platon-rate">Платон</label>
-      <div class="field"><input type="number" id="aggregate-truck-platon-rate" min="0" step="any" value="0"><span class="unit">₽/км</span></div>
+      <div class="field"><input type="text" id="aggregate-truck-platon-rate" min="0" step="any" value="0" inputmode="decimal"><span class="unit">₽/км</span></div>
     </div>
     <p class="dialog-error" id="aggregate-truck-dialog-error" hidden></p>
     <div class="dialog-actions">
@@ -942,7 +942,7 @@
 <template id="recipe-item-row-template">
   <div class="recipe-item-row">
     <select class="select recipe-item-material"></select>
-    <div class="field"><input type="number" class="recipe-item-qty" min="0" step="any" inputmode="decimal"><span class="unit">на м³</span></div>
+    <div class="field"><input type="text" class="recipe-item-qty" min="0" step="any" inputmode="decimal"><span class="unit">на м³</span></div>
     <div class="recipe-item-cost">—</div>
     <button type="button" class="icon-btn recipe-item-remove" title="Удалить компонент">✕</button>
   </div>
