@@ -79,7 +79,7 @@
 
   async function saveDriverShiftHours() {
     try {
-      await Api.put('/config', { driverShiftHours: parseFloat(driverShiftHoursInput.value) || 0 });
+      await Api.put('/config', { driverShiftHours: NumericInput.parseNumber(driverShiftHoursInput.value) || 0 });
       await State.loadAll();
     } catch (err) {
       alert('Не удалось сохранить дневной лимит водителя: ' + err.message);
@@ -88,7 +88,7 @@
 
   function renderDriverShiftHours() {
     if (document.activeElement === driverShiftHoursInput) return;
-    driverShiftHoursInput.value = State.data.config.driverShiftHours || 0;
+    NumericInput.setFormattedValue(driverShiftHoursInput, State.data.config.driverShiftHours || 0);
   }
 
   var vehicleShiftHoursInput = document.getElementById('vehicle-shift-hours');
@@ -101,7 +101,7 @@
 
   async function saveVehicleShiftHours() {
     try {
-      await Api.put('/config', { vehicleShiftHours: parseFloat(vehicleShiftHoursInput.value) || 0 });
+      await Api.put('/config', { vehicleShiftHours: NumericInput.parseNumber(vehicleShiftHoursInput.value) || 0 });
       await State.loadAll();
     } catch (err) {
       alert('Не удалось сохранить дневной лимит машины: ' + err.message);
@@ -110,7 +110,7 @@
 
   function renderVehicleShiftHours() {
     if (document.activeElement === vehicleShiftHoursInput) return;
-    vehicleShiftHoursInput.value = State.data.config.vehicleShiftHours || 0;
+    NumericInput.setFormattedValue(vehicleShiftHoursInput, State.data.config.vehicleShiftHours || 0);
   }
 
   var avgSpeedInput = document.getElementById('avg-speed-kmh');
@@ -123,7 +123,7 @@
 
   async function saveAvgSpeed() {
     try {
-      await Api.put('/config', { avgSpeedKmh: parseFloat(avgSpeedInput.value) || 0 });
+      await Api.put('/config', { avgSpeedKmh: NumericInput.parseNumber(avgSpeedInput.value) || 0 });
       await State.loadAll();
     } catch (err) {
       alert('Не удалось сохранить среднюю скорость: ' + err.message);
@@ -132,7 +132,7 @@
 
   function renderAvgSpeed() {
     if (document.activeElement === avgSpeedInput) return;
-    avgSpeedInput.value = State.data.config.avgSpeedKmh || 0;
+    NumericInput.setFormattedValue(avgSpeedInput, State.data.config.avgSpeedKmh || 0);
   }
 
   var unloadMinutesInput = document.getElementById('unload-minutes');
@@ -145,7 +145,7 @@
 
   async function saveUnloadMinutes() {
     try {
-      await Api.put('/config', { unloadMinutes: parseFloat(unloadMinutesInput.value) || 0 });
+      await Api.put('/config', { unloadMinutes: NumericInput.parseNumber(unloadMinutesInput.value) || 0 });
       await State.loadAll();
     } catch (err) {
       alert('Не удалось сохранить время разгрузки: ' + err.message);
@@ -154,7 +154,7 @@
 
   function renderUnloadMinutes() {
     if (document.activeElement === unloadMinutesInput) return;
-    unloadMinutesInput.value = State.data.config.unloadMinutes || 0;
+    NumericInput.setFormattedValue(unloadMinutesInput, State.data.config.unloadMinutes || 0);
   }
 
   // ---- "01 Не распределено" ----
@@ -477,6 +477,15 @@
   }
 
   function init() {
+    // Раньше type="number" без маски — по просьбе пользователя ("точка
+    // конвертируется в запятую") и вдогонку тому же классу бага
+    // (setSelectionRange/value молча стирались на type="number"), перевели
+    // на type="text" + NumericInput, как и остальные поля с деньгами/
+    // объёмами в приложении.
+    NumericInput.attach(driverShiftHoursInput);
+    NumericInput.attach(vehicleShiftHoursInput);
+    NumericInput.attach(avgSpeedInput);
+    NumericInput.attach(unloadMinutesInput);
     driverShiftHoursInput.addEventListener('input', scheduleDriverShiftHoursSave);
     vehicleShiftHoursInput.addEventListener('input', scheduleVehicleShiftHoursSave);
     avgSpeedInput.addEventListener('input', scheduleAvgSpeedSave);

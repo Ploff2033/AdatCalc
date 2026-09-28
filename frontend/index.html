@@ -62,7 +62,7 @@
       <div class="config-grid">
         <div class="field-group">
           <label for="cfg-target-output">Целевая выработка в месяц</label>
-          <div class="field"><input type="number" id="cfg-target-output" min="0" step="any" inputmode="decimal"><span class="unit">м³</span></div>
+          <div class="field"><input type="text" id="cfg-target-output" min="0" step="any" inputmode="decimal"><span class="unit">м³</span></div>
         </div>
         <div class="field-group">
           <label for="cfg-utilities">Коммунальные платежи</label>
@@ -78,7 +78,7 @@
         </div>
         <div class="field-group">
           <label for="cfg-depr-lifespan">Срок службы до списания</label>
-          <div class="field"><input type="number" id="cfg-depr-lifespan" min="0" step="any" inputmode="decimal"><span class="unit">мес</span></div>
+          <div class="field"><input type="text" id="cfg-depr-lifespan" min="0" step="any" inputmode="decimal"><span class="unit">мес</span></div>
         </div>
       </div>
 
@@ -529,19 +529,19 @@
       <div class="config-grid">
         <div class="field-group">
           <label for="driver-shift-hours">Дневной лимит водителя</label>
-          <div class="field"><input type="number" id="driver-shift-hours" min="0" step="any"><span class="unit">ч/день</span></div>
+          <div class="field"><input type="text" id="driver-shift-hours" min="0" step="any" inputmode="decimal"><span class="unit">ч/день</span></div>
         </div>
         <div class="field-group">
           <label for="vehicle-shift-hours">Дневной лимит машины</label>
-          <div class="field"><input type="number" id="vehicle-shift-hours" min="0" step="any"><span class="unit">ч/день</span></div>
+          <div class="field"><input type="text" id="vehicle-shift-hours" min="0" step="any" inputmode="decimal"><span class="unit">ч/день</span></div>
         </div>
         <div class="field-group">
           <label for="avg-speed-kmh">Средняя скорость</label>
-          <div class="field"><input type="number" id="avg-speed-kmh" min="0" step="any"><span class="unit">км/ч</span></div>
+          <div class="field"><input type="text" id="avg-speed-kmh" min="0" step="any" inputmode="decimal"><span class="unit">км/ч</span></div>
         </div>
         <div class="field-group">
           <label for="unload-minutes">Время разгрузки</label>
-          <div class="field"><input type="number" id="unload-minutes" min="0" step="any"><span class="unit">мин/рейс</span></div>
+          <div class="field"><input type="text" id="unload-minutes" min="0" step="any" inputmode="decimal"><span class="unit">мин/рейс</span></div>
         </div>
       </div>
       <p class="hint">Используется ниже для проверки дневных лимитов водителя/машины и кнопки MAX — время на рейс считается как (расстояние×2 ÷ скорость) + время разгрузки.</p>
@@ -732,20 +732,20 @@
       <div class="two-col">
         <div class="field-group">
           <label for="material-delivery-distance">Расстояние до карьера/поставщика (в одну сторону)</label>
-          <div class="field"><input type="number" id="material-delivery-distance" min="0" step="any"><span class="unit">км</span></div>
+          <div class="field"><input type="text" id="material-delivery-distance" min="0" step="any" inputmode="decimal"><span class="unit">км</span></div>
         </div>
         <div class="field-group">
           <label for="material-delivery-fuel-price">Цена топлива</label>
-          <div class="field"><input type="number" id="material-delivery-fuel-price" min="0" step="any"><span class="unit">₽/л</span></div>
+          <div class="field"><input type="text" id="material-delivery-fuel-price" min="0" step="any" inputmode="decimal"><span class="unit">₽/л</span></div>
         </div>
       </div>
       <div class="field-group">
         <label for="material-delivery-urea-price">Цена мочевины (AdBlue)</label>
-        <div class="field"><input type="number" id="material-delivery-urea-price" min="0" step="any"><span class="unit">₽/л</span></div>
+        <div class="field"><input type="text" id="material-delivery-urea-price" min="0" step="any" inputmode="decimal"><span class="unit">₽/л</span></div>
       </div>
       <div class="field-group">
         <label for="material-delivery-surcharge">Доплата водителю за рейс</label>
-        <div class="field"><input type="number" id="material-delivery-surcharge" min="0" step="any"><span class="unit">₽</span></div>
+        <div class="field"><input type="text" id="material-delivery-surcharge" min="0" step="any" inputmode="decimal"><span class="unit">₽</span></div>
       </div>
 
       <div class="breakdown compact">

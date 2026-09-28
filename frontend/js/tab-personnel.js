@@ -17,7 +17,13 @@
   }
 
   var configIds = ['cfg-target-output', 'cfg-utilities', 'cfg-depr-balance', 'cfg-depr-residual', 'cfg-depr-lifespan'];
-  var moneyConfigIds = ['cfg-utilities', 'cfg-depr-balance', 'cfg-depr-residual'];
+  // Раньше только 3 из 5 — cfg-target-output/cfg-depr-lifespan были
+  // type="number" и НЕ получали маску (см. index.html), поэтому
+  // setIfNotFocused() ниже уже вызывал NumericInput.setFormattedValue() на
+  // них, но браузер тихо стирал значение при группировке разрядов/дробной
+  // части (та же природа бага, что чинили для sale-volume и др.) — теперь
+  // оба type="text", маска нужна на всех пяти.
+  var moneyConfigIds = configIds;
   var configSaveTimer = null;
 
   function openForCreate(plantId) {
@@ -157,12 +163,12 @@
     if (!plant) return;
     var payload = {
       name: plant.name,
-      targetOutput: parseFloat(document.getElementById('cfg-target-output').value) || 0,
+      targetOutput: NumericInput.parseNumber(document.getElementById('cfg-target-output').value) || 0,
       utilitiesMonthly: NumericInput.parseNumber(document.getElementById('cfg-utilities').value) || 0,
       plantDepr: {
         balance: NumericInput.parseNumber(document.getElementById('cfg-depr-balance').value) || 0,
         residual: NumericInput.parseNumber(document.getElementById('cfg-depr-residual').value) || 0,
-        lifespanMonths: parseFloat(document.getElementById('cfg-depr-lifespan').value) || 0
+        lifespanMonths: NumericInput.parseNumber(document.getElementById('cfg-depr-lifespan').value) || 0
       }
     };
     try {
