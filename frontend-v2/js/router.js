@@ -37,7 +37,9 @@
   // 'cash' (ДДС) намеренно НЕ в этом списке — открыт всем, включая
   // анонимного работника по токену (см. app.js — с 25.09.2026 его ссылка
   // ведёт сюда же, в v2), это и есть основной сценарий модуля.
-  var MIN_ROLE = { dashboard: 'admin', waybills: 'manager', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager', stock: 'manager' };
+  // waybills — по просьбе пользователя сужено с manager+ до admin-only (см.
+  // тот же комментарий в shell.js::applyRoleVisibility).
+  var MIN_ROLE = { dashboard: 'admin', waybills: 'admin', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager', stock: 'manager' };
   var current = null;
 
   function routeFromHash() {

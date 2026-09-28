@@ -120,29 +120,39 @@
     document.getElementById('mo-empty').hidden = orders.length > 0;
     var container = document.getElementById('mo-list');
     var threshold = (State.data.config && State.data.config.rentabilityThresholdPercent) || 0;
+    // «Путевые листы» теперь admin-only (см. router.js/shell.js) — по
+    // просьбе пользователя не-админу вместо статуса распределения рейсов
+    // (и самой кнопки перехода на теперь недоступный ему раздел) показываем
+    // НДС/без НДС — то, что ему реально нужно и доступно.
+    var isAdmin = Auth.isAtLeast('admin');
     container.innerHTML = orders.map(function (o) {
       var st = statusFor(o);
       var remaining = o.tripCount ? WaybillCalc.remainingForOrder(State.data.waybillEntries || [], o) : 0;
       var allocated = o.tripCount ? WaybillCalc.allocatedForOrder(State.data.waybillEntries || [], o.id) : 0;
       var canCancel = !o.cancelledAt && allocated === 0;
       var canEditDate = Auth.isAtLeast('manager');
+      var canGoToWaybills = isAdmin && remaining > 0;
       var belowThreshold = !o.cancelledAt && threshold > 0 && o.totalMarginPercent < threshold;
       var time = new Date(o.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       var meta = [o.clientName || 'Без клиента', Format.fmtNum(o.saleVolume, 1, 'м³'), Format.fmtNum(o.distanceKm, 0, 'км')];
       if (o.neighborCity) meta.push('соседний город');
-      if (o.vatApplied) meta.push('с НДС');
+      // НДС уже вынесен в основной бейдж для не-админа (см. badge ниже) —
+      // тут дублировать незачем, а админу он тут по-прежнему нужен, раз его
+      // бейдж занят статусом рейсов.
+      if (isAdmin && o.vatApplied) meta.push('с НДС');
       var rentColor = (o.totalMarginPercent || 0) >= 0 ? '#1C1D1B' : '#8C2217';
+      var badge = isAdmin ? st : (o.vatApplied ? { cls: 'act', label: 'с НДС' } : { cls: 'mute', label: 'без НДС' });
       return '<article class="card stack g8" style="padding:12px 14px;' + (belowThreshold ? 'background:var(--act-bg);' : '') + (o.cancelledAt ? 'opacity:.6;' : '') + '" data-order-id="' + o.id + '">' +
-        '<div class="spread" style="align-items:center;gap:8px"><span style="font-weight:600">' + o.recipeName + ' <span class="num hint" style="font-weight:400">' + time + '</span></span><span class="chip ' + st.cls + '">' + st.label + '</span></div>' +
+        '<div class="spread" style="align-items:center;gap:8px"><span style="font-weight:600">' + o.recipeName + ' <span class="num hint" style="font-weight:400">' + time + '</span></span><span class="chip ' + badge.cls + '">' + badge.label + '</span></div>' +
         '<span class="hint">' + meta.join(' · ') + '</span>' +
         '<div style="display:grid;grid-template-columns:1.5fr 1fr auto;gap:8px;padding-top:8px;border-top:1px solid var(--border-soft)">' +
           '<div class="stack"><span class="cap" style="font-size:10px">К оплате</span><span class="num" style="font-size:15px;font-weight:600;white-space:nowrap">' + Format.fmt(o.totalRevenue, 0) + '</span></div>' +
           '<div class="stack"><span class="cap" style="font-size:10px">Прибыль</span><span class="num" style="font-size:14px;font-weight:600;white-space:nowrap">' + Format.fmt(o.totalProfit, 0) + '</span></div>' +
           '<div class="stack" style="align-items:flex-end"><span class="cap" style="font-size:10px">Рент.</span><span class="num" style="font-size:14px;font-weight:600;color:' + rentColor + '">' + Format.fmtNum(o.totalMarginPercent, 1, '%') + '</span></div>' +
         '</div>' +
-        (o.tripCount && !o.cancelledAt ? '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><span style="width:' + st.pct + '%;background:var(--ink)"></span></div><span class="num hint">' + allocated + ' из ' + o.tripCount + ' рейс(ов)</span></div>' : '') +
-        ((remaining > 0 || canCancel || canEditDate) ? '<div style="display:grid;grid-template-columns:repeat(' + [remaining > 0, canCancel, canEditDate].filter(Boolean).length + ',1fr);gap:8px">' +
-          (remaining > 0 ? '<a href="#/waybills" class="btn sm" style="height:44px">Распределить рейсы</a>' : '') +
+        (isAdmin && o.tripCount && !o.cancelledAt ? '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><span style="width:' + st.pct + '%;background:var(--ink)"></span></div><span class="num hint">' + allocated + ' из ' + o.tripCount + ' рейс(ов)</span></div>' : '') +
+        ((canGoToWaybills || canCancel || canEditDate) ? '<div style="display:grid;grid-template-columns:repeat(' + [canGoToWaybills, canCancel, canEditDate].filter(Boolean).length + ',1fr);gap:8px">' +
+          (canGoToWaybills ? '<a href="#/waybills" class="btn sm" style="height:44px">Распределить рейсы</a>' : '') +
           (canEditDate ? '<button type="button" class="btn ghost sm o-date-btn" style="height:44px">Дата</button>' : '') +
           (canCancel ? '<button type="button" class="btn ghost sm o-cancel-btn" style="height:44px;color:#8C2217;border-color:#E3B8B1">Отменить</button>' : '') +
         '</div>' : '') +
