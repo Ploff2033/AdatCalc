@@ -26,9 +26,15 @@
     });
     select.value = current ? current.id : '';
     // Переключатель имеет смысл, только если реально есть выбор — как в v1
-    // (см. plant-switcher.js): >1 завода и роль хотя бы менеджера. Иначе —
-    // тот же select, просто disabled, чтобы завод всё равно было видно.
-    select.disabled = !(Auth.isAtLeast('manager') && plants.length > 1);
+    // (см. plant-switcher.js): >1 завода И (роль хотя бы менеджера ИЛИ это
+    // универсальная ссылка подмены — Plant.isUniversal()). Второе условие
+    // при портировании в v2 потерялось: универсальный токен (подмена
+    // работника другого завода на время отпуска/больничного) давал
+    // Auth.isAtLeast('manager') === false (роль всё ещё null), поэтому
+    // select оставался disabled всегда — реальный баг, найден пользователем
+    // ("на универсальной ссылке нельзя менять завод"). Иначе — тот же
+    // select, просто disabled, чтобы завод всё равно было видно.
+    select.disabled = !((Auth.isAtLeast('manager') || Plant.isUniversal()) && plants.length > 1);
   }
 
   function applyRoleVisibility() {
