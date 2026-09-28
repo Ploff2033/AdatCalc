@@ -22,19 +22,30 @@
     return negative ? '-' + stripped : stripped;
   }
 
-  function countDigitsBefore(str, pos) {
+  // Считаем не только цифры, но и сам разделитель дробной части как один
+  // "юнит" — иначе позицию курсора сразу после только что введённой запятой
+  // невозможно отличить от позиции прямо перед следующей цифрой (у обеих
+  // одинаковое "число цифр до курсора"), и после переформатирования курсор
+  // откатывался на один символ назад — запятая визуально оказывалась как
+  // бы "после" курсора, а не там, где её напечатали. Баг был и в v1, и в
+  // v2 (общий модуль).
+  function countUnitsBefore(str, pos) {
     var count = 0;
+    var seenSeparator = false;
     for (var i = 0; i < pos && i < str.length; i++) {
-      if (/[0-9]/.test(str[i])) count++;
+      var ch = str[i];
+      if (/[0-9]/.test(ch)) count++;
+      else if ((ch === ',' || ch === '.') && !seenSeparator) { count++; seenSeparator = true; }
     }
     return count;
   }
 
-  function positionAfterNDigits(str, n) {
+  function positionAfterNUnits(str, n) {
     if (n <= 0) return 0;
     var count = 0;
     for (var i = 0; i < str.length; i++) {
-      if (/[0-9]/.test(str[i])) count++;
+      var ch = str[i];
+      if (/[0-9]/.test(ch) || ch === ',') count++;
       if (count === n) return i + 1;
     }
     return str.length;
@@ -60,10 +71,10 @@
     input.addEventListener('input', function (e) {
       var el = e.target;
       var caret = el.selectionStart == null ? el.value.length : el.selectionStart;
-      var digitsBefore = countDigitsBefore(el.value, caret);
+      var unitsBefore = countUnitsBefore(el.value, caret);
       var formatted = formatDisplay(toRawInputString(el.value));
       el.value = formatted;
-      var newCaret = positionAfterNDigits(formatted, digitsBefore);
+      var newCaret = positionAfterNUnits(formatted, unitsBefore);
       el.setSelectionRange(newCaret, newCaret);
     });
   }
