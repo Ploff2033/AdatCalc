@@ -594,41 +594,139 @@
     return name;
   }
 
+  // Формат "кассовой книги" по образцу бумажного/Excel-журнала пользователя
+  // (скриншот: Дата | Приход наличными (Продажа бетона / Прочее) | Расход
+  // наличных (Топливо / Зарплата / Закупка автозапчастей / Прочее) |
+  // Примечание | Текущий остаток) — вместо построчного списка операций.
+  // Один ряд на дату, суммы по категориям сведены в столбцы; без "Статуса".
+  var LEDGER_EXPENSE_COLUMNS = ['fuel', 'salary', 'parts', 'other'];
+  var LEDGER_EXPENSE_LABELS = { fuel: 'Топливо', salary: 'Зарплата', parts: 'Закупка автозапчастей', other: 'Прочее' };
+  var LEDGER_INCOME_COLUMNS = ['concrete_sale', 'other'];
+  var LEDGER_INCOME_LABELS = { concrete_sale: 'Продажа бетона', other: 'Прочее' };
+
+  function ledgerDateLabel(occurredAt) {
+    var d = new Date(occurredAt + 'T00:00:00');
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
   async function exportToExcel() {
-    if (!entries.length) return;
+    var plants = State.data.plants || [];
+    // "Текущий остаток" — реальный остаток налички в кассе, а касса
+    // физически одна на завод: для "Все заводы" сумма нескольких касс
+    // вместе была бы просто неверным числом. Если заводов несколько и ни
+    // один не выбран фильтром — просим выбрать, если завод один — берём
+    // его сам собой (фильтр тогда и не показывается).
+    var effectivePlantId = plantFilterValue || (plants.length === 1 ? plants[0].id : '');
+    if (!effectivePlantId) {
+      alert('Выберите конкретный завод в фильтре сверху — «Текущий остаток» считается по кассе одного завода, для «Все заводы» это не работает.');
+      return;
+    }
+
     var btn = document.getElementById('c-export-btn');
     var originalLabel = btn.textContent;
     btn.disabled = true;
-    var folderName = periodFolderName();
-    var headers = ['Дата', 'Время', 'Завод', 'Тип', 'Категория', 'Сумма', 'Комментарий', 'Чек', 'Статус'];
-    function csvEscape(v) { var s = String(v == null ? '' : v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
-    function csvNum(n) { return (Math.round((n || 0) * 100) / 100).toString().replace('.', ','); }
-    var zipFiles = [];
-    var rows = [];
-    var usedNames = {};
+    btn.textContent = 'Готовим файл…';
     try {
-      for (var i = 0; i < entries.length; i++) {
-        var e = entries[i];
-        btn.textContent = 'Готовим файл… ' + (i + 1) + '/' + entries.length;
-        var st = statusFor(e);
-        var receiptCell = 'нет';
-        if (e.receiptPath) {
-          try {
-            var res = await fetch(e.receiptPath);
-            if (!res.ok) throw new Error('http ' + res.status);
-            var buf = await res.arrayBuffer();
-            var ext = (e.receiptPath.match(/\.[a-zA-Z0-9]+$/) || ['.jpg'])[0];
-            var fname = receiptFileName(e, usedNames, ext);
-            zipFiles.push({ name: folderName + '/' + fname, data: new Uint8Array(buf) });
-            receiptCell = fname;
-          } catch (err) {
-            receiptCell = 'ошибка загрузки фото';
-          }
+      // Вся история завода без учёта фильтров типа/категории/периода —
+      // нужна целиком, чтобы "Текущий остаток" на каждую дату учитывал и
+      // всё, что было ДО начала выбранного периода (иначе остаток за,
+      // скажем, "этот месяц" не совпал бы с реальной кассой).
+      var allEntries = await Api.get('/cash-entries?all=1&plantId=' + encodeURIComponent(effectivePlantId));
+      var byId = {};
+      allEntries.forEach(function (e) { byId[e.id] = e; });
+
+      var sorted = allEntries.slice().sort(function (a, b) {
+        if (a.occurredAt !== b.occurredAt) return a.occurredAt < b.occurredAt ? -1 : 1;
+        return new Date(a.insertedAt) - new Date(b.insertedAt);
+      });
+      var runningByDate = {};
+      var running = 0;
+      sorted.forEach(function (e) { running += e.amount; runningByDate[e.occurredAt] = running; });
+
+      var range = periodRange();
+      var visible = allEntries.filter(function (e) {
+        return (!range.from || e.occurredAt >= range.from) && (!range.to || e.occurredAt <= range.to);
+      });
+      if (!visible.length) { alert('За выбранный период нет записей по этому заводу.'); return; }
+
+      var folderName = periodFolderName();
+      var zipFiles = [];
+      var usedNames = {};
+      var receiptNameById = {};
+      var withReceipt = visible.filter(function (e) { return e.receiptPath; });
+      for (var i = 0; i < withReceipt.length; i++) {
+        var re = withReceipt[i];
+        btn.textContent = 'Готовим файл… ' + (i + 1) + '/' + withReceipt.length;
+        try {
+          var res = await fetch(re.receiptPath);
+          if (!res.ok) throw new Error('http ' + res.status);
+          var buf = await res.arrayBuffer();
+          var ext = (re.receiptPath.match(/\.[a-zA-Z0-9]+$/) || ['.jpg'])[0];
+          var fname = receiptFileName(re, usedNames, ext);
+          zipFiles.push({ name: folderName + '/' + fname, data: new Uint8Array(buf) });
+          receiptNameById[re.id] = fname;
+        } catch (err) {
+          receiptNameById[re.id] = null;
         }
-        rows.push([e.occurredAt, timeLabel(e.insertedAt), e.plantName, e.type === 'income' ? 'Доход' : 'Расход', CATEGORY_LABELS[e.category], csvNum(e.amount), e.comment || '', receiptCell, st.label]);
       }
-      var csv = '﻿' + [headers].concat(rows).map(function (r) { return r.map(csvEscape).join(';'); }).join('\r\n');
-      zipFiles.unshift({ name: 'ДДС ' + folderName + '.csv', data: new TextEncoder().encode(csv) });
+
+      var byDate = {};
+      visible.forEach(function (e) {
+        var d = e.occurredAt;
+        if (!byDate[d]) byDate[d] = { expense: {}, income: {}, notes: [] };
+        // Сторно НЕ добавляем в колонки категорий — иначе на дату
+        // исправления это выглядело бы как ещё одна такая же операция (тот
+        // же Топливо/ЗП/…), хотя на самом деле это возврат денег в кассу.
+        // На "Текущий остаток" она и так уже повлияла (runningByDate
+        // считается по всем записям без исключения, см. выше) — тут только
+        // текстом, чтобы было видно, что и почему исправлено.
+        if (e.category === 'storno') {
+          var orig = e.stornoOfId && byId[e.stornoOfId];
+          var origLabel = orig ? (CATEGORY_LABELS[orig.category] || orig.category) : '';
+          byDate[d].notes.push('Сторно' + (origLabel ? ' (' + origLabel + ')' : '') + ': ' + (e.amount >= 0 ? '+' : '') + Format.fmtNum(e.amount, 2) + ' ₽' + (e.comment ? ' — ' + e.comment : ''));
+          return;
+        }
+        var bucket = e.type === 'income' ? byDate[d].income : byDate[d].expense;
+        bucket[e.category] = (bucket[e.category] || 0) + e.amount;
+        var noteBits = [];
+        if (e.comment) noteBits.push(e.comment);
+        if (e.receiptPath) noteBits.push(receiptNameById[e.id] ? 'фото: ' + receiptNameById[e.id] : 'фото не загрузилось');
+        if (noteBits.length) byDate[d].notes.push((CATEGORY_LABELS[e.category] || e.category) + ' — ' + noteBits.join(', '));
+      });
+      var dates = Object.keys(byDate).sort();
+
+      function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+      function money(n) { return n ? (Math.round(Math.abs(n) * 100) / 100).toString().replace('.', ',') : ''; }
+
+      var rowsHtml = dates.map(function (d) {
+        var g = byDate[d];
+        var cells = [ledgerDateLabel(d)];
+        LEDGER_INCOME_COLUMNS.forEach(function (c) { cells.push(money(g.income[c])); });
+        LEDGER_EXPENSE_COLUMNS.forEach(function (c) { cells.push(money(g.expense[c])); });
+        cells.push(esc(g.notes.join('; ')));
+        cells.push(money(runningByDate[d]));
+        return '<tr>' + cells.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
+      }).join('');
+
+      var html =
+        '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' +
+        '<head><meta charset="utf-8"><style>' +
+        'td,th{font-family:Calibri,Arial,sans-serif;font-size:12px;padding:4px 6px;border:1px solid #999}' +
+        'th{text-align:center;font-weight:bold}' +
+        '.inc{background:#C6E0B4}.exp{background:#F8CBAD;color:#843C0C}' +
+        '</style></head><body><table border="1" cellspacing="0">' +
+        '<thead><tr>' +
+          '<th rowspan="2">Дата</th>' +
+          '<th class="inc" colspan="' + LEDGER_INCOME_COLUMNS.length + '">Приход наличными</th>' +
+          '<th class="exp" colspan="' + LEDGER_EXPENSE_COLUMNS.length + '">Расход наличных</th>' +
+          '<th rowspan="2">Примечание</th>' +
+          '<th rowspan="2">Текущий остаток</th>' +
+        '</tr><tr>' +
+          LEDGER_INCOME_COLUMNS.map(function (c) { return '<th class="inc">' + LEDGER_INCOME_LABELS[c] + '</th>'; }).join('') +
+          LEDGER_EXPENSE_COLUMNS.map(function (c) { return '<th class="exp">' + LEDGER_EXPENSE_LABELS[c] + '</th>'; }).join('') +
+        '</tr></thead><tbody>' + rowsHtml + '</tbody></table></body></html>';
+
+      zipFiles.unshift({ name: 'ДДС ' + folderName + '.xls', data: new TextEncoder().encode('﻿' + html) });
       var blob = ZipWriter.build(zipFiles);
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');

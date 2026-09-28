@@ -103,13 +103,21 @@ async function list(query) {
     conditions.push(`c.receipt_path IS NULL AND c.category = ANY('{fuel,parts}')`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  // LIMIT 500 — разумный потолок для обычного просмотра журнала, но
+  // экспорту "кассовой книги" (screen-cash.js::exportToExcel) нужна ПОЛНАЯ
+  // история завода без ограничения — иначе "Текущий остаток" (реальный
+  // баланс кассы, считается от самой первой записи) молча искажался бы,
+  // как только у завода накопится больше 500 операций за всё время.
+  // all=1 снимает лимит, но требует plantId — без него это был бы дамп
+  // всей таблицы по всем заводам сразу.
+  const noLimit = q.all === '1' && q.plantId;
   const { rows } = await db.pool.query(
     `SELECT c.*, p.name AS plant_name,
             EXISTS(SELECT 1 FROM cash_entries s WHERE s.storno_of_id = c.id) AS stornoed
      FROM cash_entries c JOIN plants p ON p.id = c.plant_id
      ${where}
      ORDER BY c.inserted_at DESC
-     LIMIT 500`,
+     ${noLimit ? '' : 'LIMIT 500'}`,
     params
   );
   return rows.map(rowToEntry);
