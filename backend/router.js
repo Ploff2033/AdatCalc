@@ -17,6 +17,7 @@ const plants = require('./handlers/plants');
 const config = require('./handlers/config');
 const stockMovements = require('./handlers/stock-movements');
 const telegram = require('./telegram');
+const mailruSync = require('./mailru-sync');
 const auth = require('./handlers/auth');
 const db = require('./db');
 const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
@@ -588,6 +589,29 @@ const routes = [
         await telegram.sendTest();
       } catch (err) {
         throw new HttpError(502, 'Не удалось отправить сообщение: ' + err.message);
+      }
+      sendJson(res, 200, { ok: true });
+    }
+  },
+  // Проверка синхронизации ДДС с Облаком Mail.ru — тот же приём, что и
+  // telegram-test выше: сохраняет логин/пароль, если пришли в теле, и
+  // реально ждёт результат загрузки по WebDAV, а не просто пишет в БД.
+  // plantId обязателен — синхронизация идёт по заводу (своя кассовая книга
+  // на каждый, см. mailru-sync.js).
+  {
+    method: 'POST',
+    pattern: /^\/api\/config\/mailru-test$/,
+    role: 'admin',
+    handler: async (req, res, m, role) => {
+      const body = await readBody(req);
+      if (body.mailruLogin !== undefined || body.mailruAppPassword !== undefined) {
+        await config.update(body, role);
+      }
+      if (!body.plantId) throw new HttpError(400, 'Не выбран завод');
+      try {
+        await mailruSync.testSync(body.plantId);
+      } catch (err) {
+        throw new HttpError(502, err.message);
       }
       sendJson(res, 200, { ok: true });
     }

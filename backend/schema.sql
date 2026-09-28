@@ -472,3 +472,14 @@ CREATE TABLE IF NOT EXISTS cash_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_cash_entries_plant ON cash_entries(plant_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cash_entries_inserted ON cash_entries(inserted_at DESC);
+
+-- Автосинхронизация ДДС в Облако Mail.ru (по просьбе пользователя — "чтобы
+-- данные отображались в облачной таблице"). У Облака Mail.ru нет публичного
+-- API для записи в отдельные ячейки живой таблицы (в отличие от Google
+-- Таблиц) — единственный официальный способ положить туда файл программно:
+-- WebDAV, см. backend/mailru-webdav.js/mailru-sync.js. mailru_app_password —
+-- НЕ обычный пароль от почты, а отдельный "пароль для внешних приложений"
+-- (обязателен с 2022 года). Тот же приём, что и с Telegram-токеном выше —
+-- секрет, видимый только admin (см. handlers/config.js).
+ALTER TABLE config ADD COLUMN IF NOT EXISTS mailru_login TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS mailru_app_password TEXT;

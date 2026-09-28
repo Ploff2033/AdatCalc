@@ -13,7 +13,7 @@ const { genToken } = require('../tokens');
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id FROM config WHERE id = 1'
+    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id, mailru_login, mailru_app_password FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
@@ -34,6 +34,9 @@ async function get(role) {
     // поэтому наружу только admin (как universalWorkerToken выше).
     out.telegramBotToken = row.telegram_bot_token || '';
     out.telegramChatId = row.telegram_chat_id || '';
+    // Логин/пароль Mail.ru — та же категория секрета (см. mailru-sync.js).
+    out.mailruLogin = row.mailru_login || '';
+    out.mailruAppPassword = row.mailru_app_password || '';
   }
   return out;
 }
@@ -76,6 +79,14 @@ async function update(body, role) {
   if (role === 'admin' && body.telegramChatId !== undefined) {
     values.push(String(body.telegramChatId).trim());
     sets.push(`telegram_chat_id = $${values.length}`);
+  }
+  if (role === 'admin' && body.mailruLogin !== undefined) {
+    values.push(String(body.mailruLogin).trim());
+    sets.push(`mailru_login = $${values.length}`);
+  }
+  if (role === 'admin' && body.mailruAppPassword !== undefined) {
+    values.push(String(body.mailruAppPassword).trim());
+    sets.push(`mailru_app_password = $${values.length}`);
   }
   if (sets.length) {
     await db.pool.query(`UPDATE config SET ${sets.join(', ')} WHERE id = 1`, values);

@@ -2,6 +2,7 @@ const db = require('../db');
 const HttpError = require('../http-error');
 const { str, num } = require('../validate');
 const uploads = require('../uploads');
+const mailruSync = require('../mailru-sync');
 
 // Правила по категориям — см. документ "AdatBeton Calc — ДДС и Дашборд
 // (MVP)", таблицы "Категории расхода"/"Категории дохода". Продублировано
@@ -165,6 +166,7 @@ async function create(body) {
     `SELECT c.*, p.name AS plant_name, FALSE AS stornoed FROM cash_entries c JOIN plants p ON p.id = c.plant_id WHERE c.id = $1`,
     [id]
   );
+  mailruSync.syncPlant(plantId);
   return rowToEntry(rows[0]);
 }
 
@@ -208,6 +210,7 @@ async function update(id, body, role) {
     `SELECT c.*, p.name AS plant_name, FALSE AS stornoed FROM cash_entries c JOIN plants p ON p.id = c.plant_id WHERE c.id = $1`,
     [id]
   );
+  mailruSync.syncPlant(current.plant_id);
   return rowToEntry(full[0]);
 }
 
@@ -217,6 +220,7 @@ async function remove(id, role) {
   await assertEditable(rows[0], role);
   await uploads.deleteReceiptPhoto(rows[0].receipt_path);
   await db.pool.query('DELETE FROM cash_entries WHERE id = $1', [id]);
+  mailruSync.syncPlant(rows[0].plant_id);
 }
 
 // Сторно — единственный способ исправить запись ПОСЛЕ окна редактирования
@@ -246,6 +250,7 @@ async function storno(id, note) {
     `SELECT c.*, p.name AS plant_name, FALSE AS stornoed FROM cash_entries c JOIN plants p ON p.id = c.plant_id WHERE c.id = $1`,
     [id2]
   );
+  mailruSync.syncPlant(original.plant_id);
   return rowToEntry(full[0]);
 }
 

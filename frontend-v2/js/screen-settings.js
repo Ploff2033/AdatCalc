@@ -46,6 +46,7 @@
           '<p class="hint" style="margin:0">Заказы с рентабельностью ниже этого значения подсвечиваются оранжевым в списке «Заказы». 0 — подсветка выключена.</p>' +
         '</section>' +
         '<section id="s-tg" class="card sec"></section>' +
+        '<section id="s-mailru" class="card sec"></section>' +
         '<section id="s-access" class="card sec"></section>' +
       '</div>' +
     '</div>' +
@@ -394,6 +395,60 @@
     });
   }
 
+  // Автосинхронизация ДДС в Облако Mail.ru — по просьбе пользователя
+  // ("чтобы данные отображались в облачной таблице", "это конфиденциальные
+  // данные, могу ли я просто ввести их в админке"): логин/пароль вводятся
+  // тут же, никогда не через чат. Тот же приём, что и renderTelegram() —
+  // секрет виден и правится только admin (см. handlers/config.js).
+  function renderMailru() {
+    var section = document.getElementById('s-mailru');
+    if (!Auth.isAtLeast('admin')) {
+      section.innerHTML = '<div class="sec-h"><h2>Облако Mail.ru (ДДС)</h2></div><p class="hint" style="margin:0">Настраивается администратором.</p>';
+      return;
+    }
+    var cfg = State.data.config || {};
+    var plants = State.data.plants || [];
+    if (section.contains(document.activeElement) && section.dataset.built) return;
+    section.dataset.built = '1';
+    section.innerHTML =
+      '<div class="sec-h"><h2>Облако Mail.ru (ДДС)</h2><button type="button" class="btn ghost sm" id="s-mailru-test">Проверить синхронизацию</button></div>' +
+      '<div class="grid-2">' +
+        '<div class="field"><label for="s-mailru-login">Логин Mail.ru</label><input id="s-mailru-login" class="inp num" value="' + (cfg.mailruLogin || '') + '" autocomplete="off"></div>' +
+        '<div class="field"><label for="s-mailru-password">Пароль для внешних приложений</label><input id="s-mailru-password" type="password" class="inp num" value="' + (cfg.mailruAppPassword || '') + '" autocomplete="off"></div>' +
+      '</div>' +
+      '<div class="field"><label for="s-mailru-plant">Завод для проверки</label><select id="s-mailru-plant" class="inp">' +
+        plants.map(function (p) { return '<option value="' + p.id + '">' + p.name + '</option>'; }).join('') +
+      '</select></div>' +
+      '<p class="hint" style="margin:0">При каждой записи ДДС файл «ДДС — &lt;завод&gt;.xlsx» сам перезаписывается в папке «ДДС» вашего Облака Mail.ru — открывать/скачивать вручную не нужно. Пароль — НЕ обычный пароль от почты: отдельный «пароль для внешних приложений» (в настройках почты — Безопасность → Пароли для внешних приложений).</p>';
+    document.getElementById('s-mailru-login').addEventListener('input', function () { markDirty('Логин Mail.ru'); });
+    document.getElementById('s-mailru-password').addEventListener('input', function () { markDirty('Пароль Mail.ru'); });
+    document.getElementById('s-mailru-test').addEventListener('click', async function (e) {
+      var btn = e.target;
+      var original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Проверка…';
+      try {
+        // Сохраняет логин/пароль заодно (можно проверить до основного
+        // "Сохранить") и по-настоящему ждёт загрузки в Облако — см.
+        // POST /api/config/mailru-test в router.js.
+        await Api.post('/config/mailru-test', {
+          mailruLogin: document.getElementById('s-mailru-login').value.trim(),
+          mailruAppPassword: document.getElementById('s-mailru-password').value.trim(),
+          plantId: document.getElementById('s-mailru-plant').value
+        });
+        await State.loadAll();
+        dirtyFields = {};
+        document.getElementById('s-savebar').hidden = true;
+        btn.textContent = 'Загружено — проверьте Облако';
+        setTimeout(function () { btn.textContent = original; btn.disabled = false; }, 2500);
+      } catch (err) {
+        alert(err.message);
+        btn.textContent = original;
+        btn.disabled = false;
+      }
+    });
+  }
+
   function renderAccess() {
     var section = document.getElementById('s-access');
     if (!Auth.isAtLeast('admin')) {
@@ -427,6 +482,7 @@
     renderTrips();
     renderRent();
     renderTelegram();
+    renderMailru();
     renderAccess();
   }
 
@@ -449,6 +505,12 @@
       if (tgTokenEl) {
         configBody.telegramBotToken = tgTokenEl.value.trim();
         configBody.telegramChatId = document.getElementById('s-tg-chat').value.trim();
+      }
+      // Поля Mail.ru — тоже только у admin (см. renderMailru), тот же приём.
+      var mailruLoginEl = document.getElementById('s-mailru-login');
+      if (mailruLoginEl) {
+        configBody.mailruLogin = mailruLoginEl.value.trim();
+        configBody.mailruAppPassword = document.getElementById('s-mailru-password').value.trim();
       }
       await Api.put('/config', configBody);
 
