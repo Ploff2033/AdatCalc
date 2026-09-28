@@ -62,6 +62,12 @@
     // v1 (auth-ui.js прячет вкладки Материалы/Техника/Персонал целиком).
     var refsGroup = document.querySelector('.sidebar-refs');
     if (refsGroup) refsGroup.hidden = !Auth.isAtLeast('manager');
+    // Компактная "Выйти" в шапке для телефона (см. index.html) — только
+    // для manager/admin. Анонимному работнику скрываем: ему нечего
+    // "выходить" (у него нет пароля/сессии, только сохранённая ссылка), а
+    // случайный тап стёр бы её через Plant.clearSaved() (см. auth.js).
+    var mobileLogout = document.getElementById('sb-logout-btn-mobile');
+    if (mobileLogout) mobileLogout.hidden = !role;
   }
 
   // Колокольчик дефицита в сайдбаре убран по просьбе пользователя —
@@ -89,6 +95,9 @@
     });
 
     document.getElementById('sb-logout-btn').addEventListener('click', async function () {
+      await Auth.logout();
+    });
+    document.getElementById('sb-logout-btn-mobile').addEventListener('click', async function () {
       await Auth.logout();
     });
   }

@@ -34,6 +34,12 @@
     try {
       await Api.post('/auth/logout', {});
     } catch (err) { /* cookie may already be gone — ignore */ }
+    // Без этого браузер, на котором когда-либо открывали анонимную ссылку
+    // работника (?token=), после выхода менеджера/админа тихо проваливался
+    // обратно в анонимный режим по сохранённому в localStorage токену —
+    // экран логина/пароля не показывался вообще, даже в десктоп-режиме на
+    // телефоне (см. Plant.clearSaved). Реальный баг, найден пользователем.
+    if (window.Plant && Plant.clearSaved) Plant.clearSaved();
     location.reload();
   }
 

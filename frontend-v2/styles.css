@@ -85,6 +85,9 @@ select.inp { cursor: pointer; }
 .btn.danger { background: transparent; color: var(--bad-fg); border-color: #E3B8B1; }
 .btn.sm { height: 36px; padding: 0 14px; font-size: 13px; }
 .btn.icon { width: 36px; height: 36px; padding: 0; }
+/* Компактная кнопка "Выйти" в шапке — только на телефоне (см. media-запрос
+   ниже); на десктопе для этого уже есть кнопка в .sidebar-user. */
+.mobile-logout-btn { display: none; flex: none; }
 
 .chip {
   display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px;
@@ -294,6 +297,7 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   #sb-plant-switch { width: auto; gap: 0; }
   #sb-plant-switch > .cap { display: none; }
   .plant-select-pill { width: auto; height: 36px; }
+  .mobile-logout-btn:not([hidden]) { display: inline-flex; }
   /* .bottom-nav.nav (обе присутствующие на элементе классы: разметка —
      <nav class="bottom-nav nav">), а не просто .bottom-nav — иначе
      специфичность (0,1,0) проигрывала базовому "nav.nav" (0,1,1) для

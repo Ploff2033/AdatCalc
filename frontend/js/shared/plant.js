@@ -93,6 +93,24 @@
     }
   }
 
+  // Вызывается при явном выходе (Auth.logout) — без этого браузер, на
+  // котором когда-либо открывали анонимную ссылку работника (?token=),
+  // навсегда застревал в анонимном режиме: resolve() для role=null сначала
+  // проверяет localStorage-токен (readSavedToken) и, если он ещё валиден,
+  // тихо заходит по нему — экран логина при этом не показывается вообще
+  // (app.js::boot() видит currentPlantId() уже заполненным и пропускает
+  // showLogin()). На практике это тот самый телефон, где: (1) когда-то
+  // открывали ссылку работника, поэтому токен сохранён, и (2) менеджер/
+  // админ входил тем же браузером под паролем — после его выхода нужно
+  // вернуться к чистому экрану логина, а не тихо провалиться обратно в
+  // сессию анонимного работника.
+  function clearSaved() {
+    try {
+      localStorage.removeItem('current-plant-id');
+      localStorage.removeItem('current-plant-token');
+    } catch (e) { /* ignore */ }
+  }
+
   function setCurrent(id) {
     currentId = id;
     savePlantId(id);
@@ -120,6 +138,7 @@
     currentPlantId: currentPlantId,
     currentToken: getCurrentToken,
     isUniversal: isUniversal,
-    error: error
+    error: error,
+    clearSaved: clearSaved
   };
 })();
