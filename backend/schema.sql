@@ -562,3 +562,21 @@ CREATE INDEX IF NOT EXISTS idx_waybill_entries_receipt ON waybill_entries(receip
 -- возникло (см. handlers/stock.js).
 ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS receipt_id TEXT REFERENCES material_receipts(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_stock_movements_receipt ON stock_movements(receipt_id);
+
+-- Дата поступления "для бухгалтерии" — отдельно от created_at (момент
+-- оформления записи в системе). Нужна, чтобы приход можно было отнести к
+-- нужному месяцу задним числом (запись вносится позже, чем реально пришла
+-- машина) — created_at для этого не годится, он не редактируется и не
+-- переживает "оформили сегодня приход за 28-е число". DATE, не TIMESTAMPTZ
+-- (только день имеет смысл, как и trip_date/ship_date в других таблицах).
+ALTER TABLE material_receipts ADD COLUMN IF NOT EXISTS receipt_date DATE NOT NULL DEFAULT CURRENT_DATE;
+CREATE INDEX IF NOT EXISTS idx_material_receipts_date ON material_receipts(receipt_date);
+
+-- Адрес поставщика ("откуда везли") — печатная форма путевого листа (№4-С,
+-- см. waybill-xlsx-4s.js) печатает waybill_entries.address как "откуда/куда"
+-- для КАЖДОГО рейса; для заказов туда шёл orders.address (адрес доставки
+-- клиенту), для поступлений раньше писалась пустая строка. Сохраняем на
+-- самом поступлении (одном адресе на всю партию, как и qty/truck/distance),
+-- validateAndBuild() в waybill-entries.js подставляет его в address так же,
+-- как order.address для заказов.
+ALTER TABLE material_receipts ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';

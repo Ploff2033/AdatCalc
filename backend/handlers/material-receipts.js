@@ -20,6 +20,8 @@ function rowToReceipt(row) {
     truckName: row.truck_name,
     distanceKm: Number(row.distance_km),
     tripCount: Number(row.trip_count),
+    receiptDate: row.receipt_date,
+    address: row.address || '',
     createdAt: new Date(row.created_at).toISOString(),
     cancelledAt: row.cancelled_at ? new Date(row.cancelled_at).toISOString() : null
   };
@@ -51,6 +53,8 @@ async function create(body) {
   const truckId = str(body.truckId, 'truckId');
   const distanceKm = num(body.distanceKm, 'distanceKm');
   if (!(distanceKm > 0)) throw new HttpError(400, 'Расстояние должно быть больше нуля');
+  const receiptDate = str(body.receiptDate, 'receiptDate');
+  const address = (body.address || '').trim();
 
   const { rows: plantRows } = await db.pool.query('SELECT name FROM plants WHERE id = $1', [plantId]);
   if (!plantRows.length) throw new HttpError(400, 'Неизвестный завод');
@@ -63,15 +67,21 @@ async function create(body) {
   const capacity = Number(truckRows[0].capacity);
   if (!(capacity > 0)) throw new HttpError(400, 'У выбранной техники не задана грузоподъёмность');
 
-  // Та же формула, что и Calc.tripsForVolume на фронте (см. документ:
-  // "рейсов = округление_вверх(объём / грузоподъёмность_техники)").
-  const tripCount = Math.max(1, Math.ceil(qty / capacity));
+  // Число рейсов — по умолчанию та же формула, что и Calc.tripsForVolume на
+  // фронте ("округление_вверх(объём / грузоподъёмность_техники)"), но это
+  // только ПОДСКАЗКА: фактическое число рейсов техника могла сделать другим
+  // (не всегда возит полную загрузку) — если tripCount явно передан с
+  // фронта (там это редактируемое поле с этой же подсказкой как значение по
+  // умолчанию), берём его, а не пересчитываем сами.
+  const suggestedTripCount = Math.max(1, Math.ceil(qty / capacity));
+  const tripCount = body.tripCount != null && body.tripCount !== '' ? num(body.tripCount, 'tripCount') : suggestedTripCount;
+  if (!(tripCount > 0)) throw new HttpError(400, 'Число рейсов должно быть больше нуля');
 
   const id = db.genId('rcpt');
   await db.pool.query(
-    `INSERT INTO material_receipts (id, plant_id, plant_name, material_id, material_name, unit, qty, truck_id, truck_name, distance_km, trip_count)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [id, plantId, plantRows[0].name, materialId, matRows[0].name, matRows[0].unit, qty, truckId, truckRows[0].name, distanceKm, tripCount]
+    `INSERT INTO material_receipts (id, plant_id, plant_name, material_id, material_name, unit, qty, truck_id, truck_name, distance_km, trip_count, receipt_date, address)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [id, plantId, plantRows[0].name, materialId, matRows[0].name, matRows[0].unit, qty, truckId, truckRows[0].name, distanceKm, tripCount, receiptDate, address]
   );
   const { rows } = await db.pool.query('SELECT * FROM material_receipts WHERE id = $1', [id]);
   return rowToReceipt(rows[0]);

@@ -175,7 +175,7 @@ async function validateAndBuild(client, body, excludeId) {
     fuelRate = mixerCardRows.length ? Number(mixerCardRows[0].fuel_rate) : 0;
   } else {
     const { rows: receiptRows } = await client.query(
-      'SELECT id, plant_id, plant_name, trip_count, cancelled_at FROM material_receipts WHERE id = $1',
+      'SELECT id, plant_id, plant_name, trip_count, cancelled_at, address FROM material_receipts WHERE id = $1',
       [f.receiptId]
     );
     if (!receiptRows.length) throw new HttpError(400, 'Поступление не найдено');
@@ -194,7 +194,10 @@ async function validateAndBuild(client, body, excludeId) {
 
     plantId = receiptRow.plant_id;
     plantName = receiptRow.plant_name;
-    address = '';
+    // Адрес поставщика ("откуда везли") — тот же смысл для печатной формы
+    // путевого листа, что и order.address ("куда везли") для заказов, см.
+    // комментарий у material_receipts.address в schema.sql.
+    address = receiptRow.address || '';
     const { rows: truckCardRows } = await client.query('SELECT fuel_rate FROM aggregate_trucks WHERE id = $1', [f.mixerId]);
     fuelRate = truckCardRows.length ? Number(truckCardRows[0].fuel_rate) : 0;
   }

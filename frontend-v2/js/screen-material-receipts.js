@@ -20,10 +20,13 @@
       '<form id="rc-form">' +
         '<div class="drawer-body">' +
           '<div class="field" id="rc-f-plant-field"><label for="rc-f-plant">Завод</label><select id="rc-f-plant" class="inp"></select></div>' +
+          '<div class="field"><label for="rc-f-date">Дата поступления</label><input id="rc-f-date" type="date" class="inp"></div>' +
           '<div class="field"><label for="rc-f-material">Материал</label><select id="rc-f-material" class="inp"></select></div>' +
           '<div class="field"><label for="rc-f-qty">Объём</label><div class="unit"><input id="rc-f-qty" class="inp num" inputmode="decimal"><span id="rc-f-qty-unit">т</span></div></div>' +
           '<div class="field"><label for="rc-f-truck">Техника (для расчёта числа рейсов)</label><select id="rc-f-truck" class="inp"></select></div>' +
           '<div class="field"><label for="rc-f-dist">Расстояние (туда)</label><div class="unit"><input id="rc-f-dist" class="inp num" inputmode="decimal"><span>км</span></div></div>' +
+          '<div class="field"><label for="rc-f-address">Адрес поставщика</label><input id="rc-f-address" class="inp" placeholder="Откуда везли — для путевого листа"></div>' +
+          '<div class="field"><label for="rc-f-trips">Рейсов</label><input id="rc-f-trips" class="inp num" inputmode="numeric"></div>' +
           '<p class="hint" id="rc-f-trips-preview" style="margin:0"></p>' +
         '</div>' +
         '<div class="drawer-foot">' +
@@ -34,6 +37,21 @@
     '</aside>';
 
   var plantFilterValue = '';
+  var tripsFieldTouched = false; // true — пользователь сам поправил "Рейсов", больше не перезаписываем авторасчётом
+
+  // Москва на +3: см. тот же приём в screen-cash.js — new Date().toISOString()
+  // сдвигает календарную дату назад в окне полуночь-3ч МСК.
+  function localDateStr(d) {
+    d = d || new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    var parts = iso.split('-');
+    return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : iso;
+  }
 
   function receipts() { return State.data.materialReceipts || []; }
 
@@ -59,22 +77,28 @@
   function filteredReceipts() {
     var list = receipts().slice();
     if (plantFilterValue) list = list.filter(function (r) { return r.plantId === plantFilterValue; });
-    return list.sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+    // Сортировка по дате поступления (бухгалтерский смысл — когда реально
+    // пришла машина), а не по created_at (когда запись завели в системе) —
+    // это разные даты, если приход оформили задним числом. created_at —
+    // только разрыв ничьей, если даты поступления совпадают.
+    return list.sort(function (a, b) {
+      if (a.receiptDate !== b.receiptDate) return a.receiptDate < b.receiptDate ? 1 : -1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
   }
 
   function renderRows() {
     var list = filteredReceipts();
     document.getElementById('rc-empty').hidden = list.length > 0;
     document.getElementById('rc-rows').innerHTML = list.map(function (r) {
-      var d = new Date(r.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
       var st = statusFor(r);
       var allocated = WaybillCalc.allocatedForReceipt(State.data.waybillEntries || [], r.id);
       var canCancel = !r.cancelledAt && allocated === 0;
       return '<div class="row" style="grid-template-columns:100px 1fr 140px 1fr 100px 140px 44px;opacity:' + (r.cancelledAt ? '.6' : '1') + '">' +
-        '<div class="num hint">' + d + '</div>' +
+        '<div class="num hint">' + fmtDate(r.receiptDate) + '</div>' +
         '<div class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + r.materialName + '</span><span class="hint">' + r.plantName + '</span></div>' +
         '<div class="r num">' + Format.fmtNum(r.qty, 2, r.unit) + '</div>' +
-        '<div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + r.truckName + ' · ' + Format.fmtNum(r.distanceKm, 0, 'км') + '</div>' +
+        '<div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + r.truckName + ' · ' + Format.fmtNum(r.distanceKm, 0, 'км') + (r.address ? ' · ' + r.address : '') + '</div>' +
         '<div class="r num">' + allocated + ' из ' + Format.fmtNum(r.tripCount, 0) + '</div>' +
         '<div><span class="chip ' + st.cls + '">' + st.label + '</span></div>' +
         '<div style="display:flex;justify-content:flex-end">' +
@@ -122,20 +146,37 @@
     if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
   }
 
-  function updateTripsPreview() {
+  // Число рейсов — редактируемое поле, а не просто вывод расчёта: техника
+  // не всегда возит полную загрузку, фактическое число рейсов может
+  // отличаться от округления объём/грузоподъёмность. Подсказка продолжает
+  // показывать расчётное значение и автоматически подставляется в поле,
+  // пока пользователь сам его не поправил (tripsFieldTouched) — дальше поле
+  // живёт своей жизнью, чтобы случайная правка объёма/техники после этого
+  // не затёрла то, что человек уже вписал вручную.
+  function suggestedTripCount() {
     var qty = NumericInput.parseNumber(document.getElementById('rc-f-qty').value) || 0;
     var truck = (State.data.aggregateTrucks || []).find(function (t) { return t.id === document.getElementById('rc-f-truck').value; });
+    if (!(qty > 0) || !truck || !(truck.capacity > 0)) return null;
+    return { trips: Math.max(1, Math.ceil(qty / truck.capacity)), truck: truck };
+  }
+
+  function updateTripsPreview() {
     var preview = document.getElementById('rc-f-trips-preview');
-    if (!(qty > 0) || !truck || !(truck.capacity > 0)) { preview.textContent = ''; return; }
-    var trips = Math.max(1, Math.ceil(qty / truck.capacity));
-    preview.textContent = 'Рейсов потребуется: ' + trips + ' (по грузоподъёмности ' + Format.fmtNum(truck.capacity, 1) + ')';
+    var s = suggestedTripCount();
+    if (!s) { preview.textContent = ''; return; }
+    preview.textContent = 'Расчётное число рейсов: ' + s.trips + ' (по грузоподъёмности ' + Format.fmtNum(s.truck.capacity, 1) + '); можно поправить вручную, если по факту было иначе.';
+    if (!tripsFieldTouched) document.getElementById('rc-f-trips').value = s.trips;
   }
 
   function openForCreate() {
     document.getElementById('rc-form-error').hidden = true;
+    tripsFieldTouched = false;
     renderPlantSelect();
     renderMaterialSelect();
     renderTruckSelect();
+    document.getElementById('rc-f-date').value = localDateStr();
+    document.getElementById('rc-f-address').value = '';
+    document.getElementById('rc-f-trips').value = '';
     NumericInput.setFormattedValue(document.getElementById('rc-f-qty'), '');
     NumericInput.setFormattedValue(document.getElementById('rc-f-dist'), '');
     updateTripsPreview();
@@ -150,13 +191,21 @@
     errorEl.hidden = true;
     var payload = {
       plantId: document.getElementById('rc-f-plant').value,
+      receiptDate: document.getElementById('rc-f-date').value,
       materialId: document.getElementById('rc-f-material').value,
       qty: NumericInput.parseNumber(document.getElementById('rc-f-qty').value) || 0,
       truckId: document.getElementById('rc-f-truck').value,
-      distanceKm: NumericInput.parseNumber(document.getElementById('rc-f-dist').value) || 0
+      distanceKm: NumericInput.parseNumber(document.getElementById('rc-f-dist').value) || 0,
+      address: document.getElementById('rc-f-address').value.trim(),
+      tripCount: parseInt(document.getElementById('rc-f-trips').value, 10)
     };
-    if (!payload.plantId || !payload.materialId || !(payload.qty > 0) || !payload.truckId || !(payload.distanceKm > 0)) {
-      errorEl.textContent = 'Заполните завод, материал, объём больше нуля, технику и расстояние больше нуля.';
+    if (!payload.plantId || !payload.receiptDate || !payload.materialId || !(payload.qty > 0) || !payload.truckId || !(payload.distanceKm > 0)) {
+      errorEl.textContent = 'Заполните завод, дату поступления, материал, объём больше нуля, технику и расстояние больше нуля.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (!(payload.tripCount > 0)) {
+      errorEl.textContent = 'Число рейсов должно быть больше нуля.';
       errorEl.hidden = false;
       return;
     }
@@ -186,6 +235,7 @@
     document.getElementById('rc-f-material').addEventListener('change', updateTripsPreview);
     document.getElementById('rc-f-truck').addEventListener('change', updateTripsPreview);
     document.getElementById('rc-f-qty').addEventListener('input', updateTripsPreview);
+    document.getElementById('rc-f-trips').addEventListener('input', function () { tripsFieldTouched = true; });
     NumericInput.attach(document.getElementById('rc-f-qty'));
     NumericInput.attach(document.getElementById('rc-f-dist'));
   }

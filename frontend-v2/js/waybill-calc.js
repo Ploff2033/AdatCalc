@@ -78,8 +78,11 @@
         remaining: remainingForOrder(entries, o), tripCount: o.tripCount, distanceKm: o.distanceKm, createdAt: o.createdAt };
     });
     var fromReceipts = unallocatedReceipts(receipts, entries).map(function (r) {
+      // createdAt тут — дата поступления "для бухгалтерии" (r.receiptDate),
+      // а не момент оформления записи в системе: это и есть смысловая дата
+      // поступления, ровно как order.createdAt — смысловая дата заказа.
       return { kind: 'receipt', id: r.id, source: r, label: r.materialName + ' · ' + Format.fmtNum(r.qty, 1, r.unit),
-        sub: r.plantName + ' · приход', remaining: remainingForReceipt(entries, r), tripCount: r.tripCount, distanceKm: r.distanceKm, createdAt: r.createdAt };
+        sub: r.plantName + ' · приход', remaining: remainingForReceipt(entries, r), tripCount: r.tripCount, distanceKm: r.distanceKm, createdAt: r.receiptDate };
     });
     return fromOrders.concat(fromReceipts).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
   }

@@ -15,6 +15,10 @@
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap">Распределение рейсов</span><h1>Путевые листы</h1></div>' +
     '</div>' +
+    // Фильтр типа рейса — сужает и очередь нераспределённых, и список записей
+    // одновременно (см. sourceFilterValue), чтобы не листать вперемешку
+    // доставки бетона и поступления инертных, когда нужно только одно из двух.
+    '<div class="seg" role="group" aria-label="Тип рейсов" id="wb-source-filter-seg" style="width:400px"></div>' +
     '<div style="display:grid;grid-template-columns:340px minmax(0,1fr);gap:20px;flex:1;min-height:0" class="wb-grid">' +
       '<section class="card stack" style="overflow:hidden">' +
         '<div class="spread" style="padding:16px 18px;border-bottom:1px solid var(--border-soft)"><h2 style="font-size:17px;font-weight:600">Нераспределённые рейсы</h2><span class="chip act num" id="wb-queue-count">0</span></div>' +
@@ -55,6 +59,7 @@
     '</div>';
 
   var selectedEntryIds = {};
+  var sourceFilterValue = 'all'; // 'all' | 'order' | 'receipt' — сужает очередь и список записей одновременно
 
   function entries() { return State.data.waybillEntries || []; }
   function cfgLimits() { return WaybillCalc.cfgLimits(State.data.config); }
@@ -65,7 +70,30 @@
   // Единая очередь (заказы + поступления, см. WaybillCalc.queueItems) —
   // каждый пункт помечен kind, форма читает remaining/distanceKm/label
   // одинаково для обоих источников.
-  function queue() { return WaybillCalc.queueItems(State.data.orders || [], State.data.materialReceipts || [], entries()); }
+  function queue() {
+    var items = WaybillCalc.queueItems(State.data.orders || [], State.data.materialReceipts || [], entries());
+    return sourceFilterValue === 'all' ? items : items.filter(function (it) { return it.kind === sourceFilterValue; });
+  }
+
+  function renderSourceFilterSeg() {
+    var seg = document.getElementById('wb-source-filter-seg');
+    var buttons = [
+      { value: 'all', label: 'Все' },
+      { value: 'order', label: 'Доставки бетона' },
+      { value: 'receipt', label: 'Поступления инертных' }
+    ];
+    seg.innerHTML = buttons.map(function (b) {
+      return '<button type="button" data-value="' + b.value + '" class="' + (b.value === sourceFilterValue ? 'on' : '') + '" aria-pressed="' + (b.value === sourceFilterValue) + '">' + b.label + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(seg.querySelectorAll('button'), function (btn) {
+      btn.addEventListener('click', function () {
+        sourceFilterValue = btn.dataset.value;
+        renderSourceFilterSeg();
+        renderQueue();
+        renderEntries();
+      });
+    });
+  }
 
   function renderQueue() {
     var items = queue();
@@ -147,7 +175,7 @@
     }
     var receipt = (State.data.materialReceipts || []).find(function (r) { return r.id === id; });
     if (!receipt) return null;
-    return { kind: 'receipt', id: id, raw: receipt, distanceKm: receipt.distanceKm, tripCount: receipt.tripCount, remaining: WaybillCalc.remainingForReceipt(entries(), receipt), createdAt: receipt.createdAt };
+    return { kind: 'receipt', id: id, raw: receipt, distanceKm: receipt.distanceKm, tripCount: receipt.tripCount, remaining: WaybillCalc.remainingForReceipt(entries(), receipt), createdAt: receipt.receiptDate };
   }
 
   function onSourceChange() {
@@ -241,16 +269,24 @@
   function selectedIds() { return Object.keys(selectedEntryIds).filter(function (id) { return selectedEntryIds[id]; }); }
 
   function renderEntries() {
-    var entries = (State.data.waybillEntries || []).slice().sort(function (a, b) {
-      if (a.tripDate !== b.tripDate) return b.tripDate < a.tripDate ? -1 : 1;
-      return a.driverName.localeCompare(b.driverName, 'ru');
-    });
+    // stillExisting считается по ПОЛНОМУ списку (не отфильтрованному) — иначе
+    // переключение фильтра "Доставки"/"Поступления" молча стирало бы отметки
+    // выбора на записях, которые просто временно не видны, а не удалены.
+    var allEntries = (State.data.waybillEntries || []);
+    var stillExisting = {};
+    allEntries.forEach(function (e) { stillExisting[e.id] = true; if (!(e.id in selectedEntryIds)) selectedEntryIds[e.id] = true; });
+    Object.keys(selectedEntryIds).forEach(function (id) { if (!stillExisting[id]) delete selectedEntryIds[id]; });
+
+    var entries = allEntries
+      .filter(function (e) { return sourceFilterValue === 'all' || (sourceFilterValue === 'order' ? !!e.orderId : !!e.receiptId); })
+      .slice()
+      .sort(function (a, b) {
+        if (a.tripDate !== b.tripDate) return b.tripDate < a.tripDate ? -1 : 1;
+        return a.driverName.localeCompare(b.driverName, 'ru');
+      });
     var container = document.getElementById('wb-entries');
     document.getElementById('wb-entries-empty').hidden = entries.length > 0;
     var cfg = cfgLimits();
-    var stillExisting = {};
-    entries.forEach(function (e) { stillExisting[e.id] = true; if (!(e.id in selectedEntryIds)) selectedEntryIds[e.id] = true; });
-    Object.keys(selectedEntryIds).forEach(function (id) { if (!stillExisting[id]) delete selectedEntryIds[id]; });
 
     container.innerHTML = '';
     entries.forEach(function (entry) {
@@ -305,6 +341,7 @@
   }
 
   function render() {
+    renderSourceFilterSeg();
     populateSourceSelect();
     populateDriverSelect();
     populateVehicleSelect();
@@ -320,8 +357,13 @@
     document.getElementById('wb-source').addEventListener('change', onSourceChange);
     ['wb-date', 'wb-driver', 'wb-mixer'].forEach(function (id) { document.getElementById(id).addEventListener('change', renderHint); });
     document.getElementById('wb-select-all').addEventListener('change', function () {
+      // Только видимые (по текущему фильтру источника) — иначе "все" в
+      // отфильтрованном на "Доставки" виде молча выделило бы и скрытые
+      // записи поступлений тоже.
       var checked = this.checked;
-      State.data.waybillEntries.forEach(function (e) { selectedEntryIds[e.id] = checked; });
+      (State.data.waybillEntries || [])
+        .filter(function (e) { return sourceFilterValue === 'all' || (sourceFilterValue === 'order' ? !!e.orderId : !!e.receiptId); })
+        .forEach(function (e) { selectedEntryIds[e.id] = checked; });
       renderEntries();
     });
     document.getElementById('wb-download-btn').addEventListener('click', handleDownload);
