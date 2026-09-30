@@ -63,6 +63,18 @@
     return { cls: 'ok', label: 'Разнесено' };
   }
 
+  // Топливо, уже потраченное на доставку ЭТОЙ закупки — сумма по всем уже
+  // разнесённым рейсам (waybill_entries.receiptId === r.id), а не расчёт на
+  // весь объём поступления: пока распределена только часть рейсов, это и
+  // есть фактически израсходованное на сегодня, без домыслов о будущем.
+  // fuelCostPerTrip — стоимость ОДНОГО рейса (см. validateAndBuild в
+  // backend/handlers/waybill-entries.js), поэтому умножаем на tripCount.
+  function fuelCostFor(receiptId) {
+    return (State.data.waybillEntries || [])
+      .filter(function (e) { return e.receiptId === receiptId; })
+      .reduce(function (s, e) { return s + e.tripCount * (e.fuelCostPerTrip || 0); }, 0);
+  }
+
   function renderFilters() {
     var plants = State.data.plants || [];
     var select = document.getElementById('rc-plant-filter');
@@ -94,12 +106,15 @@
       var st = statusFor(r);
       var allocated = WaybillCalc.allocatedForReceipt(State.data.waybillEntries || [], r.id);
       var canCancel = !r.cancelledAt && allocated === 0;
+      var fuelCost = fuelCostFor(r.id);
       return '<div class="row" style="grid-template-columns:100px 1fr 140px 1fr 100px 140px 44px;opacity:' + (r.cancelledAt ? '.6' : '1') + '">' +
         '<div class="num hint">' + fmtDate(r.receiptDate) + '</div>' +
         '<div class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + r.materialName + '</span><span class="hint">' + r.plantName + '</span></div>' +
         '<div class="r num">' + Format.fmtNum(r.qty, 2, r.unit) + '</div>' +
         '<div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + r.truckName + ' · ' + Format.fmtNum(r.distanceKm, 0, 'км') + (r.address ? ' · ' + r.address : '') + '</div>' +
-        '<div class="r num">' + allocated + ' из ' + Format.fmtNum(r.tripCount, 0) + '</div>' +
+        '<div class="stack" style="gap:1px;align-items:flex-end"><span class="r num">' + allocated + ' из ' + Format.fmtNum(r.tripCount, 0) + '</span>' +
+          (fuelCost > 0 ? '<span class="hint num" style="font-size:11px;white-space:nowrap">' + Format.fmtNum(fuelCost, 0, '₽ топл.') + '</span>' : '') +
+        '</div>' +
         '<div><span class="chip ' + st.cls + '">' + st.label + '</span></div>' +
         '<div style="display:flex;justify-content:flex-end">' +
           (canCancel ? '<button type="button" class="btn ghost icon rc-cancel-btn" aria-label="Отменить" title="Отменить" data-receipt-id="' + r.id + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' : '') +

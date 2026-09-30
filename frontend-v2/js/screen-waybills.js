@@ -30,16 +30,19 @@
           '<div class="spread"><h2 style="font-size:17px;font-weight:600">Новая запись</h2><span class="hint">Проверки идут до сохранения</span></div>' +
           '<form id="wb-add-form" class="stack g12">' +
             '<div class="field"><label for="wb-source">Заказ / поступление</label><select id="wb-source" class="inp"></select></div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1.3fr 1.3fr 0.7fr auto;gap:12px;align-items:end">' +
-              '<div class="field"><label for="wb-date">Дата</label><input id="wb-date" type="date" class="inp"></div>' +
-              '<div class="field"><label for="wb-driver">Водитель</label><select id="wb-driver" class="inp"></select></div>' +
-              '<div class="field"><label for="wb-mixer" id="wb-mixer-label">Миксер</label><select id="wb-mixer" class="inp"></select></div>' +
-              '<div class="field"><label for="wb-trips">Рейсов</label><input id="wb-trips" class="inp num" inputmode="numeric"></div>' +
+            '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="wb-range-toggle"> Распределить на несколько дней подряд — максимум рейсов в день, пока не закончится источник или диапазон</label>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:end" id="wb-fields-row">' +
+              '<div class="field" style="flex:1;min-width:140px"><label for="wb-date">Дата</label><input id="wb-date" type="date" class="inp"></div>' +
+              '<div class="field" style="flex:1;min-width:140px" id="wb-date-to-field" hidden><label for="wb-date-to">по (включительно)</label><input id="wb-date-to" type="date" class="inp"></div>' +
+              '<div class="field" style="flex:1.3;min-width:160px"><label for="wb-driver">Водитель</label><select id="wb-driver" class="inp"></select></div>' +
+              '<div class="field" style="flex:1.3;min-width:160px"><label for="wb-mixer" id="wb-mixer-label">Миксер</label><select id="wb-mixer" class="inp"></select></div>' +
+              '<div class="field" style="flex:0.7;min-width:90px" id="wb-trips-field"><label for="wb-trips">Рейсов</label><input id="wb-trips" class="inp num" inputmode="numeric"></div>' +
               '<button type="button" class="btn ghost sm" id="wb-max-btn">MAX</button>' +
             '</div>' +
             '<p class="hint" id="wb-hint" style="margin:0"></p>' +
             '<p class="banner" id="wb-error" hidden></p>' +
-            '<button class="btn pri" type="submit">Сохранить запись</button>' +
+            '<p class="banner ok" id="wb-range-summary" hidden></p>' +
+            '<button class="btn pri" type="submit" id="wb-submit-btn">Сохранить запись</button>' +
           '</form>' +
         '</section>' +
         '<section class="card stack" style="overflow:hidden;flex:1">' +
@@ -194,9 +197,144 @@
     var cfg = cfgLimits();
     var parts = [];
     if (src) parts.push((src.kind === 'receipt' ? 'По поступлению' : 'По заказу') + ' осталось: ' + src.remaining + ' из ' + src.tripCount);
+    // Промежуточный итог по топливу — по просьбе пользователя ("не понятно,
+    // сколько израсходовано на доставку этой закупки"): сумма уже
+    // потраченного на УЖЕ разнесённые рейсы этого поступления, не проекция
+    // на весь объём — видно прямо в форме, пока распределяешь очередной день.
+    if (src && src.kind === 'receipt') {
+      var fuelSoFar = entries().filter(function (e) { return e.receiptId === src.id; })
+        .reduce(function (s, e) { return s + e.tripCount * (e.fuelCostPerTrip || 0); }, 0);
+      if (fuelSoFar > 0) parts.push('Топливо на доставку уже потрачено: ' + Format.fmtNum(fuelSoFar, 0, '₽'));
+    }
     if (driverId && date) parts.push('Водитель занят: ' + Format.fmtNum(driverUsedHours(driverId, date, null), 1) + ' из ' + Format.fmtNum(cfg.driverShiftHours, 1) + ' ч');
     if (mixerId && date) parts.push((src && src.kind === 'receipt' ? 'Инертовоз' : 'Машина') + ' занят(а): ' + Format.fmtNum(mixerUsedHours(mixerId, date, null), 1) + ' из ' + Format.fmtNum(cfg.vehicleShiftHours, 1) + ' ч');
     document.getElementById('wb-hint').textContent = parts.join(' · ');
+  }
+
+  // Диапазон дат — по просьбе пользователя ("и так понятно, что он ближайшие
+  // N дней будет возить этот груз"): вместо ручного набора даты на каждый
+  // день, один и тот же водитель+машина+источник получают по MAX рейсов в
+  // день на весь диапазон разом (см. handleRangeSubmit). Поле "Рейсов" и
+  // кнопка MAX тут не нужны — число рейсов в день считается заново для
+  // каждой даты (дневные лимиты часов могут отличаться день ото дня, если
+  // на кого-то уже что-то распределено).
+  function applyRangeModeVisibility() {
+    var on = document.getElementById('wb-range-toggle').checked;
+    document.getElementById('wb-date-to-field').hidden = !on;
+    document.getElementById('wb-trips-field').hidden = on;
+    document.getElementById('wb-max-btn').hidden = on;
+    document.getElementById('wb-submit-btn').textContent = on ? 'Распределить по дням' : 'Сохранить запись';
+    document.getElementById('wb-range-summary').hidden = true;
+    document.getElementById('wb-error').hidden = true;
+  }
+
+  function isoDate(d) {
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function fmtShortDate(iso) { return iso.split('-').reverse().join('.'); }
+
+  async function handleRangeSubmit() {
+    var errorEl = document.getElementById('wb-error');
+    var summaryEl = document.getElementById('wb-range-summary');
+    errorEl.hidden = true;
+    summaryEl.hidden = true;
+    var src = currentSource();
+    var startDateStr = document.getElementById('wb-date').value;
+    var endDateStr = document.getElementById('wb-date-to').value;
+    var driverId = document.getElementById('wb-driver').value;
+    var mixerId = document.getElementById('wb-mixer').value;
+    if (!src || !startDateStr || !endDateStr || !driverId || !mixerId) {
+      errorEl.textContent = 'Заполните заказ/поступление, обе даты диапазона, водителя и машину.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (endDateStr < startDateStr) {
+      errorEl.textContent = 'Дата "по" не может быть раньше даты "с".';
+      errorEl.hidden = false;
+      return;
+    }
+    var start = new Date(startDateStr + 'T00:00:00');
+    var end = new Date(endDateStr + 'T00:00:00');
+    var dayCount = Math.round((end - start) / 86400000) + 1;
+    if (dayCount > 366) {
+      errorEl.textContent = 'Слишком большой диапазон дат — не больше года за раз.';
+      errorEl.hidden = false;
+      return;
+    }
+
+    var driver = State.data.employees.find(function (e) { return e.id === driverId; });
+    var vehicleList = src.kind === 'receipt' ? State.data.aggregateTrucks : State.data.mixers;
+    var mixer = vehicleList.find(function (m) { return m.id === mixerId; });
+
+    // Локальная симуляция: остаток источника и занятость водителя/машины по
+    // дням меняются по ходу распределения, но незачем перезагружать
+    // State.loadAll() после каждого дня — копим уже созданные записи тут же
+    // и считаем следующий день по этому локальному списку.
+    var localEntries = entries().slice();
+    var createdDays = [];
+    var skippedDays = [];
+    var submitBtn = document.getElementById('wb-submit-btn');
+    submitBtn.disabled = true;
+
+    try {
+      for (var i = 0; i < dayCount; i++) {
+        var dateStr = isoDate(new Date(start.getTime() + i * 86400000));
+
+        // Период работы водителя проверяем локально (данные уже загружены
+        // в driver.workPeriods) — не тратим запрос на заведомо невозможный
+        // день и не заспамим пользователя ошибкой по каждому такому дню.
+        var inPeriod = (driver.workPeriods || []).some(function (p) { return p.startDate <= dateStr && (!p.endDate || p.endDate >= dateStr); });
+        if (!inPeriod) { skippedDays.push({ date: dateStr, reason: 'вне периода работы водителя' }); continue; }
+
+        var maxResult = src.kind === 'receipt'
+          ? WaybillCalc.maxTripsForReceipt(src.raw, localEntries, State.data.config, driverId, mixerId, dateStr)
+          : WaybillCalc.maxTrips(src.raw, localEntries, State.data.config, driverId, mixerId, dateStr);
+
+        if (!(maxResult.max > 0)) {
+          if (maxResult.remaining === 0) { skippedDays.push({ date: dateStr, reason: 'источник уже полностью распределён' }); break; }
+          var reason = maxResult.maxByDriver <= 0 ? 'у водителя не осталось времени в этот день' : 'у машины не осталось времени в этот день';
+          skippedDays.push({ date: dateStr, reason: reason });
+          continue;
+        }
+
+        var body = {
+          tripDate: dateStr, driverId: driver.id, driverName: driver.name,
+          driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
+          mixerPlate: mixer.licensePlate || '', distanceKm: src.distanceKm, tripCount: maxResult.max
+        };
+        if (src.kind === 'receipt') body.receiptId = src.id; else body.orderId = src.id;
+
+        try {
+          var created = await Api.post('/waybill-entries', body);
+          localEntries.push(created);
+          createdDays.push({ date: dateStr, trips: maxResult.max });
+        } catch (err) {
+          skippedDays.push({ date: dateStr, reason: err.message });
+        }
+      }
+    } finally {
+      submitBtn.disabled = false;
+    }
+
+    await State.loadAll();
+    render();
+
+    if (!createdDays.length) {
+      errorEl.textContent = 'Не удалось создать ни одной записи за весь диапазон' + (skippedDays[0] ? ' — ' + skippedDays[0].reason + '.' : '.');
+      errorEl.hidden = false;
+      return;
+    }
+    var totalTrips = createdDays.reduce(function (s, d) { return s + d.trips; }, 0);
+    var text = 'Создано записей: ' + createdDays.length + ' (' + fmtShortDate(createdDays[0].date) + ' — ' + fmtShortDate(createdDays[createdDays.length - 1].date) + '), всего рейсов: ' + totalTrips + '.';
+    if (skippedDays.length) {
+      text += ' Пропущено дней: ' + skippedDays.length + ' (' +
+        skippedDays.slice(0, 3).map(function (s) { return fmtShortDate(s.date) + ' — ' + s.reason; }).join('; ') +
+        (skippedDays.length > 3 ? '…' : '') + ').';
+    }
+    summaryEl.textContent = text;
+    summaryEl.hidden = false;
   }
 
   function handleMax() {
@@ -224,6 +362,7 @@
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (document.getElementById('wb-range-toggle').checked) return handleRangeSubmit();
     var errorEl = document.getElementById('wb-error');
     errorEl.hidden = true;
     var src = currentSource();
@@ -355,7 +494,9 @@
     document.getElementById('wb-add-form').addEventListener('submit', handleSubmit);
     document.getElementById('wb-max-btn').addEventListener('click', handleMax);
     document.getElementById('wb-source').addEventListener('change', onSourceChange);
+    document.getElementById('wb-range-toggle').addEventListener('change', applyRangeModeVisibility);
     ['wb-date', 'wb-driver', 'wb-mixer'].forEach(function (id) { document.getElementById(id).addEventListener('change', renderHint); });
+    applyRangeModeVisibility();
     document.getElementById('wb-select-all').addEventListener('change', function () {
       // Только видимые (по текущему фильтру источника) — иначе "все" в
       // отфильтрованном на "Доставки" виде молча выделило бы и скрытые

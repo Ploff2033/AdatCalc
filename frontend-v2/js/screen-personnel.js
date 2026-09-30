@@ -284,7 +284,16 @@
   }
 
   async function refreshEditingEmployee() {
-    await loadEmployees();
+    // Своя loadEmployees() держит только ЭТОТ экран в курсе (см. комментарий
+    // у allEmployees выше) — но период работы нужен и другим экранам
+    // (Путевые листы читают driver.workPeriods из общего State.data.employees,
+    // см. screen-waybills.js::handleRangeSubmit), поэтому обновляем и общий
+    // State тоже. Без этого водитель, только что получивший период тут,
+    // выглядел бы "без периода" на Путевых листах до полной перезагрузки
+    // страницы — реальный баг, а не гипотетический (SPA-переход между
+    // экранами не перезагружает страницу и не трогает общий State сам по
+    // себе).
+    await Promise.all([loadEmployees(), State.loadAll()]);
     editingEmployee = employees().find(function (e) { return e.id === editingEmployee.id; }) || editingEmployee;
     renderPeriods();
     renderTable();
