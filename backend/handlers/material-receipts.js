@@ -25,18 +25,18 @@ function rowToReceipt(row) {
   };
 }
 
-// query.plantId не задан — только у admin (полный кросс-заводской список,
-// тот же принцип, что и у orders.js::list). Прочие роли без plantId
-// получают пустой список.
-async function list(query, role) {
+// Маршрут уже закрыт ролью 'manager' на уровне router.js (read: 'manager') —
+// анонимного сценария тут, в отличие от orders.js, нет вообще, поэтому
+// role тут не нужен для веток доступа: plantId просто опциональный фильтр
+// (не задан — полный кросс-заводской список, тот же принцип, что и у
+// orders.js::list для залогиненных).
+async function list(query) {
   const q = query || {};
   const conditions = [];
   const params = [];
   if (q.plantId) {
     params.push(q.plantId);
     conditions.push(`plant_id = $${params.length}`);
-  } else if (role !== 'admin') {
-    return [];
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await db.pool.query(`SELECT * FROM material_receipts ${where} ORDER BY created_at DESC`, params);

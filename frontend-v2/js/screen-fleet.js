@@ -80,7 +80,7 @@
       var amort = Calc.amortPerKm(t);
       var cols = isMixer() ? '1.3fr 70px 110px 110px 90px 80px 110px' : '1.3fr 70px 110px 110px 90px 80px';
       return '<div class="row' + (canEdit ? '' : '') + '" style="grid-template-columns:' + cols + ';min-height:58px' + (canEdit ? ';cursor:pointer' : '') + '" data-fleet-id="' + t.id + '">' +
-        '<div class="stack" style="gap:1px"><span style="font-weight:600">' + t.name + '</span>' + (isMixer() ? '<span class="num hint">' + (t.licensePlate || '—') + '</span>' : '') + '</div>' +
+        '<div class="stack" style="gap:1px"><span style="font-weight:600">' + t.name + '</span><span class="num hint">' + (t.licensePlate || '—') + '</span></div>' +
         '<div class="r num">' + Format.fmtNum(t.capacity, 1) + '</div>' +
         '<div class="r num">' + Format.fmtNum(t.fuelRate, 1) + '</div>' +
         '<div class="r num hint">' + Format.fmtNum(t.ureaRate, 1) + '</div>' +
@@ -119,7 +119,10 @@
     document.getElementById('fl-save-btn').textContent = 'Добавить машину';
     document.getElementById('fl-delete-btn').hidden = true;
     document.getElementById('fl-form-error').hidden = true;
-    document.getElementById('fl-f-plate-field').hidden = !isMixer();
+    // Гос. номер теперь и у инертовозов тоже (нужен для путевых листов на
+    // рейсы поступлений инертных, см. handlers/material-receipts.js) — в
+    // отличие от одометра, который остаётся только у миксеров.
+    document.getElementById('fl-f-plate-field').hidden = false;
     document.getElementById('fl-f-odo-field').hidden = !isMixer();
     document.getElementById('fl-f-name').value = '';
     PlateInput.setValue(document.getElementById('fl-f-plate'), '');
@@ -134,7 +137,7 @@
     document.getElementById('fl-save-btn').textContent = 'Сохранить';
     document.getElementById('fl-delete-btn').hidden = false;
     document.getElementById('fl-form-error').hidden = true;
-    document.getElementById('fl-f-plate-field').hidden = !isMixer();
+    document.getElementById('fl-f-plate-field').hidden = false;
     document.getElementById('fl-f-odo-field').hidden = !isMixer();
     document.getElementById('fl-f-name').value = t.name;
     PlateInput.setValue(document.getElementById('fl-f-plate'), t.licensePlate || '');
@@ -166,8 +169,8 @@
       ureaRate: NumericInput.parseNumber(document.getElementById('fl-f-urea').value) || 0,
       platonRatePerKm: NumericInput.parseNumber(document.getElementById('fl-f-platon').value) || 0
     };
+    payload.licensePlate = document.getElementById('fl-f-plate').value.trim();
     if (isMixer()) {
-      payload.licensePlate = document.getElementById('fl-f-plate').value.trim();
       payload.odometerBaselineKm = NumericInput.parseNumber(document.getElementById('fl-f-odo').value) || 0;
     }
     if (!payload.name) { errorEl.textContent = 'Укажите название.'; errorEl.hidden = false; return; }

@@ -3,6 +3,14 @@
   // формула, что и на бэкенде, см. backend/handlers/waybill-entries.js) под
   // макет Waybills.dc.html: очередь нераспределённых слева, форма
   // распределения с тремя проверками + список по водителям справа.
+  //
+  // Поступления инертных (см. документ "AdatBeton Calc v2 — архитектура
+  // модулей", обновление 30.09.2026) добавлены в ТОТ ЖЕ экран, не отдельным
+  // рядом — документ прямо требует "никакой отдельной ветки кода на
+  // распределение". Источник ("wb-source") — один select и на заказы, и на
+  // поступления сразу (значение вида "order:<id>"/"receipt:<id>"), техника
+  // ("wb-mixer") переключается между миксерами и инертовозами в зависимости
+  // от выбранного источника — см. currentSource()/populateVehicleSelect().
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap">Распределение рейсов</span><h1>Путевые листы</h1></div>' +
@@ -17,11 +25,11 @@
         '<section class="card stack g12" style="padding:16px 18px;border-color:var(--accent)">' +
           '<div class="spread"><h2 style="font-size:17px;font-weight:600">Новая запись</h2><span class="hint">Проверки идут до сохранения</span></div>' +
           '<form id="wb-add-form" class="stack g12">' +
-            '<div class="field"><label for="wb-order">Заказ</label><select id="wb-order" class="inp"></select></div>' +
+            '<div class="field"><label for="wb-source">Заказ / поступление</label><select id="wb-source" class="inp"></select></div>' +
             '<div style="display:grid;grid-template-columns:1fr 1.3fr 1.3fr 0.7fr auto;gap:12px;align-items:end">' +
               '<div class="field"><label for="wb-date">Дата</label><input id="wb-date" type="date" class="inp"></div>' +
               '<div class="field"><label for="wb-driver">Водитель</label><select id="wb-driver" class="inp"></select></div>' +
-              '<div class="field"><label for="wb-mixer">Миксер</label><select id="wb-mixer" class="inp"></select></div>' +
+              '<div class="field"><label for="wb-mixer" id="wb-mixer-label">Миксер</label><select id="wb-mixer" class="inp"></select></div>' +
               '<div class="field"><label for="wb-trips">Рейсов</label><input id="wb-trips" class="inp num" inputmode="numeric"></div>' +
               '<button type="button" class="btn ghost sm" id="wb-max-btn">MAX</button>' +
             '</div>' +
@@ -51,44 +59,52 @@
   function entries() { return State.data.waybillEntries || []; }
   function cfgLimits() { return WaybillCalc.cfgLimits(State.data.config); }
   function tripHours(distanceKm, cfg) { return WaybillCalc.tripHours(distanceKm, cfg); }
-  function allocatedForOrder(orderId) { return WaybillCalc.allocatedForOrder(entries(), orderId); }
-  function remainingForOrder(order) { return WaybillCalc.remainingForOrder(entries(), order); }
-  function deliveryOrders() { return WaybillCalc.deliveryOrders(State.data.orders || []); }
-  function unallocatedOrders() { return WaybillCalc.unallocatedOrders(State.data.orders || [], entries()); }
   function driverUsedHours(driverId, date, excludeId) { return WaybillCalc.driverUsedHours(entries(), State.data.config, driverId, date, excludeId); }
   function mixerUsedHours(mixerId, date, excludeId) { return WaybillCalc.mixerUsedHours(entries(), State.data.config, mixerId, date, excludeId); }
 
+  // Единая очередь (заказы + поступления, см. WaybillCalc.queueItems) —
+  // каждый пункт помечен kind, форма читает remaining/distanceKm/label
+  // одинаково для обоих источников.
+  function queue() { return WaybillCalc.queueItems(State.data.orders || [], State.data.materialReceipts || [], entries()); }
+
   function renderQueue() {
-    var orders = unallocatedOrders();
-    document.getElementById('wb-queue-count').textContent = orders.length;
-    document.getElementById('wb-queue-empty').hidden = orders.length > 0;
+    var items = queue();
+    document.getElementById('wb-queue-count').textContent = items.length;
+    document.getElementById('wb-queue-empty').hidden = items.length > 0;
     var container = document.getElementById('wb-queue');
-    container.innerHTML = orders.map(function (o) {
-      var d = new Date(o.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-      return '<div class="stack g6" style="padding:14px 18px;border-bottom:1px solid var(--border-soft)" data-order-id="' + o.id + '">' +
-        '<div class="spread" style="align-items:baseline"><span style="font-weight:600">' + o.recipeName + '</span><span class="num hint">' + d + '</span></div>' +
-        '<span class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (o.address || o.plantName) + '</span>' +
-        '<div class="spread"><span class="num" style="font-size:13px">осталось <b>' + remainingForOrder(o) + '</b> из ' + o.tripCount + '</span><button type="button" class="btn ghost sm wb-goto-btn" style="height:32px">Распределить</button></div>' +
+    container.innerHTML = items.map(function (it) {
+      var d = new Date(it.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+      return '<div class="stack g6" style="padding:14px 18px;border-bottom:1px solid var(--border-soft)" data-kind="' + it.kind + '" data-item-id="' + it.id + '">' +
+        '<div class="spread" style="align-items:baseline"><span style="font-weight:600">' + it.label + '</span><span class="num hint">' + d + '</span></div>' +
+        '<span class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + it.sub + (it.kind === 'receipt' ? ' · поступление' : '') + '</span>' +
+        '<div class="spread"><span class="num" style="font-size:13px">осталось <b>' + it.remaining + '</b> из ' + it.tripCount + '</span><button type="button" class="btn ghost sm wb-goto-btn" style="height:32px">Распределить</button></div>' +
       '</div>';
     }).join('');
     Array.prototype.forEach.call(container.querySelectorAll('.wb-goto-btn'), function (btn) {
       btn.addEventListener('click', function () {
-        var id = btn.closest('[data-order-id]').dataset.orderId;
-        document.getElementById('wb-order').value = id;
-        onOrderChange();
+        var wrap = btn.closest('[data-item-id]');
+        document.getElementById('wb-source').value = wrap.dataset.kind + ':' + wrap.dataset.itemId;
+        onSourceChange();
       });
     });
   }
 
-  function populateOrderSelect() {
-    var select = document.getElementById('wb-order');
+  function populateSourceSelect() {
+    var select = document.getElementById('wb-source');
     var prev = select.value;
-    select.innerHTML = '<option value="">— выберите заказ —</option>' + deliveryOrders().slice()
-      .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })
-      .map(function (o) {
-        var d = new Date(o.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        return '<option value="' + o.id + '">' + o.plantName + ' · ' + d + ' · ' + o.recipeName + ' — осталось ' + remainingForOrder(o) + '</option>';
-      }).join('');
+    var items = queue();
+    select.innerHTML = '<option value="">— выберите —</option>' +
+      (items.length ? '<optgroup label="Заказы на бетон">' : '') +
+      items.filter(function (it) { return it.kind === 'order'; }).map(function (it) {
+        var d = new Date(it.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        return '<option value="order:' + it.id + '">' + it.sub + ' · ' + d + ' · ' + it.label + ' — осталось ' + it.remaining + '</option>';
+      }).join('') +
+      (items.length ? '</optgroup><optgroup label="Поступления инертных">' : '') +
+      items.filter(function (it) { return it.kind === 'receipt'; }).map(function (it) {
+        var d = new Date(it.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        return '<option value="receipt:' + it.id + '">' + it.sub.replace(' · приход', '') + ' · ' + d + ' · ' + it.label + ' — осталось ' + it.remaining + '</option>';
+      }).join('') +
+      (items.length ? '</optgroup>' : '');
     if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
   }
   function populateDriverSelect() {
@@ -99,53 +115,80 @@
       .map(function (e) { return '<option value="' + e.id + '">' + e.name + '</option>'; }).join('');
     if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
   }
-  function populateMixerSelect() {
+  // Техника переключается между миксерами (заказы на бетон) и инертовозами
+  // (поступления инертных) в зависимости от того, что выбрано в источнике —
+  // концентробетон возит миксер, инертное сырьё возит инертовоз, это не
+  // взаимозаменяемая техника.
+  function populateVehicleSelect() {
+    var src = currentSource();
+    var isReceipt = src && src.kind === 'receipt';
+    document.getElementById('wb-mixer-label').textContent = isReceipt ? 'Инертовоз' : 'Миксер';
+    var list = (isReceipt ? State.data.aggregateTrucks : State.data.mixers) || [];
     var select = document.getElementById('wb-mixer');
     var prev = select.value;
-    select.innerHTML = '<option value="">— выберите —</option>' + (State.data.mixers || []).slice()
+    select.innerHTML = '<option value="">— выберите —</option>' + list.slice()
       .sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); })
       .map(function (m) { return '<option value="' + m.id + '">' + m.name + (m.licensePlate ? ' (' + m.licensePlate + ')' : '') + '</option>'; }).join('');
     if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
   }
 
-  function currentOrder() { return (State.data.orders || []).find(function (o) { return o.id === document.getElementById('wb-order').value; }) || null; }
+  // Разбирает "order:<id>"/"receipt:<id>" из select в единый объект —
+  // remaining/distanceKm/tripCount читаются одинаково дальше по коду,
+  // независимо от того, заказ это или поступление.
+  function currentSource() {
+    var val = document.getElementById('wb-source').value;
+    if (!val) return null;
+    var i = val.indexOf(':');
+    var kind = val.slice(0, i), id = val.slice(i + 1);
+    if (kind === 'order') {
+      var order = (State.data.orders || []).find(function (o) { return o.id === id; });
+      if (!order) return null;
+      return { kind: 'order', id: id, raw: order, distanceKm: order.distanceKm, tripCount: order.tripCount, remaining: WaybillCalc.remainingForOrder(entries(), order), createdAt: order.createdAt };
+    }
+    var receipt = (State.data.materialReceipts || []).find(function (r) { return r.id === id; });
+    if (!receipt) return null;
+    return { kind: 'receipt', id: id, raw: receipt, distanceKm: receipt.distanceKm, tripCount: receipt.tripCount, remaining: WaybillCalc.remainingForReceipt(entries(), receipt), createdAt: receipt.createdAt };
+  }
 
-  function onOrderChange() {
-    var order = currentOrder();
+  function onSourceChange() {
+    var src = currentSource();
     var dateInput = document.getElementById('wb-date');
-    if (order && !dateInput.value) dateInput.value = new Date(order.createdAt).toISOString().slice(0, 10);
+    if (src && !dateInput.value) dateInput.value = new Date(src.createdAt).toISOString().slice(0, 10);
+    populateVehicleSelect();
     renderHint();
   }
 
   function renderHint() {
-    var order = currentOrder();
+    var src = currentSource();
     var date = document.getElementById('wb-date').value;
     var driverId = document.getElementById('wb-driver').value;
     var mixerId = document.getElementById('wb-mixer').value;
     var cfg = cfgLimits();
     var parts = [];
-    if (order) parts.push('По заказу осталось: ' + remainingForOrder(order) + ' из ' + order.tripCount);
+    if (src) parts.push((src.kind === 'receipt' ? 'По поступлению' : 'По заказу') + ' осталось: ' + src.remaining + ' из ' + src.tripCount);
     if (driverId && date) parts.push('Водитель занят: ' + Format.fmtNum(driverUsedHours(driverId, date, null), 1) + ' из ' + Format.fmtNum(cfg.driverShiftHours, 1) + ' ч');
-    if (mixerId && date) parts.push('Машина занята: ' + Format.fmtNum(mixerUsedHours(mixerId, date, null), 1) + ' из ' + Format.fmtNum(cfg.vehicleShiftHours, 1) + ' ч');
+    if (mixerId && date) parts.push((src && src.kind === 'receipt' ? 'Инертовоз' : 'Машина') + ' занят(а): ' + Format.fmtNum(mixerUsedHours(mixerId, date, null), 1) + ' из ' + Format.fmtNum(cfg.vehicleShiftHours, 1) + ' ч');
     document.getElementById('wb-hint').textContent = parts.join(' · ');
   }
 
   function handleMax() {
     var errorEl = document.getElementById('wb-error');
     errorEl.hidden = true;
-    var order = currentOrder();
+    var src = currentSource();
     var date = document.getElementById('wb-date').value;
     var driverId = document.getElementById('wb-driver').value;
     var mixerId = document.getElementById('wb-mixer').value;
-    if (!order || !date || !driverId || !mixerId) {
-      errorEl.textContent = 'Сначала выберите заказ, дату, водителя и машину.';
+    if (!src || !date || !driverId || !mixerId) {
+      errorEl.textContent = 'Сначала выберите заказ/поступление, дату, водителя и машину.';
       errorEl.hidden = false;
       return;
     }
-    var r = WaybillCalc.maxTrips(order, entries(), State.data.config, driverId, mixerId, date);
+    var r = src.kind === 'receipt'
+      ? WaybillCalc.maxTripsForReceipt(src.raw, entries(), State.data.config, driverId, mixerId, date)
+      : WaybillCalc.maxTrips(src.raw, entries(), State.data.config, driverId, mixerId, date);
     document.getElementById('wb-trips').value = r.max || '';
     if (r.max === 0) {
-      var reason = r.remaining === 0 ? 'по заказу больше не осталось рейсов' : (r.maxByDriver <= 0 ? 'у водителя не осталось времени в этот день' : 'у машины не осталось времени в этот день');
+      var reason = r.remaining === 0 ? 'у источника больше не осталось рейсов' : (r.maxByDriver <= 0 ? 'у водителя не осталось времени в этот день' : 'у машины не осталось времени в этот день');
       errorEl.textContent = 'MAX = 0 — ' + reason + '.';
       errorEl.hidden = false;
     }
@@ -155,24 +198,27 @@
     e.preventDefault();
     var errorEl = document.getElementById('wb-error');
     errorEl.hidden = true;
-    var order = currentOrder();
+    var src = currentSource();
     var date = document.getElementById('wb-date').value;
     var driverId = document.getElementById('wb-driver').value;
     var mixerId = document.getElementById('wb-mixer').value;
     var trips = parseInt(document.getElementById('wb-trips').value, 10);
-    if (!order || !date || !driverId || !mixerId || !(trips > 0)) {
-      errorEl.textContent = 'Заполните все поля: заказ, дата, водитель, машина и число рейсов больше нуля.';
+    if (!src || !date || !driverId || !mixerId || !(trips > 0)) {
+      errorEl.textContent = 'Заполните все поля: заказ/поступление, дата, водитель, машина и число рейсов больше нуля.';
       errorEl.hidden = false;
       return;
     }
     var driver = State.data.employees.find(function (e) { return e.id === driverId; });
-    var mixer = State.data.mixers.find(function (m) { return m.id === mixerId; });
+    var vehicleList = src.kind === 'receipt' ? State.data.aggregateTrucks : State.data.mixers;
+    var mixer = vehicleList.find(function (m) { return m.id === mixerId; });
+    var body = {
+      tripDate: date, driverId: driver.id, driverName: driver.name,
+      driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
+      mixerPlate: mixer.licensePlate || '', distanceKm: src.distanceKm, tripCount: trips
+    };
+    if (src.kind === 'receipt') body.receiptId = src.id; else body.orderId = src.id;
     try {
-      await Api.post('/waybill-entries', {
-        orderId: order.id, tripDate: date, driverId: driver.id, driverName: driver.name,
-        driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
-        mixerPlate: mixer.licensePlate || '', distanceKm: order.distanceKm, tripCount: trips
-      });
+      await Api.post('/waybill-entries', body);
       document.getElementById('wb-trips').value = '';
       await State.loadAll();
       render();
@@ -208,7 +254,14 @@
 
     container.innerHTML = '';
     entries.forEach(function (entry) {
-      var order = State.data.orders.find(function (o) { return o.id === entry.orderId; });
+      var sourceLabel = '';
+      if (entry.orderId) {
+        var order = State.data.orders.find(function (o) { return o.id === entry.orderId; });
+        if (order) sourceLabel = ' · ' + order.recipeName;
+      } else if (entry.receiptId) {
+        var receipt = (State.data.materialReceipts || []).find(function (r) { return r.id === entry.receiptId; });
+        if (receipt) sourceLabel = ' · ' + receipt.materialName + ' (приход)';
+      }
       var hours = entry.tripCount * tripHours(entry.distanceKm, cfg);
       var row = document.createElement('div');
       row.className = 'row';
@@ -216,7 +269,7 @@
       row.innerHTML =
         '<div><input type="checkbox" class="wb-check"></div>' +
         '<div class="num" style="font-size:13px">' + entry.tripDate + '</div>' +
-        '<div class="stack" style="gap:1px"><span style="font-weight:500">' + entry.driverName + ' · ' + entry.mixerName + '</span><span class="hint">' + entry.plantName + (order ? ' · ' + order.recipeName : '') + '</span></div>' +
+        '<div class="stack" style="gap:1px"><span style="font-weight:500">' + entry.driverName + ' · ' + entry.mixerName + '</span><span class="hint">' + entry.plantName + sourceLabel + '</span></div>' +
         '<div class="r num">' + Format.fmtNum(entry.distanceKm, 1) + '</div>' +
         '<div class="r num">' + Format.fmtNum(entry.tripCount, 0) + '</div>' +
         '<div class="r num">' + Format.fmtNum(hours, 1) + '</div>' +
@@ -252,9 +305,9 @@
   }
 
   function render() {
-    populateOrderSelect();
+    populateSourceSelect();
     populateDriverSelect();
-    populateMixerSelect();
+    populateVehicleSelect();
     renderQueue();
     renderEntries();
     renderHint();
@@ -264,7 +317,7 @@
     document.getElementById('page-waybills').innerHTML = HTML;
     document.getElementById('wb-add-form').addEventListener('submit', handleSubmit);
     document.getElementById('wb-max-btn').addEventListener('click', handleMax);
-    document.getElementById('wb-order').addEventListener('change', onOrderChange);
+    document.getElementById('wb-source').addEventListener('change', onSourceChange);
     ['wb-date', 'wb-driver', 'wb-mixer'].forEach(function (id) { document.getElementById(id).addEventListener('change', renderHint); });
     document.getElementById('wb-select-all').addEventListener('change', function () {
       var checked = this.checked;

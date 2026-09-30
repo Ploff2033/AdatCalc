@@ -35,13 +35,12 @@
       .reduce(function (s, e) { return s + e.tripCount * tripHours(e.distanceKm, cfg); }, 0);
   }
 
-  // MAX-подсказка (та же формула, что и handleMaxClick/wb-max-btn в v1 и
-  // desktop-screen) — сколько рейсов реально можно назначить этой связке
-  // водитель+машина+день, с учётом остатка заказа и обоих бюджетов часов.
-  function maxTrips(order, entries, config, driverId, mixerId, date) {
+  // MAX-подсказка, общая часть (не зависит от того, заказ это или
+  // поступление) — сколько рейсов реально можно назначить этой связке
+  // водитель+машина+день, с учётом остатка источника и обоих бюджетов часов.
+  function maxTripsGeneric(remaining, distanceKm, entries, config, driverId, mixerId, date) {
     var cfg = cfgLimits(config);
-    var perTripHours = tripHours(order.distanceKm, cfg);
-    var remaining = remainingForOrder(entries, order);
+    var perTripHours = tripHours(distanceKm, cfg);
     var driverLeft = cfg.driverShiftHours - driverUsedHours(entries, config, driverId, date, null);
     var mixerLeft = cfg.vehicleShiftHours - mixerUsedHours(entries, config, mixerId, date, null);
     var maxByDriver = perTripHours > 0 ? Math.floor(driverLeft / perTripHours + 1e-9) : remaining;
@@ -49,9 +48,47 @@
     return { max: Math.max(0, Math.min(remaining, maxByDriver, maxByMixer)), remaining: remaining, maxByDriver: maxByDriver, maxByMixer: maxByMixer };
   }
 
+  // Оставлено как было (v1/mobile-waybills.js зовут именно так) — тонкая
+  // обёртка над maxTripsGeneric.
+  function maxTrips(order, entries, config, driverId, mixerId, date) {
+    return maxTripsGeneric(remainingForOrder(entries, order), order.distanceKm, entries, config, driverId, mixerId, date);
+  }
+
+  // ---- Поступления инертных (см. handlers/waybill-entries.js::receiptId) —
+  // тот же экран/форма, что и заказы (документ прямо требует "никакой
+  // отдельной ветки кода на распределение"), поэтому набор функций внизу —
+  // зеркало order-функций выше, а не что-то новое по сути. ----
+  function entriesForReceipt(entries, receiptId) { return entries.filter(function (e) { return e.receiptId === receiptId; }); }
+  function allocatedForReceipt(entries, receiptId) { return entriesForReceipt(entries, receiptId).reduce(function (s, e) { return s + e.tripCount; }, 0); }
+  function remainingForReceipt(entries, receipt) { return Math.max(0, (receipt.tripCount || 0) - allocatedForReceipt(entries, receipt.id)); }
+  function unallocatedReceipts(receipts, entries) {
+    return (receipts || []).filter(function (r) { return !r.cancelledAt && r.tripCount > 0 && remainingForReceipt(entries, r) > 0; })
+      .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+  }
+  function maxTripsForReceipt(receipt, entries, config, driverId, mixerId, date) {
+    return maxTripsGeneric(remainingForReceipt(entries, receipt), receipt.distanceKm, entries, config, driverId, mixerId, date);
+  }
+
+  // ---- Единая "очередь" для экрана — каждый пункт помечен kind, дальше
+  // форма читает id/label/remaining/tripCount/distanceKm одинаково для
+  // обоих источников. ----
+  function queueItems(orders, receipts, entries) {
+    var fromOrders = unallocatedOrders(orders, entries).map(function (o) {
+      return { kind: 'order', id: o.id, source: o, label: o.recipeName, sub: o.address || o.plantName,
+        remaining: remainingForOrder(entries, o), tripCount: o.tripCount, distanceKm: o.distanceKm, createdAt: o.createdAt };
+    });
+    var fromReceipts = unallocatedReceipts(receipts, entries).map(function (r) {
+      return { kind: 'receipt', id: r.id, source: r, label: r.materialName + ' · ' + Format.fmtNum(r.qty, 1, r.unit),
+        sub: r.plantName + ' · приход', remaining: remainingForReceipt(entries, r), tripCount: r.tripCount, distanceKm: r.distanceKm, createdAt: r.createdAt };
+    });
+    return fromOrders.concat(fromReceipts).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+  }
+
   window.WaybillCalc = {
     cfgLimits: cfgLimits, tripHours: tripHours, entriesForOrder: entriesForOrder, allocatedForOrder: allocatedForOrder,
     remainingForOrder: remainingForOrder, deliveryOrders: deliveryOrders, unallocatedOrders: unallocatedOrders,
-    driverUsedHours: driverUsedHours, mixerUsedHours: mixerUsedHours, maxTrips: maxTrips
+    driverUsedHours: driverUsedHours, mixerUsedHours: mixerUsedHours, maxTrips: maxTrips,
+    entriesForReceipt: entriesForReceipt, allocatedForReceipt: allocatedForReceipt, remainingForReceipt: remainingForReceipt,
+    unallocatedReceipts: unallocatedReceipts, maxTripsForReceipt: maxTripsForReceipt, queueItems: queueItems
   };
 })();

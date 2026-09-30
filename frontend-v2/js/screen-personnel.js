@@ -38,6 +38,19 @@
             '<div class="field"><label for="pn-f-salary">Оклад</label><div class="unit"><input id="pn-f-salary" class="inp num" inputmode="decimal"><span>₽/мес</span></div></div>' +
             '<label style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 14px;border:1px solid var(--border-soft);border-radius:4px;background:#fff;cursor:pointer"><span style="font-weight:500">Водитель</span><button type="button" class="tog" id="pn-f-driver" aria-pressed="false"><i></i></button></label>' +
             '<div class="field" id="pn-f-license-field" hidden><label for="pn-f-license">Номер водительского удостоверения</label><input id="pn-f-license" class="inp num" inputmode="numeric"></div>' +
+            '<div class="field" id="pn-f-periods-field" hidden>' +
+              '<span style="font-size:12px;color:var(--ink-soft);font-weight:500">Периоды работы</span>' +
+              '<p class="hint" style="margin:2px 0 8px">Рейс нельзя распределить на дату вне периода — без даты окончания период считается открытым (сотрудник работает по сей день).</p>' +
+              '<div id="pn-periods-list" class="stack g6"></div>' +
+              '<p class="hint" id="pn-periods-empty" style="margin:4px 0" hidden>Периодов пока нет — без них ни один рейс этого водителя не распределить.</p>' +
+              '<p class="hint" id="pn-periods-unsaved" hidden>Сохраните сотрудника, затем добавьте периоды работы.</p>' +
+              '<div id="pn-periods-add" style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:8px">' +
+                '<div class="field" style="margin:0"><label for="pn-f-period-start" style="font-size:11px">Начало</label><input id="pn-f-period-start" type="date" class="inp"></div>' +
+                '<div class="field" style="margin:0"><label for="pn-f-period-end" style="font-size:11px">Окончание (необязательно)</label><input id="pn-f-period-end" type="date" class="inp"></div>' +
+                '<button type="button" class="btn ghost sm" id="pn-period-add-btn">Добавить</button>' +
+              '</div>' +
+              '<p class="banner" id="pn-period-error" hidden></p>' +
+            '</div>' +
           '</div>' +
           '<div class="drawer-foot">' +
             '<div class="spread" style="font-size:13px" id="pn-preview-total-row"><span style="color:var(--ink-soft)" id="pn-preview-total-label">ФОТ</span><span class="num" id="pn-preview-total">—</span></div>' +
@@ -227,6 +240,79 @@
   function applyDriverFieldVisibility() {
     var on = document.getElementById('pn-f-driver').classList.contains('on');
     document.getElementById('pn-f-license-field').hidden = !on;
+    document.getElementById('pn-f-periods-field').hidden = !on;
+    if (on) renderPeriods();
+  }
+
+  // ---- Периоды работы водителя (см. employee_work_periods в schema.sql) —
+  // жёсткая блокировка на бэкенде (assertDriverWorkPeriod в
+  // waybill-entries.js) требует period на дату рейса для ЛЮБОГО водителя,
+  // так что без этой формы админ мог бы завести водителя, на которого
+  // физически нельзя распределить ни один рейс, и узнать об этом только на
+  // экране Путевых листов. Секция видна только пока включён тумблер
+  // "Водитель" — периоды не водителя не используются нигде.
+  function fmtPeriodDate(d) {
+    if (!d) return '—';
+    var parts = d.split('-');
+    return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : d;
+  }
+
+  function renderPeriods() {
+    var listEl = document.getElementById('pn-periods-list');
+    var addBox = document.getElementById('pn-periods-add');
+    var unsavedHint = document.getElementById('pn-periods-unsaved');
+    if (!editingEmployee) {
+      listEl.innerHTML = '';
+      document.getElementById('pn-periods-empty').hidden = true;
+      addBox.hidden = true;
+      unsavedHint.hidden = false;
+      return;
+    }
+    unsavedHint.hidden = true;
+    addBox.hidden = false;
+    var periods = (editingEmployee.workPeriods || []).slice().sort(function (a, b) { return a.startDate < b.startDate ? -1 : 1; });
+    document.getElementById('pn-periods-empty').hidden = periods.length > 0;
+    listEl.innerHTML = periods.map(function (p) {
+      return '<div class="spread" style="padding:8px 10px;border:1px solid var(--border-soft);border-radius:4px" data-period-id="' + p.id + '">' +
+        '<span class="num" style="font-size:13px">' + fmtPeriodDate(p.startDate) + ' — ' + (p.endDate ? fmtPeriodDate(p.endDate) : 'по наст. время') + '</span>' +
+        '<button type="button" class="btn ghost icon pn-period-del-btn" style="width:28px;height:28px;padding:0" aria-label="Удалить период" title="Удалить период">✕</button>' +
+      '</div>';
+    }).join('');
+    Array.prototype.forEach.call(listEl.querySelectorAll('.pn-period-del-btn'), function (btn) {
+      btn.addEventListener('click', function () { handleDeletePeriod(btn.closest('[data-period-id]').dataset.periodId); });
+    });
+  }
+
+  async function refreshEditingEmployee() {
+    await loadEmployees();
+    editingEmployee = employees().find(function (e) { return e.id === editingEmployee.id; }) || editingEmployee;
+    renderPeriods();
+    renderTable();
+  }
+
+  async function handleAddPeriod() {
+    var errorEl = document.getElementById('pn-period-error');
+    errorEl.hidden = true;
+    var startDate = document.getElementById('pn-f-period-start').value;
+    var endDate = document.getElementById('pn-f-period-end').value;
+    if (!startDate) { errorEl.textContent = 'Укажите дату начала периода.'; errorEl.hidden = false; return; }
+    try {
+      await Api.post('/employees/' + editingEmployee.id + '/work-periods', { startDate: startDate, endDate: endDate || null });
+      document.getElementById('pn-f-period-start').value = '';
+      document.getElementById('pn-f-period-end').value = '';
+      await refreshEditingEmployee();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+    }
+  }
+
+  async function handleDeletePeriod(periodId) {
+    if (!confirm('Удалить период работы?')) return;
+    try {
+      await Api.del('/employees/' + editingEmployee.id + '/work-periods/' + periodId);
+      await refreshEditingEmployee();
+    } catch (err) { alert(err.message); }
   }
 
   // Симуляция: убираем старый оклад редактируемого сотрудника (если есть) из
@@ -288,6 +374,9 @@
     document.getElementById('pn-f-driver').classList.remove('on');
     document.getElementById('pn-f-driver').setAttribute('aria-pressed', 'false');
     LicenseInput.setValue(document.getElementById('pn-f-license'), '');
+    document.getElementById('pn-f-period-start').value = '';
+    document.getElementById('pn-f-period-end').value = '';
+    document.getElementById('pn-period-error').hidden = true;
     applyDriverFieldVisibility();
     renderPlantSeg();
     updatePreview();
@@ -307,6 +396,9 @@
     document.getElementById('pn-f-driver').classList.toggle('on', !!emp.isDriver);
     document.getElementById('pn-f-driver').setAttribute('aria-pressed', emp.isDriver ? 'true' : 'false');
     LicenseInput.setValue(document.getElementById('pn-f-license'), emp.licenseNumber || '');
+    document.getElementById('pn-f-period-start').value = '';
+    document.getElementById('pn-f-period-end').value = '';
+    document.getElementById('pn-period-error').hidden = true;
     applyDriverFieldVisibility();
     renderPlantSeg();
     updatePreview();
@@ -378,6 +470,7 @@
     NumericInput.attach(document.getElementById('pn-f-salary'));
     document.getElementById('pn-f-salary').addEventListener('input', updatePreview);
     LicenseInput.attach(document.getElementById('pn-f-license'));
+    document.getElementById('pn-period-add-btn').addEventListener('click', handleAddPeriod);
     initialized = true;
   }
 

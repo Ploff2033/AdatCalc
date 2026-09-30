@@ -14,6 +14,7 @@
       main: window.MainScreen,
       orders: window.OrdersScreen,
       waybills: window.WaybillsScreen,
+      receipts: window.MaterialReceiptsScreen,
       stock: window.StockScreen,
       dashboard: window.DashboardScreen,
       settings: window.SettingsScreen,
@@ -39,7 +40,10 @@
   // ведёт сюда же, в v2), это и есть основной сценарий модуля.
   // waybills — по просьбе пользователя сужено с manager+ до admin-only (см.
   // тот же комментарий в shell.js::applyRoleVisibility).
-  var MIN_ROLE = { dashboard: 'admin', waybills: 'admin', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager', stock: 'manager' };
+  // receipts — тот же уровень, что и waybills (admin-only): рейсы
+  // поступлений распределяются тем же экраном путевых листов, доступ к
+  // обоим должен совпадать.
+  var MIN_ROLE = { dashboard: 'admin', waybills: 'admin', receipts: 'admin', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager', stock: 'manager' };
   var current = null;
 
   function routeFromHash() {
