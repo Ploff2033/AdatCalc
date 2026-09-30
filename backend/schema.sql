@@ -483,3 +483,82 @@ CREATE INDEX IF NOT EXISTS idx_cash_entries_inserted ON cash_entries(inserted_at
 -- секрет, видимый только admin (см. handlers/config.js).
 ALTER TABLE config ADD COLUMN IF NOT EXISTS mailru_login TEXT;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS mailru_app_password TEXT;
+
+-- ==================== v2: поступления инертных материалов + периоды работы водителей ====================
+-- См. документ "AdatBeton Calc v2 — архитектура модулей" (обновление от
+-- 30.09.2026): нужно восстановить (оценочно, для внутреннего аудита) рейсы
+-- доставки инертных за 2025 год — учёт тогда не вёлся. Ведётся в отдельной
+-- локальной ветке (v2/aggregate-receipts), не затрагивая живые остатки на
+-- проде; заодно первая реальная нагрузочная проверка модуля путевых листов
+-- на исторических данных.
+
+-- Гос. номер инертовоза — раньше был только у миксеров (mixers.license_plate,
+-- см. выше), теперь путевой лист печатается и на рейсы поступлений инертных.
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS license_plate TEXT NOT NULL DEFAULT '';
+
+-- Периоды работы водителя — несколько на одного (не один диапазон): человек
+-- мог увольняться и возвращаться, оба периода фиксируются отдельно, а не
+-- затираются. end_date NULL = период ещё открыт (водитель работает по
+-- сегодняшний день включительно — решение пользователя). При распределении
+-- рейса на конкретную дату (см. handlers/waybill-entries.js) система жёстко
+-- проверяет, попадает ли дата хотя бы в один период — ровно как дневной
+-- лимит часов, не мягкое предупреждение (осознанное решение пользователя,
+-- несмотря на то что у всех текущих водителей периодов пока нет ни одного —
+-- ветка отдельная и не в проде, это ожидаемо).
+CREATE TABLE IF NOT EXISTS employee_work_periods (
+  id SERIAL PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  start_date DATE NOT NULL,
+  end_date DATE
+);
+CREATE INDEX IF NOT EXISTS idx_employee_work_periods_employee ON employee_work_periods(employee_id);
+
+-- Поступление инертного материала на завод — снимок на момент оформления
+-- (не живая ссылка), тот же принцип, что и у orders.recipe_name/mixer_name:
+-- material_id может стать NULL (материал удалён), material_name остаётся.
+-- Одна запись = один материал + один объём (как заказ на бетон — одна
+-- позиция за раз; несколько материалов сразу — несколько отдельных
+-- поступлений, см. документ). truck_id/truck_name — техника, по чьей
+-- грузоподъёмности считается trip_count при оформлении; сами рейсы при
+-- разнесении могут пойти на любую другую технику — тот же принцип, что и с
+-- mixer_name у заказа (источник числа рейсов при оформлении, не жёсткая
+-- привязка каждого фактического рейса).
+CREATE TABLE IF NOT EXISTS material_receipts (
+  id TEXT PRIMARY KEY,
+  plant_id TEXT NOT NULL REFERENCES plants(id) ON DELETE RESTRICT,
+  plant_name TEXT NOT NULL,
+  material_id TEXT REFERENCES materials(id) ON DELETE SET NULL,
+  material_name TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  qty NUMERIC NOT NULL,
+  truck_id TEXT NOT NULL,
+  truck_name TEXT NOT NULL,
+  distance_km NUMERIC NOT NULL,
+  trip_count NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  cancelled_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_material_receipts_plant ON material_receipts(plant_id, created_at DESC);
+
+-- Путевые листы теперь распределяют рейсы ИЛИ с заказа на бетон, ИЛИ с
+-- поступления инертных — тем же самым механизмом и той же формой (документ
+-- явно требует: "тот же экран, та же логика лимитов, никакой отдельной
+-- ветки кода на распределение"). order_id стал необязательным, добавлен
+-- receipt_id — CHECK гарантирует, что задан ровно один источник.
+-- mixer_id/mixer_name/mixer_plate используются и для рейсов поступлений —
+-- туда пишется id/имя/номер инертовоза (по факту это "техника рейса", а не
+-- обязательно миксер конкретно; не переименовывали, чтобы не трогать все
+-- существующие записи и печатные формы путевых листов).
+ALTER TABLE waybill_entries ALTER COLUMN order_id DROP NOT NULL;
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS receipt_id TEXT REFERENCES material_receipts(id) ON DELETE CASCADE;
+ALTER TABLE waybill_entries DROP CONSTRAINT IF EXISTS waybill_entries_source_check;
+ALTER TABLE waybill_entries ADD CONSTRAINT waybill_entries_source_check
+  CHECK ((order_id IS NOT NULL AND receipt_id IS NULL) OR (order_id IS NULL AND receipt_id IS NOT NULL));
+CREATE INDEX IF NOT EXISTS idx_waybill_entries_receipt ON waybill_entries(receipt_id);
+
+-- Журнал остатков (stock_movements) тоже должен уметь ссылаться на
+-- поступление, не только на заказ — иначе движение "receipt" от разнесения
+-- путевого листа поступления теряло бы, из-за какой именно записи оно
+-- возникло (см. handlers/stock.js).
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS receipt_id TEXT REFERENCES material_receipts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_stock_movements_receipt ON stock_movements(receipt_id);

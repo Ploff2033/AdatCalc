@@ -37,9 +37,9 @@ async function adjustMaterial(client, materialId, opts) {
 
   await client.query('UPDATE materials SET stock_on_hand = $2, stock_reserved = $3 WHERE id = $1', [materialId, onHandAfter, reservedAfter]);
   await client.query(
-    `INSERT INTO stock_movements (material_id, order_id, kind, qty, on_hand_before, on_hand_after, reserved_before, reserved_after, note)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [materialId, opts.orderId || null, opts.kind, opts.onHandDelta || opts.reservedDelta || 0, onHandBefore, onHandAfter, reservedBefore, reservedAfter, opts.note || null]
+    `INSERT INTO stock_movements (material_id, order_id, receipt_id, kind, qty, on_hand_before, on_hand_after, reserved_before, reserved_after, note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [materialId, opts.orderId || null, opts.receiptId || null, opts.kind, opts.onHandDelta || opts.reservedDelta || 0, onHandBefore, onHandAfter, reservedBefore, reservedAfter, opts.note || null]
   );
 
   const availableAfter = onHandAfter - reservedAfter;
@@ -48,7 +48,7 @@ async function adjustMaterial(client, materialId, opts) {
   // каждое дальнейшее движение уже дефицитного материала летело бы новое
   // сообщение (например, каждый следующий рейс того же заказа).
   if (availableAfter < Number(before.stock_threshold) && availableBefore >= Number(before.stock_threshold)) {
-    telegram.notifyStockDeficit({ id: materialId, name: before.name, plantId: before.plant_id }, availableAfter, Number(before.stock_threshold), opts.orderId);
+    telegram.notifyStockDeficit({ id: materialId, name: before.name, plantId: before.plant_id }, availableAfter, Number(before.stock_threshold), opts.orderId, opts.receiptId);
   }
   return { onHandBefore, onHandAfter, reservedBefore, reservedAfter };
 }
@@ -107,10 +107,25 @@ async function receipt(client, materialId, qty, note) {
   return adjustMaterial(client, materialId, { onHandDelta: qty, kind: 'receipt', note });
 }
 
+// Приход по путевому листу поступления инертных (см.
+// handlers/waybill-entries.js и handlers/material-receipts.js) — на долю
+// объёма ЭТОЙ записи от общего числа рейсов поступления (равные доли на
+// рейс, тот же принцип, что и у writeoff() выше для заказов на бетон).
+// fraction может быть отрицательным — тогда это отмена ранее сделанного
+// прихода (уменьшили рейсы записи или удалили её), on_hand возвращается
+// обратно. В отличие от writeoff(), бронь (reserved) тут вообще не
+// участвует — поступления не резервируются заранее, остаток на складе
+// появляется по факту прихода, а не в момент оформления записи.
+async function receiptFromWaybill(client, receiptId, materialId, qty, fraction, note) {
+  if (!fraction || !materialId || !(qty > 0)) return;
+  const delta = qty * fraction;
+  await adjustMaterial(client, materialId, { onHandDelta: delta, kind: 'receipt', receiptId, note });
+}
+
 // Ручная корректировка (по итогам инвентаризации и т.п.) — qty подписанное,
 // может быть и в плюс, и в минус.
 async function adjustment(client, materialId, qty, note) {
   return adjustMaterial(client, materialId, { onHandDelta: qty, kind: 'adjustment', note });
 }
 
-module.exports = { reserve, writeoff, release, receipt, adjustment };
+module.exports = { reserve, writeoff, release, receipt, adjustment, receiptFromWaybill };

@@ -13,6 +13,7 @@ const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
 const orders = require('./handlers/orders');
 const waybillEntries = require('./handlers/waybill-entries');
+const materialReceipts = require('./handlers/material-receipts');
 const plants = require('./handlers/plants');
 const config = require('./handlers/config');
 const stockMovements = require('./handlers/stock-movements');
@@ -523,6 +524,52 @@ const routes = [
   // лист прямо из заказа выше, а дополняет его для этого случая. Доступно
   // только менеджеру и выше — это не рутинный ввод по анонимной ссылке.
   ...crudRoutes('/api/waybill-entries', waybillEntries, { read: 'manager', write: 'manager' }),
+
+  // Поступления инертных — отдельная вкладка (см. handlers/material-receipts.js
+  // и документ "AdatBeton Calc v2 — архитектура модулей", обновление
+  // 30.09.2026): сырьё, приходящее НА завод, а не отгрузка клиенту. Рейсы
+  // по ним разносятся тем же /api/waybill-entries выше (receiptId вместо
+  // orderId в теле запроса) — здесь только сама запись поступления.
+  ...crudRoutes('/api/material-receipts', materialReceipts, { read: 'manager', write: 'manager', del: 'admin' }),
+  {
+    method: 'POST',
+    pattern: /^\/api\/material-receipts\/([^/]+)\/cancel$/,
+    role: 'manager',
+    handler: async (req, res, m) => sendJson(res, 200, await materialReceipts.cancel(decodeURIComponent(m[1])))
+  },
+
+  // Периоды работы водителя (см. schema.sql::employee_work_periods) —
+  // admin-only, та же роль, что и остальное редактирование карточки
+  // сотрудника (crudRoutes('/api/employees', ..., { write: 'admin' })
+  // выше).
+  {
+    method: 'POST',
+    pattern: /^\/api\/employees\/([^/]+)\/work-periods$/,
+    role: 'admin',
+    handler: async (req, res, m) => {
+      const body = await readBody(req);
+      sendJson(res, 201, await employees.addWorkPeriod(decodeURIComponent(m[1]), body));
+    }
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/employees\/([^/]+)\/work-periods\/([^/]+)$/,
+    role: 'admin',
+    handler: async (req, res, m) => {
+      const body = await readBody(req);
+      sendJson(res, 200, await employees.updateWorkPeriod(decodeURIComponent(m[1]), decodeURIComponent(m[2]), body));
+    }
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/employees\/([^/]+)\/work-periods\/([^/]+)$/,
+    role: 'admin',
+    handler: async (req, res, m) => {
+      await employees.removeWorkPeriod(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+      res.writeHead(204);
+      res.end();
+    }
+  },
   {
     method: 'POST',
     pattern: /^\/api\/waybill-entries\/waybills\.xlsx$/,

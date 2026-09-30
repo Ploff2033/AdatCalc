@@ -119,7 +119,9 @@ function notifyOrderCreated(order) {
 // пересечении порога сверху вниз (не на каждое движение уже дефицитного
 // материала). available может быть и отрицательным (реальный дефицит, не
 // просто "ниже порога") — форматируем как есть, число говорит само за себя.
-function notifyStockDeficit(material, available, threshold, orderId) {
+// receiptId — та же запись поступления инертных, что вызвала пересечение
+// порога (см. handlers/stock.js), а не только заказ.
+function notifyStockDeficit(material, available, threshold, orderId, receiptId) {
   const lines = [
     (available < 0 ? '🔴' : '🟡') + ' <b>' + (available < 0 ? 'Дефицит материала' : 'Материал ниже порога') + '</b>',
     'Материал: ' + escapeHtml(material.name),
@@ -127,6 +129,7 @@ function notifyStockDeficit(material, available, threshold, orderId) {
     'Порог: ' + Number(threshold).toLocaleString('ru-RU')
   ];
   if (orderId) lines.push('Заказ: ' + escapeHtml(orderId));
+  if (receiptId) lines.push('Поступление: ' + escapeHtml(receiptId));
   send(lines.join('\n')).catch(() => {});
 }
 
