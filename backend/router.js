@@ -317,7 +317,22 @@ async function buildWaybill4sDocuments(entries) {
     const flushChunk = () => {
       if (!chunkTrips) return;
       partIndex += 1;
+      const routesArr = Array.from(chunkRoutes.values());
       const odometerEnd = chunkOdometerStart + chunkLegs.reduce((s, l) => s + l.distanceKm * 2, 0);
+      // Расход топлива по норме за документ — та же сумма, что уже
+      // печаталась в "Результаты работы автомобиля" на обороте (см.
+      // buildBackXml), нужна теперь ещё и для "Движение горючего" на
+      // лицевой стороне (см. buildFrontXml) — считаем один раз тут.
+      const totalFuelLiters = group[0].fuelPricePerLiter > 0
+        ? routesArr.reduce((s, r) => s + (r.tripCount || 0) * (r.fuelCostPerTrip || 0), 0) / group[0].fuelPricePerLiter
+        : 0;
+      // "Время работы двигателя" — по просьбе пользователя: время в пути +
+      // половина времени простоя под погрузкой/разгрузкой (вся пауза
+      // unloadMinutes — на разгрузке, см. комментарий выше у
+      // dayElapsedMinutes; "спецоборудования" пользователь не оговаривал —
+      // не заполняем, нет для него формулы и данных).
+      const totalDrivingMinutes = chunkLegs.reduce((s, l) => s + 2 * oneWayMinutes(l.distanceKm), 0);
+      const engineMinutes = totalDrivingMinutes + (chunkLegs.length * (cfg.unloadMinutes || 0)) / 2;
       documents.push({
         id: key.replace(/\|/g, '-') + '-p' + partIndex,
         createdAt,
@@ -330,7 +345,9 @@ async function buildWaybill4sDocuments(entries) {
         odometerEnd,
         timeStartMinutes: chunkTimeStart,
         timeEndMinutes: dayElapsedMinutes,
-        routes: Array.from(chunkRoutes.values()),
+        totalFuelLiters,
+        engineMinutes,
+        routes: routesArr,
         legs: chunkLegs
       });
       chunkRoutes = null;

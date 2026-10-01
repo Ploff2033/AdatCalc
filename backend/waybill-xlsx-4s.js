@@ -48,6 +48,25 @@ const CELLS = {
   retOdometer: 'AQ16'
 };
 
+// "Движение горючего" — лицевая сторона, строка 25 (под шапкой-нумерацией
+// строки 24: графы 9–13,15–17, графа 14 в бланке без подписи — не
+// заполняем, неясно что туда класть). В бланке под эту шапку отведено 2
+// строки данных (25 и 27) — явно под два отдельных факта выдачи топлива за
+// смену; этот модуль фиксирует только ОДНУ выдачу на документ (топливо
+// выдаётся по норме на весь путевой лист сразу, не по частям), поэтому
+// заполняется только первая (25), вторая остаётся пустой.
+// марка/код марки — тип топлива по ГОСТ-классификатору, в системе такого
+// справочника нет (топливо описано только парой ставка+цена), осознанно не
+// заполняем, а не гадаем.
+const FUEL_ROW = 25;
+const CELLS_FUEL = {
+  issued: 'AI' + FUEL_ROW,
+  balanceAtDeparture: 'AL' + FUEL_ROW,
+  balanceAtReturn: 'AO' + FUEL_ROW,
+  coefficient: 'AS' + FUEL_ROW,
+  engineHours: 'BA' + FUEL_ROW
+};
+
 // "ЗАДАНИЕ ВОДИТЕЛЮ" — таблица маршрутов. В бланке под неё реально есть
 // только 2 строки (37 — обычная, с отдельными графами; 38 — объединённая
 // широкая ячейка для клиента/адреса + отдельные графы кол-ва/км/тонн,
@@ -106,6 +125,14 @@ function minutesToHM(totalMinutes) {
   return { hour: Math.floor(m / 60), minute: m % 60 };
 }
 
+// Для длительностей (не часов суток — не заворачиваем по модулю 24ч, см.
+// doc.engineMinutes), печатается "Ч ч ММ мин" под подпись графы "ч, мин".
+function formatDurationHM(totalMinutes) {
+  var m = Math.round(totalMinutes || 0);
+  if (m < 0) m = 0;
+  return Math.floor(m / 60) + ' ч ' + pad2(m % 60) + ' мин';
+}
+
 // Та же setCell, что в waybill-xlsx.js — см. комментарий там: захватывает
 // весь <c>...</c> целиком (ячейка может быть self-closing, пустой с телом
 // или уже содержать текст лейбла — как здесь у dateLine/periodLine), меняет
@@ -156,6 +183,25 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.retHour, String(ret.hour));
   xml = setCell(xml, CELLS.retMinute, pad2(ret.minute));
   xml = setCell(xml, CELLS.retOdometer, formatNum(doc.odometerEnd, 0));
+
+  // Движение горючего — по просьбе пользователя: "выдано на 10% больше чем
+  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters), остаток
+  // при выезде = вся выданная заправка (система не ведёт реальный остаток в
+  // баке между сменами — то же допущение "план=факт", что и у расхода),
+  // остаток при возвращении = выдано минус фактически потрачено по норме.
+  // Коэффициент изменения нормы — система его не применяет, печатаем 1,00
+  // (это и есть правда: без коррекции). Время работы двигателя — отдельная
+  // формула пользователя, см. engineMinutes в router.js; "спецоборудования"
+  // не заполняем — формулы для него не было.
+  if (doc.totalFuelLiters > 0) {
+    var issuedLiters = doc.totalFuelLiters * 1.1;
+    var balanceAtReturn = issuedLiters - doc.totalFuelLiters;
+    xml = setCell(xml, CELLS_FUEL.issued, formatNum(issuedLiters, 1));
+    xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(issuedLiters, 1));
+    xml = setCell(xml, CELLS_FUEL.balanceAtReturn, formatNum(balanceAtReturn, 1));
+    xml = setCell(xml, CELLS_FUEL.coefficient, '1,00');
+  }
+  if (doc.engineMinutes > 0) xml = setCell(xml, CELLS_FUEL.engineHours, formatDurationHM(doc.engineMinutes));
 
   var routes = doc.routes || [];
   if (routes[0]) {
@@ -217,9 +263,11 @@ function buildBackXml(sheet2Xml, doc) {
   });
 
   var routes = doc.routes || [];
-  var totalLiters = doc.fuelPricePerLiter > 0
-    ? routes.reduce(function (s, r) { return s + (r.tripCount || 0) * (r.fuelCostPerTrip || 0); }, 0) / doc.fuelPricePerLiter
-    : 0;
+  // totalFuelLiters считается один раз в router.js (переиспользуется и тут,
+  // и в "Движение горючего" на лицевой стороне, см. buildFrontXml) —
+  // "факт" = "норма" намеренно, расход считается по норме, не по реальным
+  // заправкам (план и факт совпадают по построению).
+  var totalLiters = doc.totalFuelLiters || 0;
   var totalKm = routes.reduce(function (s, r) { return s + (r.distanceKm || 0) * 2 * (r.tripCount || 0); }, 0);
   xml = setCell(xml, CELLS_RESULTS.fuelNorm, formatNum(totalLiters, 1));
   xml = setCell(xml, CELLS_RESULTS.fuelFact, formatNum(totalLiters, 1));
