@@ -330,17 +330,20 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   #sb-plant-switch > .cap { display: none; }
   .plant-select-pill { width: auto; height: 36px; }
   .mobile-logout-btn:not([hidden]) { display: inline-flex; }
-  /* ЭКСПЕРИМЕНТ (см. .mobile-page-flat/.card-flat выше) — на экране Расчёт
-     убираем название программы ("AdatBeton Calc") из верхней полосы, раз
-     экран уже рисует свой компактный хедер (завод · роль / заголовок
-     экрана, см. mobile-calc.js) — иначе получалось два хедера подряд с
-     дублирующей информацией (нашёл пользователь на реальном телефоне).
-     Логотип (.mark) оставляем — переключатель завода и кнопка "выйти"
-     рядом с ним остаются рабочими, просто без подписи бренда. Только
-     экран 'main' (data-route, см. router.js), остальные мобильные экраны
-     пока не трогаем — у них такого своего хедера ещё нет. */
-  body[data-route="main"] .sidebar-brand .name,
-  body[data-route="main"] .sidebar-brand .role { display: none; }
+  /* ЭКСПЕРИМЕНТ (см. .mobile-page-flat/.card-flat выше) — на мобильных
+     экранах убираем название программы ("AdatBeton Calc") и роль из
+     верхней полосы: экран и так подписан на нижней навигации (активная
+     вкладка), а завод виден в самом селекторе рядом — текстом дублировать
+     было незачем (по просьбе пользователя на реальном телефоне, после
+     более ранней версии со своим хедером на каждом экране — от неё
+     отказались как от ещё одного дублирования). Логотип (.mark) оставляем
+     — переключатель завода и кнопка "выйти" рядом с ним остаются
+     рабочими, просто без подписи бренда/роли. Все 4 мобильных экрана
+     (data-route, см. router.js). */
+  body[data-route="main"] .sidebar-brand .name, body[data-route="main"] .sidebar-brand .role,
+  body[data-route="orders"] .sidebar-brand .name, body[data-route="orders"] .sidebar-brand .role,
+  body[data-route="waybills"] .sidebar-brand .name, body[data-route="waybills"] .sidebar-brand .role,
+  body[data-route="cash"] .sidebar-brand .name, body[data-route="cash"] .sidebar-brand .role { display: none; }
   /* .bottom-nav.nav (обе присутствующие на элементе классы: разметка —
      <nav class="bottom-nav nav">), а не просто .bottom-nav — иначе
      специфичность (0,1,0) проигрывала базовому "nav.nav" (0,1,1) для
@@ -358,12 +361,14 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
     flex: 1; flex-direction: column; height: auto; padding: 6px 2px; font-size: 10px; gap: 3px; text-align: center; justify-content: center;
   }
   .page { padding: 16px; gap: 16px; }
-  /* ЭКСПЕРИМЕНТ (см. .mobile-page-flat выше) — на экране Расчёт даже после
-     обнуления .mobile-page оставался этот внешний отступ .page (16px) —
-     его пользователь и поймал как "лишние поля по краям" на реальном
-     телефоне, прислав точный HTML. Только 'main' (data-route), остальные
-     мобильные экраны пока используют старый .page как есть. */
-  body[data-route="main"] .page { padding: 0; gap: 0; }
+  /* ЭКСПЕРИМЕНТ (см. .mobile-page-flat выше) — внешний отступ .page (16px)
+     не связан с .mobile-page и дублирует его собственные отступы — нашёл
+     пользователь на реальном телефоне как "лишние поля по краям". Каждый
+     мобильный экран сам задаёт нужный отступ на .mobile-page инлайн-стилем
+     (0 у Расчёта, 8px 12px у остальных — там карточки "вылезают" наружу
+     через margin:0 -12px, как в макете), поэтому у .page он везде 0. */
+  body[data-route="main"] .page, body[data-route="orders"] .page,
+  body[data-route="waybills"] .page, body[data-route="cash"] .page { padding: 0; gap: 0; }
   .page-head h1 { font-size: 22px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
   /* Эти три сетки заданы инлайн-стилем прямо в screen-main.js/waybills.js/

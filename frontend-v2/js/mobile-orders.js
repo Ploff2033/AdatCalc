@@ -5,13 +5,13 @@
   var filter = '7d'; // '7d' | 'waiting' | 'today'
   var editingOrderId = null;
   var HTML =
-    '<div class="mobile-page">' +
+    '<div class="mobile-page" style="padding:8px 12px;gap:8px">' +
       '<div class="seg" role="group" aria-label="Фильтр">' +
         '<button type="button" data-f="7d" class="on" style="height:44px">7 дней</button>' +
         '<button type="button" data-f="waiting" style="height:44px">Ждут рейсов</button>' +
         '<button type="button" data-f="today" style="height:44px">Сегодня</button>' +
       '</div>' +
-      '<section class="card stack g12" id="mo-date-panel" style="padding:14px" hidden>' +
+      '<section class="card-flat stack g12" id="mo-date-panel" style="padding:12px;margin:0 -12px" hidden>' +
         '<div class="spread"><span style="font-weight:600">Изменить дату/завод</span><button type="button" class="btn ghost icon" id="mo-date-close" aria-label="Закрыть">✕</button></div>' +
         '<form id="mo-date-form" class="stack g12">' +
           '<div class="field"><label for="mo-date-input">Дата и время</label><input id="mo-date-input" type="datetime-local" class="inp" style="height:48px" required></div>' +
@@ -20,7 +20,7 @@
           '<button class="btn pri" type="submit" style="height:48px">Сохранить</button>' +
         '</form>' +
       '</section>' +
-      '<div id="mo-list" class="stack g12"></div>' +
+      '<div id="mo-list" class="stack g8" style="margin:0 -12px"></div>' +
       '<p class="empty-state" id="mo-empty" hidden>Заказов нет.</p>' +
     '</div>';
 
@@ -142,7 +142,7 @@
       if (isAdmin && o.vatApplied) meta.push('с НДС');
       var rentColor = (o.totalMarginPercent || 0) >= 0 ? '#1C1D1B' : '#8C2217';
       var badge = isAdmin ? st : (o.vatApplied ? { cls: 'act', label: 'с НДС' } : { cls: 'mute', label: 'без НДС' });
-      return '<article class="card stack g8" style="padding:12px 14px;' + (belowThreshold ? 'background:var(--act-bg);' : '') + (o.cancelledAt ? 'opacity:.6;' : '') + '" data-order-id="' + o.id + '">' +
+      return '<article class="card-flat stack g8" style="padding:12px 14px;' + (belowThreshold ? 'background:var(--act-bg);' : '') + (o.cancelledAt ? 'opacity:.6;' : '') + '" data-order-id="' + o.id + '">' +
         '<div class="spread" style="align-items:center;gap:8px"><span style="font-weight:600">' + o.recipeName + ' <span class="num hint" style="font-weight:400">' + time + '</span></span><span class="chip ' + badge.cls + '">' + badge.label + '</span></div>' +
         '<span class="hint">' + meta.join(' · ') + '</span>' +
         '<div style="display:grid;grid-template-columns:1.5fr 1fr auto;gap:8px;padding-top:8px;border-top:1px solid var(--border-soft)">' +
