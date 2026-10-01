@@ -37,6 +37,12 @@
             '<div class="field"><label for="s-vehicle-hours">Смена машины</label><div class="unit"><input id="s-vehicle-hours" class="inp num" inputmode="decimal"><span>ч</span></div></div>' +
             '<div class="field"><label for="s-avg-speed">Средняя скорость миксера</label><div class="unit"><input id="s-avg-speed" class="inp num" inputmode="decimal"><span>км/ч</span></div></div>' +
             '<div class="field"><label for="s-unload">Время разгрузки</label><div class="unit"><input id="s-unload" class="inp num" inputmode="decimal"><span>мин</span></div></div>' +
+            // Начало смены — по просьбе пользователя ("можешь проставлять выезд
+            // с парковки, условно в 9"): используется только для печати времени
+            // выезда/возвращения и последовательности выполнения задания в
+            // путевом листе №4-С (см. buildWaybill4sDocuments в backend/router.js),
+            // на проверку дневного лимита часов не влияет.
+            '<div class="field"><label for="s-shift-start">Выезд с парковки (для путевого листа)</label><input id="s-shift-start" type="time" class="inp"></div>' +
           '</div>' +
           '<p class="hint" style="margin:0">Доплата водителю за рейс в соседний город — теперь у каждого завода своя, см. раздел «Заводы» выше.</p>' +
         '</section>' +
@@ -349,6 +355,13 @@
       var el = document.getElementById(id);
       if (document.activeElement !== el) NumericInput.setFormattedValue(el, map[id] || 0);
     });
+    var shiftStartEl = document.getElementById('s-shift-start');
+    if (document.activeElement !== shiftStartEl) {
+      var mins = c.shiftStartMinutes != null ? c.shiftStartMinutes : 540;
+      var hh = String(Math.floor(mins / 60)).padStart(2, '0');
+      var mm = String(mins % 60).padStart(2, '0');
+      shiftStartEl.value = hh + ':' + mm;
+    }
   }
 
   function renderRent() {
@@ -506,6 +519,11 @@
         unloadMinutes: NumericInput.parseNumber(document.getElementById('s-unload').value) || 0,
         rentabilityThresholdPercent: NumericInput.parseNumber(document.getElementById('s-rent-threshold').value) || 0
       };
+      var shiftStartRaw = document.getElementById('s-shift-start').value; // "HH:MM" из <input type="time">
+      if (shiftStartRaw) {
+        var shiftParts = shiftStartRaw.split(':').map(Number);
+        configBody.shiftStartMinutes = shiftParts[0] * 60 + shiftParts[1];
+      }
       // Поля Telegram есть в DOM только у admin (см. renderTelegram) — если
       // их нет, просто не отправляем (менеджерский PUT их и так проигнорирует
       // на бэкенде, но незачем слать undefined).
@@ -553,6 +571,10 @@
       NumericInput.attach(document.getElementById(pair[0]));
       document.getElementById(pair[0]).addEventListener('input', function () { markDirty(pair[1]); });
     });
+    // type="time", не маскированное числовое поле — NumericInput.attach()
+    // тут не подходит (тот же класс бага, что с type="number": сторонняя
+    // логика ломает нативное поведение браузерного инпута).
+    document.getElementById('s-shift-start').addEventListener('input', function () { markDirty('выезд с парковки'); });
 
     document.getElementById('s-plants-add-btn').addEventListener('click', createPlant);
     document.getElementById('s-save-btn').addEventListener('click', handleSave);

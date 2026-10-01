@@ -599,3 +599,25 @@ ALTER TABLE plants ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 -- на инертовозе где-то и было — его читать было неоткуда. Теперь
 -- buildWaybill4sDocuments тоже обновлён, см. router.js.
 ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS odometer_baseline_km NUMERIC NOT NULL DEFAULT 0;
+
+-- Начало смены (минут от полуночи, 540 = 9:00) — "выезд с парковки условно
+-- в 9". Используется только для печати путевого листа №4-С (время выезда/
+-- возвращения в гараж + последовательность выполнения задания на обороте,
+-- см. buildWaybill4sDocuments в router.js) — НЕ участвует в проверке
+-- дневного лимита часов водителя/машины (та считает только суммарные часы,
+-- не привязываясь к часам суток, см. handlers/waybill-entries.js).
+ALTER TABLE config ADD COLUMN IF NOT EXISTS shift_start_minutes NUMERIC NOT NULL DEFAULT 540;
+
+-- Номера путевых листов — по просьбе пользователя ("у путевых листов
+-- должны быть номера"). Сами документы №4-С не хранятся как отдельная
+-- сущность — собираются на лету при каждой выгрузке из waybill_entries
+-- (группировка водитель+машина+дата, разбивка по 3 поездки, см.
+-- buildWaybill4sDocuments в router.js), поэтому номер выдаётся и
+-- запоминается по стабильному ключу документа (doc_key = та же строка,
+-- что уже служит его id — "водитель-машина-дата-pN") — один раз при первой
+-- выгрузке, дальше переживает повторную печать тех же рейсов. SERIAL — не
+-- хронология рейсов, а порядок первого запроса печати.
+CREATE TABLE IF NOT EXISTS waybill_doc_numbers (
+  doc_key TEXT PRIMARY KEY,
+  number SERIAL
+);

@@ -71,14 +71,18 @@ function tripHours(distanceKm, cfg) {
 
 async function getLimitsConfig() {
   const { rows } = await db.pool.query(
-    'SELECT driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes FROM config WHERE id = 1'
+    'SELECT driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, shift_start_minutes FROM config WHERE id = 1'
   );
   const row = rows[0];
   return {
     driverShiftHours: Number(row.driver_shift_hours),
     vehicleShiftHours: Number(row.vehicle_shift_hours),
     avgSpeedKmh: Number(row.avg_speed_kmh),
-    unloadMinutes: Number(row.unload_minutes)
+    unloadMinutes: Number(row.unload_minutes),
+    // Не участвует в проверке дневного лимита (та считает только суммарные
+    // часы) — нужен только для печати времени в путевом листе №4-С, см.
+    // buildWaybill4sDocuments в router.js.
+    shiftStartMinutes: Number(row.shift_start_minutes)
   };
 }
 
