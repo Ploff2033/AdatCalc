@@ -6,8 +6,19 @@
   // складывается в горизонтальную шапку на этой ширине (см. styles.css).
   var VAT_MULT = 1.22;
   var HTML =
-    '<div class="mobile-page">' +
-      '<section class="card stack g12" style="padding:16px">' +
+    '<div class="mobile-page mobile-page-flat">' +
+      // Свой компактный хедер экрана (завод · роль / "Расчёт") — заменяет
+      // собой название программы в общей шапке-сайдбаре (см. CSS
+      // body[data-route="main"] .sidebar-brand в styles.css), чтобы не
+      // было двух хедеров подряд с дублирующей информацией — нашёл
+      // пользователь на реальном телефоне. Переключатель завода отдельной
+      // кнопкой тут не дублируем — рабочий остался в самой шапке-сайдбаре
+      // (там же, где и кнопка "выйти"), просто без подписи бренда рядом.
+      '<header style="padding:10px 12px;background:var(--sidebar-bg);color:#fff;display:flex;flex-direction:column;gap:2px">' +
+        '<span style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted);font-weight:600" id="mc-header-caption">—</span>' +
+        '<h1 style="font-size:22px;font-weight:600;margin:0">Расчёт</h1>' +
+      '</header>' +
+      '<section class="card-flat stack g10" style="padding:12px">' +
         '<span class="sub">Смесь</span>' +
         '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px">' +
           '<div class="field"><label for="mc-recipe">Рецепт</label><select id="mc-recipe" class="inp" style="height:48px"></select></div>' +
@@ -27,7 +38,7 @@
           '<div class="spread"><span class="hint">По прайсу рецепта <span class="num" id="mc-recipe-price">—</span></span><button type="button" class="btn ghost sm" id="mc-reset-price" style="height:32px;padding:0 10px;font-size:12px">Вернуть прайс</button></div>' +
         '</div>' +
       '</section>' +
-      '<section class="card stack g12" style="padding:16px">' +
+      '<section class="card-flat stack g10" style="padding:12px">' +
         '<div class="spread" style="min-height:44px"><span class="sub">Доставка</span><label style="display:flex;align-items:center;gap:10px;font-size:13px">Самовывоз<button type="button" class="tog" id="mc-self-pickup" aria-pressed="false"><i></i></button></label></div>' +
         '<div class="field"><label for="mc-delivery-charge">Цена доставки для клиента</label><div class="unit"><input id="mc-delivery-charge" class="inp num" value="500" style="height:48px;font-size:16px" inputmode="decimal"><span>₽/м³</span></div>' +
           '<span class="hint" id="mc-delivery-hint" style="font-size:12px"></span>' +
@@ -44,7 +55,7 @@
           '<div class="field"><label for="mc-urea-price">AdBlue, ₽/л</label><input id="mc-urea-price" class="inp num" inputmode="decimal"></div>' +
         '</div>' +
       '</section>' +
-      '<details open class="card" id="mc-mix-details">' +
+      '<details open class="card-flat" id="mc-mix-details">' +
         '<summary><span class="sub" id="mc-mix-summary-label">Смесь</span><span class="num" id="mc-mix-summary-val" style="font-weight:600"></span></summary>' +
         '<div class="stack" style="gap:2px;padding-top:8px">' +
           '<div class="kv"><span>Выручка без НДС</span><span class="num" id="mc-mix-revenue"></span></div>' +
@@ -58,7 +69,7 @@
           '<div class="kv"><span>Запас прочности</span><span class="num" id="mc-mix-safety"></span></div>' +
         '</div>' +
       '</details>' +
-      '<details open class="card" id="mc-delivery-details">' +
+      '<details open class="card-flat" id="mc-delivery-details">' +
         '<summary><span class="sub" id="mc-delivery-summary-label">Доставка</span><span class="num" id="mc-delivery-summary-val" style="font-weight:600"></span></summary>' +
         '<div class="stack" style="gap:2px;padding-top:8px">' +
           '<div class="kv"><span>Доход от доставки</span><span class="num" id="mc-delivery-revenue"></span></div>' +
@@ -71,7 +82,7 @@
         '</div>' +
       '</details>' +
     '</div>' +
-    '<div class="mobile-sticky">' +
+    '<div class="mobile-sticky mobile-sticky-flat">' +
       '<p class="banner" id="mc-error" hidden style="margin:0"></p>' +
       '<div class="mobile-kpi-grid">' +
         '<div class="mobile-kpi dark"><span class="l">К оплате</span><span class="num v" id="mc-pay"></span><span class="num" id="mc-pay-vat" style="font-size:11px;color:var(--sidebar-muted)"></span></div>' +
@@ -156,9 +167,19 @@
     NumericInput.setFormattedValue(input, vatGrossMode ? netValue * VAT_MULT : netValue);
   }
 
+  // Та же подпись роли, что и в shell.js::roleLabel — мелкая дублированная
+  // функция, не общий экспорт (shell.js её наружу не отдаёт).
+  function roleLabel(role) {
+    if (role === 'admin') return 'администратор';
+    if (role === 'manager') return 'менеджер';
+    return '—';
+  }
+
   function render() {
     var data = State.data;
     var plant = State.currentPlant();
+    var headerCaption = document.getElementById('mc-header-caption');
+    if (headerCaption) headerCaption.textContent = (plant ? plant.name : 'Завод не выбран') + ' · ' + roleLabel(Auth.getRole());
     var recipeSelect = document.getElementById('mc-recipe');
     var mixerSelect = document.getElementById('mc-mixer');
     var distInput = document.getElementById('mc-dist');
