@@ -69,6 +69,23 @@
     return maxTripsGeneric(remainingForReceipt(entries, receipt), receipt.distanceKm, entries, config, driverId, mixerId, date);
   }
 
+  // Топливо, уже потраченное на доставку конкретного поступления — и в
+  // деньгах, и в литрах (по просьбе пользователя: "можешь топливо в
+  // количестве считать", одних рублей было недостаточно). Факт по уже
+  // разнесённым рейсам, не проекция на весь объём поступления.
+  // fuelCostPerTrip — стоимость ОДНОГО рейса (см. validateAndBuild в
+  // backend/handlers/waybill-entries.js) = литры_на_рейс × fuelPricePerLiter,
+  // поэтому литры на рейс восстанавливаются делением обратно на цену —
+  // хранить их отдельным полем на записи незачем, raw ставка техники
+  // (л/100км) на entry и так не пишется, только денежный результат.
+  function fuelForReceipt(entries, receiptId) {
+    return entriesForReceipt(entries, receiptId).reduce(function (acc, e) {
+      var cost = e.tripCount * (e.fuelCostPerTrip || 0);
+      var liters = e.fuelPricePerLiter > 0 ? (e.tripCount * e.fuelCostPerTrip) / e.fuelPricePerLiter : 0;
+      return { cost: acc.cost + cost, liters: acc.liters + liters };
+    }, { cost: 0, liters: 0 });
+  }
+
   // ---- Единая "очередь" для экрана — каждый пункт помечен kind, дальше
   // форма читает id/label/remaining/tripCount/distanceKm одинаково для
   // обоих источников. ----
@@ -92,6 +109,7 @@
     remainingForOrder: remainingForOrder, deliveryOrders: deliveryOrders, unallocatedOrders: unallocatedOrders,
     driverUsedHours: driverUsedHours, mixerUsedHours: mixerUsedHours, maxTrips: maxTrips,
     entriesForReceipt: entriesForReceipt, allocatedForReceipt: allocatedForReceipt, remainingForReceipt: remainingForReceipt,
-    unallocatedReceipts: unallocatedReceipts, maxTripsForReceipt: maxTripsForReceipt, queueItems: queueItems
+    unallocatedReceipts: unallocatedReceipts, maxTripsForReceipt: maxTripsForReceipt, queueItems: queueItems,
+    fuelForReceipt: fuelForReceipt
   };
 })();

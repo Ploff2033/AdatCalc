@@ -198,13 +198,13 @@
     var parts = [];
     if (src) parts.push((src.kind === 'receipt' ? 'По поступлению' : 'По заказу') + ' осталось: ' + src.remaining + ' из ' + src.tripCount);
     // Промежуточный итог по топливу — по просьбе пользователя ("не понятно,
-    // сколько израсходовано на доставку этой закупки"): сумма уже
+    // сколько израсходовано на доставку этой закупки", позже уточнено "а
+    // можешь в количестве считать" — литры, не только рубли): сумма уже
     // потраченного на УЖЕ разнесённые рейсы этого поступления, не проекция
     // на весь объём — видно прямо в форме, пока распределяешь очередной день.
     if (src && src.kind === 'receipt') {
-      var fuelSoFar = entries().filter(function (e) { return e.receiptId === src.id; })
-        .reduce(function (s, e) { return s + e.tripCount * (e.fuelCostPerTrip || 0); }, 0);
-      if (fuelSoFar > 0) parts.push('Топливо на доставку уже потрачено: ' + Format.fmtNum(fuelSoFar, 0, '₽'));
+      var fuelSoFar = WaybillCalc.fuelForReceipt(entries(), src.id);
+      if (fuelSoFar.cost > 0) parts.push('Топливо на доставку уже потрачено: ' + Format.fmtNum(fuelSoFar.liters, 0, 'л') + ' · ' + Format.fmtNum(fuelSoFar.cost, 0, '₽'));
     }
     if (driverId && date) parts.push('Водитель занят: ' + Format.fmtNum(driverUsedHours(driverId, date, null), 1) + ' из ' + Format.fmtNum(cfg.driverShiftHours, 1) + ' ч');
     if (mixerId && date) parts.push((src && src.kind === 'receipt' ? 'Инертовоз' : 'Машина') + ' занят(а): ' + Format.fmtNum(mixerUsedHours(mixerId, date, null), 1) + ' из ' + Format.fmtNum(cfg.vehicleShiftHours, 1) + ' ч');
