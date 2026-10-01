@@ -61,15 +61,18 @@
   function items() { return currentType === 'mixer' ? (State.data.mixers || []) : (State.data.aggregateTrucks || []); }
   function isMixer() { return currentType === 'mixer'; }
 
+  // Одометр теперь общий для обеих вкладок (раньше был только у миксеров —
+  // "для инертовозов нужны все те же поля, что и для миксеров, а то одометр
+  // на них нельзя настроить"), поэтому колонки у миксеров и инертовозов
+  // полностью совпадают, кроме подписи первого числового столбца
+  // (объём барабана у миксера vs грузоподъёмность у инертовоза — разный
+  // физический смысл одного и того же поля capacity).
+  var FLEET_COLS = '1.3fr 70px 110px 110px 90px 80px 110px';
+
   function renderHead() {
     var head = document.getElementById('fl-head');
-    if (isMixer()) {
-      head.style.gridTemplateColumns = '1.3fr 70px 110px 110px 90px 80px 110px';
-      head.innerHTML = '<div>Машина</div><div class="r">Объём</div><div class="r">Топливо</div><div class="r">Мочевина</div><div class="r">Платон</div><div class="r">Аморт.</div><div class="r">Одометр</div>';
-    } else {
-      head.style.gridTemplateColumns = '1.3fr 70px 110px 110px 90px 80px';
-      head.innerHTML = '<div>Машина</div><div class="r">Грузопод.</div><div class="r">Топливо</div><div class="r">Мочевина</div><div class="r">Платон</div><div class="r">Аморт.</div>';
-    }
+    head.style.gridTemplateColumns = FLEET_COLS;
+    head.innerHTML = '<div>Машина</div><div class="r">' + (isMixer() ? 'Объём' : 'Грузопод.') + '</div><div class="r">Топливо</div><div class="r">Мочевина</div><div class="r">Платон</div><div class="r">Аморт.</div><div class="r">Одометр</div>';
   }
 
   function renderTable() {
@@ -78,15 +81,14 @@
     var canEdit = Auth.isAtLeast('admin');
     document.getElementById('fl-rows').innerHTML = list.map(function (t) {
       var amort = Calc.amortPerKm(t);
-      var cols = isMixer() ? '1.3fr 70px 110px 110px 90px 80px 110px' : '1.3fr 70px 110px 110px 90px 80px';
-      return '<div class="row' + (canEdit ? '' : '') + '" style="grid-template-columns:' + cols + ';min-height:58px' + (canEdit ? ';cursor:pointer' : '') + '" data-fleet-id="' + t.id + '">' +
+      return '<div class="row' + (canEdit ? '' : '') + '" style="grid-template-columns:' + FLEET_COLS + ';min-height:58px' + (canEdit ? ';cursor:pointer' : '') + '" data-fleet-id="' + t.id + '">' +
         '<div class="stack" style="gap:1px"><span style="font-weight:600">' + t.name + '</span><span class="num hint">' + (t.licensePlate || '—') + '</span></div>' +
         '<div class="r num">' + Format.fmtNum(t.capacity, 1) + '</div>' +
         '<div class="r num">' + Format.fmtNum(t.fuelRate, 1) + '</div>' +
         '<div class="r num hint">' + Format.fmtNum(t.ureaRate, 1) + '</div>' +
         '<div class="r num hint">' + Format.fmtNum(t.platonRatePerKm, 2) + '</div>' +
         '<div class="r num" style="font-weight:600">' + Format.fmtNum(amort, 2) + '</div>' +
-        (isMixer() ? '<div class="r num hint">' + Format.fmtNum(t.odometerBaselineKm, 0, 'км') + '</div>' : '') +
+        '<div class="r num hint">' + Format.fmtNum(t.odometerBaselineKm, 0, 'км') + '</div>' +
       '</div>';
     }).join('');
     if (canEdit) {
@@ -119,11 +121,10 @@
     document.getElementById('fl-save-btn').textContent = 'Добавить машину';
     document.getElementById('fl-delete-btn').hidden = true;
     document.getElementById('fl-form-error').hidden = true;
-    // Гос. номер теперь и у инертовозов тоже (нужен для путевых листов на
-    // рейсы поступлений инертных, см. handlers/material-receipts.js) — в
-    // отличие от одометра, который остаётся только у миксеров.
+    // Гос. номер и одометр — теперь общие поля для обеих вкладок (см.
+    // комментарий у FLEET_COLS выше).
     document.getElementById('fl-f-plate-field').hidden = false;
-    document.getElementById('fl-f-odo-field').hidden = !isMixer();
+    document.getElementById('fl-f-odo-field').hidden = false;
     document.getElementById('fl-f-name').value = '';
     PlateInput.setValue(document.getElementById('fl-f-plate'), '');
     ['fl-f-cap', 'fl-f-odo', 'fl-f-balance', 'fl-f-residual', 'fl-f-mileage', 'fl-f-fuel', 'fl-f-urea', 'fl-f-platon'].forEach(function (id) { NumericInput.setFormattedValue(document.getElementById(id), 0); });
@@ -138,7 +139,7 @@
     document.getElementById('fl-delete-btn').hidden = false;
     document.getElementById('fl-form-error').hidden = true;
     document.getElementById('fl-f-plate-field').hidden = false;
-    document.getElementById('fl-f-odo-field').hidden = !isMixer();
+    document.getElementById('fl-f-odo-field').hidden = false;
     document.getElementById('fl-f-name').value = t.name;
     PlateInput.setValue(document.getElementById('fl-f-plate'), t.licensePlate || '');
     NumericInput.setFormattedValue(document.getElementById('fl-f-cap'), t.capacity);
@@ -170,9 +171,7 @@
       platonRatePerKm: NumericInput.parseNumber(document.getElementById('fl-f-platon').value) || 0
     };
     payload.licensePlate = document.getElementById('fl-f-plate').value.trim();
-    if (isMixer()) {
-      payload.odometerBaselineKm = NumericInput.parseNumber(document.getElementById('fl-f-odo').value) || 0;
-    }
+    payload.odometerBaselineKm = NumericInput.parseNumber(document.getElementById('fl-f-odo').value) || 0;
     if (!payload.name) { errorEl.textContent = 'Укажите название.'; errorEl.hidden = false; return; }
     try {
       if (editingId) await Api.put(endpoint() + '/' + editingId, payload);

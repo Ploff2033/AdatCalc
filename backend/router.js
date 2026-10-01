@@ -190,11 +190,29 @@ async function buildWaybill4sDocuments(entries) {
   const mixerIds = Array.from(new Set(entries.map((e) => e.mixerId)));
   if (!mixerIds.length) return [];
 
-  const { rows: mixerRows } = await db.pool.query(
-    'SELECT id, odometer_baseline_km FROM mixers WHERE id = ANY($1)',
-    [mixerIds]
+  // mixer_id на записи рейса хранит id миксера ИЛИ инертовоза (см.
+  // комментарий у waybill_entries.receipt_id в schema.sql — та же колонка
+  // переиспользуется для обоих видов техники), поэтому базовый пробег ищем
+  // в обеих таблицах, а не только в mixers (как было раньше — из-за этого
+  // одометр на рейсах поступлений всегда считался от нуля, даже если бы
+  // поле на инертовозе было настроено).
+  const [{ rows: mixerRows }, { rows: truckRows }] = await Promise.all([
+    db.pool.query('SELECT id, odometer_baseline_km FROM mixers WHERE id = ANY($1)', [mixerIds]),
+    db.pool.query('SELECT id, odometer_baseline_km FROM aggregate_trucks WHERE id = ANY($1)', [mixerIds])
+  ]);
+  const baselineByMixer = new Map(
+    mixerRows.concat(truckRows).map((r) => [r.id, Number(r.odometer_baseline_km) || 0])
   );
-  const baselineByMixer = new Map(mixerRows.map((r) => [r.id, Number(r.odometer_baseline_km) || 0]));
+
+  // Адрес завода — по просьбе пользователя ("в путевом пишется просто
+  // 'Джага', нужен нормальный адрес"). Таблица заводов маленькая — проще
+  // забрать всю, чем фильтровать по distinct plantId из entries.
+  const { rows: plantRows } = await db.pool.query('SELECT id, address FROM plants');
+  const addressByPlant = new Map(plantRows.map((r) => [r.id, r.address || '']));
+  const plantLabel = (e) => {
+    const address = addressByPlant.get(e.plantId) || '';
+    return address ? e.plantName + ', ' + address : e.plantName;
+  };
 
   const { rows: historyRows } = await db.pool.query(
     'SELECT id, mixer_id, distance_km, trip_count, trip_date, created_at FROM waybill_entries WHERE mixer_id = ANY($1) ORDER BY mixer_id, trip_date, created_at, id',
@@ -281,14 +299,17 @@ async function buildWaybill4sDocuments(entries) {
           chunkRoutes.set(routeKey, {
             distanceKm: e.distanceKm,
             address: e.address,
-            plantName: e.plantName,
+            // plantName тут — то, что реально печатается в пункте погрузки
+            // (см. buildFrontXml/buildBackXml) — "название, адрес" если у
+            // завода задан адрес, иначе по-старому одно название.
+            plantName: plantLabel(e),
             tripCount: 0,
             fuelCostPerTrip: e.fuelCostPerTrip
           });
         }
         chunkRoutes.get(routeKey).tripCount += take;
         for (let i = 0; i < take; i++) {
-          chunkLegs.push({ plantName: e.plantName, address: e.address, distanceKm: e.distanceKm });
+          chunkLegs.push({ plantName: plantLabel(e), address: e.address, distanceKm: e.distanceKm });
         }
         chunkTrips += take;
         consumed += take;

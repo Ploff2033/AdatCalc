@@ -176,6 +176,12 @@
         '<div class="field"><label for="sp-output">Целевая выработка</label><div class="unit"><input id="sp-output" class="inp num" inputmode="decimal"><span>м³/мес</span></div></div>' +
         '<div class="field"><label for="sp-utilities">Коммуналка</label><div class="unit"><input id="sp-utilities" class="inp num" inputmode="decimal"><span>₽/мес</span></div></div>' +
       '</div>' +
+      // Адрес завода — по просьбе пользователя ("в путевом пишется просто
+      // 'Джага', нужен нормальный адрес"): печатная форма №4-С подставляет
+      // его вместо одного названия завода в пункт погрузки (см.
+      // buildWaybill4sDocuments в backend/router.js). Необязательное поле —
+      // пусто значит печатать по-старому, одно название.
+      '<div class="field"><label for="sp-address">Адрес (для путевого листа)</label><input id="sp-address" class="inp" placeholder="Напр.: г. Кисловодск, ул. Промышленная, 5"></div>' +
       '<div class="stack g10">' +
         '<span class="cap">Амортизация завода</span>' +
         '<div class="grid-3">' +
@@ -209,6 +215,7 @@
       '</div>';
 
     document.getElementById('sp-name').value = plant.name;
+    document.getElementById('sp-address').value = plant.address || '';
     NumericInput.attach(document.getElementById('sp-output'));
     NumericInput.setFormattedValue(document.getElementById('sp-output'), plant.targetOutput);
     NumericInput.attach(document.getElementById('sp-utilities'));
@@ -284,6 +291,7 @@
     var lng = NumericInput.parseNumber(lngRaw);
     var payload = {
       name: name,
+      address: document.getElementById('sp-address').value.trim(),
       targetOutput: NumericInput.parseNumber(document.getElementById('sp-output').value) || 0,
       utilitiesMonthly: NumericInput.parseNumber(document.getElementById('sp-utilities').value) || 0,
       plantDepr: {

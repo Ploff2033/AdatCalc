@@ -580,3 +580,22 @@ CREATE INDEX IF NOT EXISTS idx_material_receipts_date ON material_receipts(recei
 -- validateAndBuild() в waybill-entries.js подставляет его в address так же,
 -- как order.address для заказов.
 ALTER TABLE material_receipts ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
+
+-- Адрес завода (физический, "откуда" для путевого листа) — по просьбе
+-- пользователя: "в путевом пишется просто 'Джага', нужен нормальный адрес".
+-- Печатная форма №4-С (waybill-xlsx-4s.js) раньше подставляла в "пункт
+-- погрузки" только plants.name — нечитаемо для реального документа.
+-- Правится в Настройках → Заводы, необязательное поле (пустая строка —
+-- печатается по-старому, одно название, обратная совместимость).
+ALTER TABLE plants ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
+
+-- Инертовозам — тот же набор полей, что и миксерам ("для инертовозов нужны
+-- все те же поля, что и для миксеров, а то одометр на них нельзя
+-- настроить"). mixers.odometer_baseline_km уже участвует в расчёте одометра
+-- путевого листа (см. buildWaybill4sDocuments в router.js) — до этой правки
+-- тот расчёт читал базовый пробег ТОЛЬКО из mixers, так что для рейсов
+-- поступлений (mixer_id там хранит id инертовоза, см. комментарий у
+-- waybill_entries.receipt_id) он всегда считался нулевым, даже если бы поле
+-- на инертовозе где-то и было — его читать было неоткуда. Теперь
+-- buildWaybill4sDocuments тоже обновлён, см. router.js.
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS odometer_baseline_km NUMERIC NOT NULL DEFAULT 0;
