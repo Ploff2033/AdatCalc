@@ -3,12 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>AdatBeton Calc</title>
+<title>AdatBeton</title>
 <!-- Фавикон живёт в frontend/ (обслуживается на / — общий корень для v1 и
      v2, см. backend/static.js), поэтому путь абсолютный от корня домена, а
      не /v2/favicon.svg. Тот же файл, что на adat-group.ru — по просьбе
-     пользователя ("сделай фавикон как здесь"), фирменный знак группы. -->
+     пользователя ("сделай фавикон как здесь"), фирменный знак группы.
+     PNG-варианты (favicon-32/192, apple-touch-icon) и manifest.json —
+     по просьбе "лого можно поставить как и фавикон": SVG не везде
+     рендерится в мобильном Chrome (на http-источнике он вообще часто
+     скрывает фавикон как часть индикации "небезопасно" — это поведение
+     браузера, не чинится доп. файлами, исчезнет само на https), а
+     manifest.json даёт нормальную иконку при "Добавить на экран". -->
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/v2/styles.css">
 </head>
 <body>

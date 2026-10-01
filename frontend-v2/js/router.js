@@ -67,6 +67,12 @@
     var screen = SCREENS[route];
     if (screen && screen.show) screen.show();
     current = route;
+    // data-route на <body> — зацепка для CSS конкретного экрана (пока
+    // только мобильный Расчёт, см. .mobile-page-flat/.sidebar-brand в
+    // styles.css — эксперимент, не коммитить без решения пользователя),
+    // без неё пришлось бы лезть в router.js каждый раз, когда у очередного
+    // мобильного экрана появляется свой кастомный хедер.
+    document.body.dataset.route = route;
     if (location.hash.slice(1) !== '/' + route) history.replaceState(null, '', '#/' + route);
   }
 

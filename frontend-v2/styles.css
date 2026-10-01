@@ -59,6 +59,22 @@ h1, h2, h3 { font-family: 'Rubik', system-ui, sans-serif; margin: 0; letter-spac
 .hint { font-size: 12px; color: var(--muted); }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+/* ЭКСПЕРИМЕНТ (не коммитить без отдельного решения пользователя) — "плоский"
+   вариант карточки без рамки/скругления, по макету MobileCalcFlat.dc.html
+   ("экран без лишних бордеров"): тот же фон, что у .card, но без border и
+   border-radius — секции разделяются только тоном фона, а не контуром.
+   Отдельный класс, не правка самого .card — чтобы не задеть остальные
+   экраны, которые на .card завязаны. */
+.card-flat { background: var(--surface); }
+/* ЭКСПЕРИМЕНТ (см. .card-flat выше) — по макету MobileCalcFlat.dc.html
+   секции идут впритык к краям экрана (никакого внешнего отступа у
+   .mobile-page) и зазор между ними меньше (6px, не 12px) — у обычного
+   .mobile-page отступ 14/16px + ещё gap:12px между карточками, вдвое
+   больше, чем в макете; пользователь это и имел в виду под "уменьшение
+   отступов". .mobile-page-flat — модификатор ТОЛЬКО для этого
+   эксперимента, не трогает .mobile-page как таковой (им пользуются
+   остальные мобильные экраны). */
+.mobile-page.mobile-page-flat { padding: 0; gap: 6px; }
 
 /* ---------- форма ---------- */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -264,6 +280,7 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
 .req { color: #A64A12; }
 .mobile-page { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
 .mobile-page details.card { padding: 14px 16px; }
+.mobile-page details.card-flat { padding: 10px 12px; }
 .mobile-page details > summary { display: flex; justify-content: space-between; align-items: center; min-height: 32px; cursor: pointer; list-style: none; }
 .mobile-page details > summary::-webkit-details-marker { display: none; }
 .mobile-sticky {
@@ -271,6 +288,12 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   background: var(--surface); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;
   box-shadow: 0 -6px 16px rgba(28,29,27,.06);
 }
+/* ЭКСПЕРИМЕНТ (см. .mobile-page-flat выше) — тот же "плоский" набор отступов
+   для подвального блока КПЭ/кнопки, по макету (padding: 8px 12px): без
+   этого он оставался единственным местом экрана с прежним широким
+   отступом 16px по бокам, хотя секции выше уже сделали edge-to-edge —
+   нашёл пользователь на реальном телефоне ("лишние поля по краям"). */
+.mobile-sticky.mobile-sticky-flat { padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)); }
 .mobile-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .mobile-kpi { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 8px 10px; border-radius: 4px; background: var(--surface-3); }
 .mobile-kpi.dark { background: var(--sidebar-bg); color: #fff; }
@@ -311,6 +334,17 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   #sb-plant-switch > .cap { display: none; }
   .plant-select-pill { width: auto; height: 36px; }
   .mobile-logout-btn:not([hidden]) { display: inline-flex; }
+  /* ЭКСПЕРИМЕНТ (см. .mobile-page-flat/.card-flat выше) — на экране Расчёт
+     убираем название программы ("AdatBeton Calc") из верхней полосы, раз
+     экран уже рисует свой компактный хедер (завод · роль / заголовок
+     экрана, см. mobile-calc.js) — иначе получалось два хедера подряд с
+     дублирующей информацией (нашёл пользователь на реальном телефоне).
+     Логотип (.mark) оставляем — переключатель завода и кнопка "выйти"
+     рядом с ним остаются рабочими, просто без подписи бренда. Только
+     экран 'main' (data-route, см. router.js), остальные мобильные экраны
+     пока не трогаем — у них такого своего хедера ещё нет. */
+  body[data-route="main"] .sidebar-brand .name,
+  body[data-route="main"] .sidebar-brand .role { display: none; }
   /* .bottom-nav.nav (обе присутствующие на элементе классы: разметка —
      <nav class="bottom-nav nav">), а не просто .bottom-nav — иначе
      специфичность (0,1,0) проигрывала базовому "nav.nav" (0,1,1) для
@@ -328,6 +362,12 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
     flex: 1; flex-direction: column; height: auto; padding: 6px 2px; font-size: 10px; gap: 3px; text-align: center; justify-content: center;
   }
   .page { padding: 16px; gap: 16px; }
+  /* ЭКСПЕРИМЕНТ (см. .mobile-page-flat выше) — на экране Расчёт даже после
+     обнуления .mobile-page оставался этот внешний отступ .page (16px) —
+     его пользователь и поймал как "лишние поля по краям" на реальном
+     телефоне, прислав точный HTML. Только 'main' (data-route), остальные
+     мобильные экраны пока используют старый .page как есть. */
+  body[data-route="main"] .page { padding: 0; gap: 0; }
   .page-head h1 { font-size: 22px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
   /* Эти три сетки заданы инлайн-стилем прямо в screen-main.js/waybills.js/
