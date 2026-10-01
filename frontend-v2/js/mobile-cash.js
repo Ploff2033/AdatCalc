@@ -8,7 +8,7 @@
   // анонимный работник по токену, см. app.js/router.js (единственный
   // экран v2 без ограничения роли).
   var HTML =
-    '<div class="mobile-page">' +
+    '<div class="mobile-page" style="padding:8px 12px;gap:8px">' +
       '<div style="display:flex;gap:6px">' +
         '<button type="button" class="btn sm" id="mc-tab-form" style="flex:1;height:40px">Новая запись</button>' +
         '<button type="button" class="btn ghost sm" id="mc-tab-history" style="flex:1;height:40px">История</button>' +
@@ -37,7 +37,7 @@
       '</div>' +
       '<div id="mc-history-section" class="stack g12" hidden>' +
         '<div id="mc-history-status" role="status" hidden></div>' +
-        '<div id="mc-history-list" class="stack g12"></div>' +
+        '<div id="mc-history-list" class="stack g8" style="margin:0 -12px"></div>' +
         '<p class="empty-state" id="mc-history-empty" hidden>Записей пока нет.</p>' +
       '</div>' +
     '</div>';
@@ -346,7 +346,7 @@
         var orderDetail = orderDetailFor(e.orderId);
         if (orderDetail) detailLine = orderDetail + (detailLine ? ' · ' + detailLine : '');
       }
-      return '<article class="card stack g8" style="padding:12px 14px;opacity:' + (e.stornoed ? '.6' : '1') + '" data-entry-id="' + e.id + '">' +
+      return '<article class="card-flat stack g8" style="padding:12px 14px;opacity:' + (e.stornoed ? '.6' : '1') + '" data-entry-id="' + e.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">' +
           '<span style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + CATEGORY_LABELS[e.category] + '</span>' +
           '<span class="num" style="font-size:17px;font-weight:600;color:' + color + ';text-decoration:' + (e.stornoed ? 'line-through' : 'none') + ';white-space:nowrap;flex:none">' + (e.amount >= 0 ? '+' : '') + Format.fmtNum(e.amount, 2) + '</span>' +

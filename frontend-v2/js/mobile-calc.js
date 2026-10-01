@@ -7,17 +7,6 @@
   var VAT_MULT = 1.22;
   var HTML =
     '<div class="mobile-page mobile-page-flat">' +
-      // Свой компактный хедер экрана (завод · роль / "Расчёт") — заменяет
-      // собой название программы в общей шапке-сайдбаре (см. CSS
-      // body[data-route="main"] .sidebar-brand в styles.css), чтобы не
-      // было двух хедеров подряд с дублирующей информацией — нашёл
-      // пользователь на реальном телефоне. Переключатель завода отдельной
-      // кнопкой тут не дублируем — рабочий остался в самой шапке-сайдбаре
-      // (там же, где и кнопка "выйти"), просто без подписи бренда рядом.
-      '<header style="padding:10px 12px;background:var(--sidebar-bg);color:#fff;display:flex;flex-direction:column;gap:2px">' +
-        '<span style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted);font-weight:600" id="mc-header-caption">—</span>' +
-        '<h1 style="font-size:22px;font-weight:600;margin:0">Расчёт</h1>' +
-      '</header>' +
       '<section class="card-flat stack g10" style="padding:12px">' +
         '<span class="sub">Смесь</span>' +
         '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px">' +
@@ -167,19 +156,9 @@
     NumericInput.setFormattedValue(input, vatGrossMode ? netValue * VAT_MULT : netValue);
   }
 
-  // Та же подпись роли, что и в shell.js::roleLabel — мелкая дублированная
-  // функция, не общий экспорт (shell.js её наружу не отдаёт).
-  function roleLabel(role) {
-    if (role === 'admin') return 'администратор';
-    if (role === 'manager') return 'менеджер';
-    return '—';
-  }
-
   function render() {
     var data = State.data;
     var plant = State.currentPlant();
-    var headerCaption = document.getElementById('mc-header-caption');
-    if (headerCaption) headerCaption.textContent = (plant ? plant.name : 'Завод не выбран') + ' · ' + roleLabel(Auth.getRole());
     var recipeSelect = document.getElementById('mc-recipe');
     var mixerSelect = document.getElementById('mc-mixer');
     var distInput = document.getElementById('mc-dist');

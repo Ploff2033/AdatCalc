@@ -11,23 +11,23 @@
   var tripsValue = 1;
 
   var HTML =
-    '<div class="mobile-page">' +
+    '<div class="mobile-page" style="padding:8px 12px;gap:8px">' +
       '<div class="seg" role="group" aria-label="День" id="mw-day-seg"></div>' +
-      '<section class="card stack g6" style="padding:14px 16px">' +
+      '<section class="card-flat stack g6" style="padding:12px;margin:0 -12px">' +
         '<div class="spread"><span class="sub">Заказ</span></div>' +
         '<select id="mw-order" class="inp" style="height:44px"></select>' +
         '<div id="mw-order-meta" class="hint"></div>' +
         '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><span id="mw-order-bar" style="background:var(--ink)"></span></div><span class="num" id="mw-order-bar-label" style="font-size:12px"></span></div>' +
       '</section>' +
-      '<section class="card stack g8" style="padding:14px 16px">' +
+      '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
         '<span class="sub">Водитель</span>' +
         '<div id="mw-drivers" class="stack g8"></div>' +
       '</section>' +
-      '<section class="card stack g8" style="padding:14px 16px">' +
+      '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
         '<span class="sub">Миксер</span>' +
         '<div id="mw-mixers" class="stack g8"></div>' +
       '</section>' +
-      '<section class="card stack g12" style="padding:14px 16px">' +
+      '<section class="card-flat stack g12" style="padding:12px;margin:0 -12px">' +
         '<div class="spread">' +
           '<span class="sub">Рейсов</span>' +
           '<div style="display:grid;grid-template-columns:44px 56px 44px;gap:6px">' +
@@ -40,7 +40,7 @@
         '<p class="hint" id="mw-warning" style="margin:0;color:#8C2217"></p>' +
         '<button class="btn pri" id="mw-save-btn" style="height:52px" disabled>Сохранить запись</button>' +
       '</section>' +
-      '<section class="card stack g8" style="padding:14px 16px">' +
+      '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
         '<div class="spread"><span class="sub" id="mw-done-label">Распределено</span><span class="num hint" id="mw-done-count"></span></div>' +
         '<div id="mw-done-list" class="stack"></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:4px">' +
