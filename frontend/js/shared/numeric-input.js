@@ -68,14 +68,38 @@
 
   function attach(input) {
     input.setAttribute('inputmode', 'decimal');
+    // На телефоне (especially iOS Safari/Chrome с цифровой клавиатурой
+    // inputmode="decimal") синхронная перезапись el.value + setSelectionRange
+    // ПРЯМО ВНУТРИ обработчика 'input' конфликтует с внутренним состоянием
+    // виртуальной клавиатуры — она не успевает закоммитить только что
+    // введённый символ до того, как мы меняем value под ней, и следующие
+    // нажатия начинают молча проглатываться (в поле остаётся только первая
+    // введённая цифра, дальше как будто ничего не печатается). На
+    // десктопе с физической клавиатурой это не проявляется — нашли на
+    // телефоне (жалоба пользователя: "Цена за м³" на мобильном показывает
+    // только "5" из введённого числа). Стандартное решение для этого класса
+    // багов у маскированных полей — не трогать DOM синхронно в обработчике,
+    // а отложить на ближайший кадр отрисовки (requestAnimationFrame), чтобы
+    // клавиатура успела закоммитить свой символ первой. pending — схлопывает
+    // несколько событий 'input' за один кадр в одну перезапись по
+    // АКТУАЛЬНОМУ el.value на момент кадра, а не по значению на момент
+    // события (иначе откатили бы более позднее нажатие).
+    var pending = false;
     input.addEventListener('input', function (e) {
-      var el = e.target;
-      var caret = el.selectionStart == null ? el.value.length : el.selectionStart;
-      var unitsBefore = countUnitsBefore(el.value, caret);
-      var formatted = formatDisplay(toRawInputString(el.value));
-      el.value = formatted;
-      var newCaret = positionAfterNUnits(formatted, unitsBefore);
-      el.setSelectionRange(newCaret, newCaret);
+      if (pending) return;
+      pending = true;
+      var raf = window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+      raf(function () {
+        pending = false;
+        var el = e.target;
+        var caret = el.selectionStart == null ? el.value.length : el.selectionStart;
+        var unitsBefore = countUnitsBefore(el.value, caret);
+        var formatted = formatDisplay(toRawInputString(el.value));
+        if (formatted === el.value) return;
+        el.value = formatted;
+        var newCaret = positionAfterNUnits(formatted, unitsBefore);
+        el.setSelectionRange(newCaret, newCaret);
+      });
     });
   }
 
