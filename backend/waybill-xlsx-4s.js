@@ -55,11 +55,14 @@ const CELLS = {
 // смену; этот модуль фиксирует только ОДНУ выдачу на документ (топливо
 // выдаётся по норме на весь путевой лист сразу, не по частям), поэтому
 // заполняется только первая (25), вторая остаётся пустой.
-// марка/код марки — тип топлива по ГОСТ-классификатору, в системе такого
-// справочника нет (топливо описано только парой ставка+цена), осознанно не
-// заполняем, а не гадаем.
+// Марка — по номенклатуре пользователя: "Дизельное топливо ЭКТО", общая
+// для всего парка (в системе нет справочника типа топлива по технике, см.
+// FUEL_BRAND ниже). Код марки — отдельный ГОСТ-классификатор, пользователь
+// его не называл, не гадаем, остаётся пустым.
+const FUEL_BRAND = 'Дизельное топливо ЭКТО';
 const FUEL_ROW = 25;
 const CELLS_FUEL = {
+  brand: 'AE' + FUEL_ROW,
   issued: 'AI' + FUEL_ROW,
   balanceAtDeparture: 'AL' + FUEL_ROW,
   balanceAtReturn: 'AO' + FUEL_ROW,
@@ -196,6 +199,7 @@ function buildFrontXml(sheetXml, doc, organization) {
   if (doc.totalFuelLiters > 0) {
     var issuedLiters = doc.totalFuelLiters * 1.1;
     var balanceAtReturn = issuedLiters - doc.totalFuelLiters;
+    xml = setCell(xml, CELLS_FUEL.brand, FUEL_BRAND);
     xml = setCell(xml, CELLS_FUEL.issued, formatNum(issuedLiters, 1));
     xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(issuedLiters, 1));
     xml = setCell(xml, CELLS_FUEL.balanceAtReturn, formatNum(balanceAtReturn, 1));
