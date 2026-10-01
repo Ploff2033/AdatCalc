@@ -21,7 +21,6 @@ function rowToPlant(row, includeToken) {
     fuelPrice: Number(row.fuel_price),
     ureaPrice: Number(row.urea_price),
     neighborCitySurcharge: Number(row.neighbor_city_surcharge),
-    address: row.address || '',
     plantLocation: row.location_lat != null ? { lat: row.location_lat, lng: row.location_lng } : null
   };
   if (includeToken) {
@@ -74,13 +73,12 @@ async function create(body) {
   const fuelPrice = body.fuelPrice !== undefined ? num(body.fuelPrice, 'fuelPrice') : 0;
   const ureaPrice = body.ureaPrice !== undefined ? num(body.ureaPrice, 'ureaPrice') : 0;
   const neighborCitySurcharge = body.neighborCitySurcharge !== undefined ? num(body.neighborCitySurcharge, 'neighborCitySurcharge') : 0;
-  const address = (body.address || '').trim();
 
   const id = db.genId('plant');
   await db.pool.query(
-    `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly, location_lat, location_lng, access_token, fuel_price, urea_price, neighbor_city_surcharge, address)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, genToken(), fuelPrice, ureaPrice, neighborCitySurcharge, address]
+    `INSERT INTO plants (id, name, target_output, depr_balance, depr_residual, depr_lifespan_months, utilities_monthly, location_lat, location_lng, access_token, fuel_price, urea_price, neighbor_city_surcharge)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, genToken(), fuelPrice, ureaPrice, neighborCitySurcharge]
   );
   return rowToPlant(await getRaw(db.pool, id), true);
 }
@@ -109,12 +107,11 @@ async function update(id, body) {
   const fuelPrice = body.fuelPrice !== undefined ? num(body.fuelPrice, 'fuelPrice') : Number(current.fuel_price);
   const ureaPrice = body.ureaPrice !== undefined ? num(body.ureaPrice, 'ureaPrice') : Number(current.urea_price);
   const neighborCitySurcharge = body.neighborCitySurcharge !== undefined ? num(body.neighborCitySurcharge, 'neighborCitySurcharge') : Number(current.neighbor_city_surcharge);
-  const address = body.address !== undefined ? body.address.trim() : (current.address || '');
 
   await db.pool.query(
-    `UPDATE plants SET name=$2, target_output=$3, depr_balance=$4, depr_residual=$5, depr_lifespan_months=$6, utilities_monthly=$7, location_lat=$8, location_lng=$9, fuel_price=$10, urea_price=$11, neighbor_city_surcharge=$12, address=$13
+    `UPDATE plants SET name=$2, target_output=$3, depr_balance=$4, depr_residual=$5, depr_lifespan_months=$6, utilities_monthly=$7, location_lat=$8, location_lng=$9, fuel_price=$10, urea_price=$11, neighbor_city_surcharge=$12
      WHERE id=$1`,
-    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, fuelPrice, ureaPrice, neighborCitySurcharge, address]
+    [id, name, targetOutput, deprBalance, deprResidual, deprLifespan, utilitiesMonthly, lat, lng, fuelPrice, ureaPrice, neighborCitySurcharge]
   );
   return rowToPlant(await getRaw(db.pool, id), true);
 }

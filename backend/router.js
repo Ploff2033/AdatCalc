@@ -13,7 +13,6 @@ const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
 const orders = require('./handlers/orders');
 const waybillEntries = require('./handlers/waybill-entries');
-const materialReceipts = require('./handlers/material-receipts');
 const plants = require('./handlers/plants');
 const config = require('./handlers/config');
 const stockMovements = require('./handlers/stock-movements');
@@ -51,18 +50,6 @@ function sendJson(res, status, data) {
   }
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
-}
-
-// Content-Disposition — заголовок HTTP, значение должно быть ASCII;
-// кириллица в filename= напрямую падает в рантайме Node с ERR_INVALID_CHAR
-// (см. имена файлов путевых листов — "Путевой лист — Джага — №28 — ...").
-// filename*=UTF-8''... (RFC 5987) — стандартный способ отдать настоящее
-// имя с кириллицей, понимает любой современный браузер; plain filename= —
-// ASCII-подстраховка для совсем древних клиентов (там кириллица просто
-// станет "_", а не сломает скачивание).
-function contentDispositionHeader(filename) {
-  var ascii = filename.replace(/[^\x20-\x7E]/g, '_');
-  return 'attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(filename);
 }
 
 function sendError(res, err) {
@@ -202,80 +189,11 @@ async function buildWaybill4sDocuments(entries) {
   const mixerIds = Array.from(new Set(entries.map((e) => e.mixerId)));
   if (!mixerIds.length) return [];
 
-  // mixer_id на записи рейса хранит id миксера ИЛИ инертовоза (см.
-  // комментарий у waybill_entries.receipt_id в schema.sql — та же колонка
-  // переиспользуется для обоих видов техники), поэтому базовый пробег ищем
-  // в обеих таблицах, а не только в mixers (как было раньше — из-за этого
-  // одометр на рейсах поступлений всегда считался от нуля, даже если бы
-  // поле на инертовозе было настроено).
-  const [{ rows: mixerRows }, { rows: truckRows }] = await Promise.all([
-    db.pool.query('SELECT id, odometer_baseline_km FROM mixers WHERE id = ANY($1)', [mixerIds]),
-    db.pool.query('SELECT id, odometer_baseline_km FROM aggregate_trucks WHERE id = ANY($1)', [mixerIds])
-  ]);
-  const baselineByMixer = new Map(
-    mixerRows.concat(truckRows).map((r) => [r.id, Number(r.odometer_baseline_km) || 0])
+  const { rows: mixerRows } = await db.pool.query(
+    'SELECT id, odometer_baseline_km FROM mixers WHERE id = ANY($1)',
+    [mixerIds]
   );
-
-  // Адрес завода — по просьбе пользователя ("в путевом пишется просто
-  // 'Джага', нужен нормальный адрес"). Таблица заводов маленькая — проще
-  // забрать всю, чем фильтровать по distinct plantId из entries.
-  //
-  // Печатаем ТОЛЬКО адрес, без приписки названия завода спереди — полный
-  // почтовый адрес самодостаточен (как и положено "пункту погрузки" в
-  // официальном бланке), а название ещё и часто совпадает с частью адреса
-  // (напр. у Джаги: "...село Джага, Шоссейная ул., 28") — со склейкой
-  // "Джага, ...село Джага..." название фактически печаталось дважды, это и
-  // заметил пользователь ("в адрес завода тянется ещё и его название").
-  // Без заданного адреса — как и раньше, одно название.
-  const { rows: plantRows } = await db.pool.query('SELECT id, address FROM plants');
-  const addressByPlant = new Map(plantRows.map((r) => [r.id, r.address || '']));
-  const plantLabel = (e) => addressByPlant.get(e.plantId) || e.plantName;
-
-  // Груз и тоннаж — по просьбе пользователя ("я везу песок, а у тебя
-  // прописано, что это Бетон"): раньше груз был жёстко зашит как 'Бетон'
-  // для ЛЮБОГО рейса, хотя рейсы поступлений возят конкретный инертный
-  // материал. Для рейсов поступлений — название материала и тоннаж
-  // (qty поступления / trip_count поступления × число рейсов В ЭТОМ
-  // документе — "если на 100 тонн 5 ездок, то 20 тонн ездка, если в
-  // путевом ездок две — 40 тонн"); для заказов на бетон — по-прежнему
-  // 'Бетон' без тоннажа (объём считается в м³, а не в тоннах, графа
-  // "перевезти тонн" тут не подходит по смыслу).
-  const receiptIds = Array.from(new Set(entries.map((e) => e.receiptId).filter(Boolean)));
-  const receiptInfoById = new Map();
-  if (receiptIds.length) {
-    const { rows: receiptRows } = await db.pool.query(
-      'SELECT id, material_name, qty, trip_count, unit FROM material_receipts WHERE id = ANY($1)',
-      [receiptIds]
-    );
-    receiptRows.forEach((r) => {
-      receiptInfoById.set(r.id, {
-        materialName: r.material_name,
-        qtyPerTrip: Number(r.trip_count) > 0 ? Number(r.qty) / Number(r.trip_count) : 0,
-        isTons: r.unit === 'т'
-      });
-    });
-  }
-  const cargoFor = (e) => {
-    const info = e.receiptId ? receiptInfoById.get(e.receiptId) : null;
-    return info ? info.materialName : 'Бетон';
-  };
-  const tonsPerTrip = (e) => {
-    const info = e.receiptId ? receiptInfoById.get(e.receiptId) : null;
-    return info && info.isTons ? info.qtyPerTrip : null;
-  };
-
-  // Время — по просьбе пользователя ("можешь проставлять выезд с парковки
-  // (условно в 9) и возвращение на парковку (в 18.00), исходя из средней
-  // скорости и времени погрузок/разгрузок"). dayElapsedMinutes — курсор
-  // "сейчас" в минутах от полуночи, стартует с config.shiftStartMinutes на
-  // КАЖДЫЙ день (группу driverId|mixerId|tripDate) и копится дальше по
-  // рейсам И по документам ВНУТРИ этого дня (как и одометр — продолжается
-  // через flushChunk, не сбрасывается на каждый новый документ). Погрузка
-  // на заводе уже считается пренебрежимо малой во всём остальном коде (см.
-  // tripHours в handlers/waybill-entries.js) — тем же приёмом время стоянки
-  // под погрузкой = 0, вся пауза (unloadMinutes) — на разгрузке у клиента.
-  const cfg = await waybillEntries.getLimitsConfig();
-  const oneWayMinutes = (distanceKm) => (cfg.avgSpeedKmh > 0 ? (distanceKm / cfg.avgSpeedKmh) * 60 : 0);
+  const baselineByMixer = new Map(mixerRows.map((r) => [r.id, Number(r.odometer_baseline_km) || 0]));
 
   const { rows: historyRows } = await db.pool.query(
     'SELECT id, mixer_id, distance_km, trip_count, trip_date, created_at FROM waybill_entries WHERE mixer_id = ANY($1) ORDER BY mixer_id, trip_date, created_at, id',
@@ -319,40 +237,14 @@ async function buildWaybill4sDocuments(entries) {
     let chunkLegs = null;
     let chunkTrips = 0;
     let chunkOdometerStart = 0;
-    let chunkTimeStart = 0;
-    // Копится по ВСЕМ документам этого дня подряд (не сбрасывается на
-    // каждый flushChunk) — ровно так же, как одометр: следующий документ
-    // того же дня продолжает время с того момента, на котором закончился
-    // предыдущий, а не начинает заново с 9:00.
-    let dayElapsedMinutes = cfg.shiftStartMinutes;
 
     const flushChunk = () => {
       if (!chunkTrips) return;
       partIndex += 1;
-      const routesArr = Array.from(chunkRoutes.values());
       const odometerEnd = chunkOdometerStart + chunkLegs.reduce((s, l) => s + l.distanceKm * 2, 0);
-      // Расход топлива по норме за документ — та же сумма, что уже
-      // печаталась в "Результаты работы автомобиля" на обороте (см.
-      // buildBackXml), нужна теперь ещё и для "Движение горючего" на
-      // лицевой стороне (см. buildFrontXml) — считаем один раз тут.
-      const totalFuelLiters = group[0].fuelPricePerLiter > 0
-        ? routesArr.reduce((s, r) => s + (r.tripCount || 0) * (r.fuelCostPerTrip || 0), 0) / group[0].fuelPricePerLiter
-        : 0;
-      // "Время работы двигателя" — по просьбе пользователя: время в пути +
-      // половина времени простоя под погрузкой/разгрузкой (вся пауза
-      // unloadMinutes — на разгрузке, см. комментарий выше у
-      // dayElapsedMinutes; "спецоборудования" пользователь не оговаривал —
-      // не заполняем, нет для него формулы и данных).
-      const totalDrivingMinutes = chunkLegs.reduce((s, l) => s + 2 * oneWayMinutes(l.distanceKm), 0);
-      const engineMinutes = totalDrivingMinutes + (chunkLegs.length * (cfg.unloadMinutes || 0)) / 2;
       documents.push({
         id: key.replace(/\|/g, '-') + '-p' + partIndex,
         createdAt,
-        // Название завода БЕЗ подмены на полный адрес (в отличие от
-        // routesArr[].plantName, см. plantLabel выше) — нужно отдельно,
-        // для имени файла при скачивании (см. waybillFileName в
-        // waybill-xlsx-4s.js): "Джага", а не вся строка адреса.
-        plantName: group[0].plantName,
         driverName: group[0].driverName,
         driverLicenseNumber: group[0].driverLicenseNumber,
         mixerName: group[0].mixerName,
@@ -360,11 +252,7 @@ async function buildWaybill4sDocuments(entries) {
         fuelPricePerLiter: group[0].fuelPricePerLiter,
         odometerStart: chunkOdometerStart,
         odometerEnd,
-        timeStartMinutes: chunkTimeStart,
-        timeEndMinutes: dayElapsedMinutes,
-        totalFuelLiters,
-        engineMinutes,
-        routes: routesArr,
+        routes: Array.from(chunkRoutes.values()),
         legs: chunkLegs
       });
       chunkRoutes = null;
@@ -377,8 +265,6 @@ async function buildWaybill4sDocuments(entries) {
       // нашлась в истории — не должно случаться) — считаем от 0, лучше
       // заниженный одометр, чем упавшая выгрузка.
       const entryStart = odometerStartByEntryId.has(e.id) ? odometerStartByEntryId.get(e.id) : 0;
-      const legOneWayMinutes = oneWayMinutes(e.distanceKm);
-      const tons = tonsPerTrip(e);
       let remaining = e.tripCount;
       let consumed = 0;
       while (remaining > 0) {
@@ -386,7 +272,6 @@ async function buildWaybill4sDocuments(entries) {
           chunkRoutes = new Map();
           chunkLegs = [];
           chunkOdometerStart = entryStart + consumed * e.distanceKm * 2;
-          chunkTimeStart = dayElapsedMinutes;
         }
         const take = Math.min(remaining, WAYBILL_4S_MAX_TRIPS - chunkTrips);
 
@@ -395,41 +280,14 @@ async function buildWaybill4sDocuments(entries) {
           chunkRoutes.set(routeKey, {
             distanceKm: e.distanceKm,
             address: e.address,
-            // plantName тут — то, что реально печатается в пункте погрузки
-            // (см. buildFrontXml/buildBackXml) — "название, адрес" если у
-            // завода задан адрес, иначе по-старому одно название.
-            plantName: plantLabel(e),
-            cargo: cargoFor(e),
+            plantName: e.plantName,
             tripCount: 0,
-            tonsPerTrip: tons,
-            fuelCostPerTrip: e.fuelCostPerTrip,
-            // "Время прибытия" в задании водителю — момент прибытия на
-            // разгрузку (к клиенту) ПЕРВОГО рейса этого маршрута, дальше не
-            // переписывается (см. buildFrontXml).
-            firstDropoffArrivalMinutes: null
+            fuelCostPerTrip: e.fuelCostPerTrip
           });
         }
-        const route = chunkRoutes.get(routeKey);
-        route.tripCount += take;
+        chunkRoutes.get(routeKey).tripCount += take;
         for (let i = 0; i < take; i++) {
-          // Погрузка на заводе — без простоя (pickupDeparture = pickupArrival,
-          // см. комментарий у dayElapsedMinutes выше); вся пауза (unloadMinutes)
-          // — на разгрузке у клиента.
-          const pickupArrival = dayElapsedMinutes;
-          const pickupDeparture = pickupArrival;
-          const dropoffArrival = pickupDeparture + legOneWayMinutes;
-          const dropoffDeparture = dropoffArrival + (cfg.unloadMinutes || 0);
-          if (route.firstDropoffArrivalMinutes == null) route.firstDropoffArrivalMinutes = dropoffArrival;
-          chunkLegs.push({
-            plantName: plantLabel(e),
-            address: e.address,
-            distanceKm: e.distanceKm,
-            pickupArrivalMinutes: pickupArrival,
-            pickupDepartureMinutes: pickupDeparture,
-            dropoffArrivalMinutes: dropoffArrival,
-            dropoffDepartureMinutes: dropoffDeparture
-          });
-          dayElapsedMinutes = dropoffDeparture + legOneWayMinutes; // обратно на завод — готов к следующему рейсу
+          chunkLegs.push({ plantName: e.plantName, address: e.address, distanceKm: e.distanceKm });
         }
         chunkTrips += take;
         consumed += take;
@@ -441,26 +299,7 @@ async function buildWaybill4sDocuments(entries) {
     flushChunk();
   }
 
-  await assignWaybillDocNumbers(documents);
   return documents;
-}
-
-// Номера путевых листов — по просьбе пользователя ("у путевых листов
-// должны быть номера"). Документы №4-С не хранятся как отдельная сущность
-// (собираются на лету из waybill_entries при каждой выгрузке), поэтому
-// номер выдаётся по стабильному ключу (doc.id — тот же "водитель-машина-
-// дата-pN", что уже используется в имени файла) один раз при первом
-// запросе печати и переживает повторную выгрузку тех же рейсов.
-async function assignWaybillDocNumbers(documents) {
-  if (!documents.length) return;
-  const keys = documents.map((d) => d.id);
-  await db.pool.query(
-    'INSERT INTO waybill_doc_numbers (doc_key) SELECT unnest($1::text[]) ON CONFLICT (doc_key) DO NOTHING',
-    [keys]
-  );
-  const { rows } = await db.pool.query('SELECT doc_key, number FROM waybill_doc_numbers WHERE doc_key = ANY($1)', [keys]);
-  const numberByKey = new Map(rows.map((r) => [r.doc_key, r.number]));
-  documents.forEach((d) => { d.docNumber = numberByKey.get(d.id) || null; });
 }
 
 const routes = [
@@ -665,7 +504,7 @@ const routes = [
         const buf = await buildOrderWorkbook(withTrips[0], organization);
         res.writeHead(200, {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': contentDispositionHeader(waybillFileName(withTrips[0]))
+          'Content-Disposition': 'attachment; filename="' + waybillFileName(withTrips[0]) + '"'
         });
         res.end(buf);
       } else {
@@ -684,52 +523,6 @@ const routes = [
   // лист прямо из заказа выше, а дополняет его для этого случая. Доступно
   // только менеджеру и выше — это не рутинный ввод по анонимной ссылке.
   ...crudRoutes('/api/waybill-entries', waybillEntries, { read: 'manager', write: 'manager' }),
-
-  // Поступления инертных — отдельная вкладка (см. handlers/material-receipts.js
-  // и документ "AdatBeton Calc v2 — архитектура модулей", обновление
-  // 30.09.2026): сырьё, приходящее НА завод, а не отгрузка клиенту. Рейсы
-  // по ним разносятся тем же /api/waybill-entries выше (receiptId вместо
-  // orderId в теле запроса) — здесь только сама запись поступления.
-  ...crudRoutes('/api/material-receipts', materialReceipts, { read: 'manager', write: 'manager', del: 'admin' }),
-  {
-    method: 'POST',
-    pattern: /^\/api\/material-receipts\/([^/]+)\/cancel$/,
-    role: 'manager',
-    handler: async (req, res, m) => sendJson(res, 200, await materialReceipts.cancel(decodeURIComponent(m[1])))
-  },
-
-  // Периоды работы водителя (см. schema.sql::employee_work_periods) —
-  // admin-only, та же роль, что и остальное редактирование карточки
-  // сотрудника (crudRoutes('/api/employees', ..., { write: 'admin' })
-  // выше).
-  {
-    method: 'POST',
-    pattern: /^\/api\/employees\/([^/]+)\/work-periods$/,
-    role: 'admin',
-    handler: async (req, res, m) => {
-      const body = await readBody(req);
-      sendJson(res, 201, await employees.addWorkPeriod(decodeURIComponent(m[1]), body));
-    }
-  },
-  {
-    method: 'PUT',
-    pattern: /^\/api\/employees\/([^/]+)\/work-periods\/([^/]+)$/,
-    role: 'admin',
-    handler: async (req, res, m) => {
-      const body = await readBody(req);
-      sendJson(res, 200, await employees.updateWorkPeriod(decodeURIComponent(m[1]), decodeURIComponent(m[2]), body));
-    }
-  },
-  {
-    method: 'DELETE',
-    pattern: /^\/api\/employees\/([^/]+)\/work-periods\/([^/]+)$/,
-    role: 'admin',
-    handler: async (req, res, m) => {
-      await employees.removeWorkPeriod(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
-      res.writeHead(204);
-      res.end();
-    }
-  },
   {
     method: 'POST',
     pattern: /^\/api\/waybill-entries\/waybills\.xlsx$/,
@@ -749,7 +542,7 @@ const routes = [
         const buf = await waybillXlsx4s.buildDocumentWorkbook(shaped[0], organization);
         res.writeHead(200, {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': contentDispositionHeader(waybillXlsx4s.waybillFileName(shaped[0]))
+          'Content-Disposition': 'attachment; filename="' + waybillXlsx4s.waybillFileName(shaped[0]) + '"'
         });
         res.end(buf);
       } else {

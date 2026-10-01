@@ -37,12 +37,6 @@
             '<div class="field"><label for="s-vehicle-hours">Смена машины</label><div class="unit"><input id="s-vehicle-hours" class="inp num" inputmode="decimal"><span>ч</span></div></div>' +
             '<div class="field"><label for="s-avg-speed">Средняя скорость миксера</label><div class="unit"><input id="s-avg-speed" class="inp num" inputmode="decimal"><span>км/ч</span></div></div>' +
             '<div class="field"><label for="s-unload">Время разгрузки</label><div class="unit"><input id="s-unload" class="inp num" inputmode="decimal"><span>мин</span></div></div>' +
-            // Начало смены — по просьбе пользователя ("можешь проставлять выезд
-            // с парковки, условно в 9"): используется только для печати времени
-            // выезда/возвращения и последовательности выполнения задания в
-            // путевом листе №4-С (см. buildWaybill4sDocuments в backend/router.js),
-            // на проверку дневного лимита часов не влияет.
-            '<div class="field"><label for="s-shift-start">Выезд с парковки (для путевого листа)</label><input id="s-shift-start" type="time" class="inp"></div>' +
           '</div>' +
           '<p class="hint" style="margin:0">Доплата водителю за рейс в соседний город — теперь у каждого завода своя, см. раздел «Заводы» выше.</p>' +
         '</section>' +
@@ -182,12 +176,6 @@
         '<div class="field"><label for="sp-output">Целевая выработка</label><div class="unit"><input id="sp-output" class="inp num" inputmode="decimal"><span>м³/мес</span></div></div>' +
         '<div class="field"><label for="sp-utilities">Коммуналка</label><div class="unit"><input id="sp-utilities" class="inp num" inputmode="decimal"><span>₽/мес</span></div></div>' +
       '</div>' +
-      // Адрес завода — по просьбе пользователя ("в путевом пишется просто
-      // 'Джага', нужен нормальный адрес"): печатная форма №4-С подставляет
-      // его вместо одного названия завода в пункт погрузки (см.
-      // buildWaybill4sDocuments в backend/router.js). Необязательное поле —
-      // пусто значит печатать по-старому, одно название.
-      '<div class="field"><label for="sp-address">Адрес (для путевого листа)</label><input id="sp-address" class="inp" placeholder="Напр.: г. Кисловодск, ул. Промышленная, 5"></div>' +
       '<div class="stack g10">' +
         '<span class="cap">Амортизация завода</span>' +
         '<div class="grid-3">' +
@@ -221,7 +209,6 @@
       '</div>';
 
     document.getElementById('sp-name').value = plant.name;
-    document.getElementById('sp-address').value = plant.address || '';
     NumericInput.attach(document.getElementById('sp-output'));
     NumericInput.setFormattedValue(document.getElementById('sp-output'), plant.targetOutput);
     NumericInput.attach(document.getElementById('sp-utilities'));
@@ -297,7 +284,6 @@
     var lng = NumericInput.parseNumber(lngRaw);
     var payload = {
       name: name,
-      address: document.getElementById('sp-address').value.trim(),
       targetOutput: NumericInput.parseNumber(document.getElementById('sp-output').value) || 0,
       utilitiesMonthly: NumericInput.parseNumber(document.getElementById('sp-utilities').value) || 0,
       plantDepr: {
@@ -355,13 +341,6 @@
       var el = document.getElementById(id);
       if (document.activeElement !== el) NumericInput.setFormattedValue(el, map[id] || 0);
     });
-    var shiftStartEl = document.getElementById('s-shift-start');
-    if (document.activeElement !== shiftStartEl) {
-      var mins = c.shiftStartMinutes != null ? c.shiftStartMinutes : 540;
-      var hh = String(Math.floor(mins / 60)).padStart(2, '0');
-      var mm = String(mins % 60).padStart(2, '0');
-      shiftStartEl.value = hh + ':' + mm;
-    }
   }
 
   function renderRent() {
@@ -519,11 +498,6 @@
         unloadMinutes: NumericInput.parseNumber(document.getElementById('s-unload').value) || 0,
         rentabilityThresholdPercent: NumericInput.parseNumber(document.getElementById('s-rent-threshold').value) || 0
       };
-      var shiftStartRaw = document.getElementById('s-shift-start').value; // "HH:MM" из <input type="time">
-      if (shiftStartRaw) {
-        var shiftParts = shiftStartRaw.split(':').map(Number);
-        configBody.shiftStartMinutes = shiftParts[0] * 60 + shiftParts[1];
-      }
       // Поля Telegram есть в DOM только у admin (см. renderTelegram) — если
       // их нет, просто не отправляем (менеджерский PUT их и так проигнорирует
       // на бэкенде, но незачем слать undefined).
@@ -571,10 +545,6 @@
       NumericInput.attach(document.getElementById(pair[0]));
       document.getElementById(pair[0]).addEventListener('input', function () { markDirty(pair[1]); });
     });
-    // type="time", не маскированное числовое поле — NumericInput.attach()
-    // тут не подходит (тот же класс бага, что с type="number": сторонняя
-    // логика ломает нативное поведение браузерного инпута).
-    document.getElementById('s-shift-start').addEventListener('input', function () { markDirty('выезд с парковки'); });
 
     document.getElementById('s-plants-add-btn').addEventListener('click', createPlant);
     document.getElementById('s-save-btn').addEventListener('click', handleSave);

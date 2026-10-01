@@ -54,11 +54,6 @@
     if (wbLink) wbLink.hidden = !Auth.isAtLeast('admin');
     var bottomWbLink = document.querySelector('.bottom-nav a[data-route="waybills"]');
     if (bottomWbLink) bottomWbLink.hidden = !Auth.isAtLeast('admin');
-    // «Поступления» — тот же уровень доступа, что и «Путевые листы» (см.
-    // router.js::MIN_ROLE.receipts) — только в сайдбаре, в нижнем меню
-    // телефона пункта нет вообще (это не сценарий анонимного работника).
-    var receiptsLink = document.querySelector('#sb-nav-main a[data-route="receipts"]');
-    if (receiptsLink) receiptsLink.hidden = !Auth.isAtLeast('admin');
     var stockLink = document.querySelector('#sb-nav-main a[data-route="stock"]');
     if (stockLink) stockLink.hidden = !Auth.isAtLeast('manager');
     // «Персонал» — как и в v1 (auth-ui.js: tabButton('personnel').hidden),

@@ -13,7 +13,7 @@ const { genToken } = require('../tokens');
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, shift_start_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id, mailru_login, mailru_app_password FROM config WHERE id = 1'
+    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id, mailru_login, mailru_app_password FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
@@ -22,9 +22,6 @@ async function get(role) {
     vehicleShiftHours: Number(row.vehicle_shift_hours),
     avgSpeedKmh: Number(row.avg_speed_kmh),
     unloadMinutes: Number(row.unload_minutes),
-    // Выезд с парковки (минут от полуночи) — только для печати путевого
-    // листа №4-С, см. комментарий у schema.sql::config.shift_start_minutes.
-    shiftStartMinutes: Number(row.shift_start_minutes),
     // Виден всем с ролью (нужен и менеджеру — подсветка заказов ниже порога
     // в списке «Заказы»), в отличие от токенов ниже.
     rentabilityThresholdPercent: Number(row.rentability_threshold_percent)
@@ -66,10 +63,6 @@ async function update(body, role) {
   if (body.unloadMinutes !== undefined) {
     values.push(num(body.unloadMinutes, 'unloadMinutes'));
     sets.push(`unload_minutes = $${values.length}`);
-  }
-  if (body.shiftStartMinutes !== undefined) {
-    values.push(num(body.shiftStartMinutes, 'shiftStartMinutes'));
-    sets.push(`shift_start_minutes = $${values.length}`);
   }
   if (body.rentabilityThresholdPercent !== undefined) {
     values.push(num(body.rentabilityThresholdPercent, 'rentabilityThresholdPercent'));

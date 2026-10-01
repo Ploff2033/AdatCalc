@@ -8,5 +8,3 @@ backups/
 node_modules/
 /seed-data.sql
 /materials-recipes.sql
-
-backend/assets/~$*

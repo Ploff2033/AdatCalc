@@ -142,10 +142,6 @@ select.inp { cursor: pointer; }
   background: var(--bad-bg); color: var(--bad-fg); font-size: 13px;
 }
 .banner svg { flex: none; }
-/* .banner — по умолчанию для ошибок (красный); .ok — для нейтрального/успешного
-   итога (напр. сводка после распределения по диапазону дат в screen-waybills.js:
-   "создано N записей", это не ошибка, красный тут был бы вводящим в заблуждение). */
-.banner.ok { background: var(--ok-bg); color: var(--ok-fg); }
 
 /* ---------- каркас приложения ---------- */
 .app-shell { display: flex; min-height: 100vh; background: var(--bg); }
