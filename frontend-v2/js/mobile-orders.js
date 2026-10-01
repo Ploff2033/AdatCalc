@@ -115,6 +115,38 @@
     }
   }
 
+  // Разбивка по дням — по макету (правка уже в нём): список за "7 дней"
+  // без видимого разделения даты не даёт понять, за какой день конкретная
+  // карточка, особенно когда заказов много и их время/дата визуально не
+  // бросаются в глаза среди остальных цифр. orders уже отсортирован по
+  // createdAt desc (см. filteredOrders), поэтому просто идём подряд и
+  // начинаем новую группу при смене календарного дня — без доп. сортировки.
+  function dayGroupTitle(d) {
+    var label = d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+
+  function groupOrdersByDay(orders) {
+    var groups = [];
+    var currentKey = null;
+    orders.forEach(function (o) {
+      var day = startOfDay(o.createdAt);
+      var key = day.getTime();
+      if (key !== currentKey) {
+        groups.push({ date: day, orders: [] });
+        currentKey = key;
+      }
+      groups[groups.length - 1].orders.push(o);
+    });
+    groups.forEach(function (g) {
+      var volume = g.orders.reduce(function (s, o) { return s + (o.saleVolume || 0); }, 0);
+      var profit = g.orders.reduce(function (s, o) { return s + (o.totalProfit || 0); }, 0);
+      g.title = dayGroupTitle(g.date);
+      g.summary = Format.fmtNum(volume, 1, 'м³') + ' · прибыль ' + Format.fmt(profit, 0);
+    });
+    return groups;
+  }
+
   function render() {
     var orders = filteredOrders();
     document.getElementById('mo-empty').hidden = orders.length > 0;
@@ -125,7 +157,12 @@
     // (и самой кнопки перехода на теперь недоступный ему раздел) показываем
     // НДС/без НДС — то, что ему реально нужно и доступно.
     var isAdmin = Auth.isAtLeast('admin');
-    container.innerHTML = orders.map(function (o) {
+    container.innerHTML = groupOrdersByDay(orders).map(function (group) {
+      var header = '<div style="padding:10px 12px 8px;background:var(--surface-3);border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:baseline;gap:8px">' +
+        '<span style="font-weight:600;font-size:15px">' + group.title + '</span>' +
+        '<span class="num" style="font-size:12px;color:var(--ink-soft);white-space:nowrap">' + group.summary + '</span>' +
+      '</div>';
+      return header + group.orders.map(function (o) {
       var st = statusFor(o);
       var remaining = o.tripCount ? WaybillCalc.remainingForOrder(State.data.waybillEntries || [], o) : 0;
       var allocated = o.tripCount ? WaybillCalc.allocatedForOrder(State.data.waybillEntries || [], o.id) : 0;
@@ -157,6 +194,7 @@
           (canCancel ? '<button type="button" class="btn ghost sm o-cancel-btn" style="height:44px;color:#8C2217;border-color:#E3B8B1">Отменить</button>' : '') +
         '</div>' : '') +
       '</article>';
+      }).join('');
     }).join('');
 
     Array.prototype.forEach.call(container.querySelectorAll('.o-cancel-btn'), function (btn) {
