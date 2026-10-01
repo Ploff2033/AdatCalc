@@ -53,6 +53,18 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// Content-Disposition — заголовок HTTP, значение должно быть ASCII;
+// кириллица в filename= напрямую падает в рантайме Node с ERR_INVALID_CHAR
+// (см. имена файлов путевых листов — "Путевой лист — Джага — №28 — ...").
+// filename*=UTF-8''... (RFC 5987) — стандартный способ отдать настоящее
+// имя с кириллицей, понимает любой современный браузер; plain filename= —
+// ASCII-подстраховка для совсем древних клиентов (там кириллица просто
+// станет "_", а не сломает скачивание).
+function contentDispositionHeader(filename) {
+  var ascii = filename.replace(/[^\x20-\x7E]/g, '_');
+  return 'attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(filename);
+}
+
 function sendError(res, err) {
   if (err instanceof HttpError) {
     const payload = { error: err.message };
@@ -336,6 +348,11 @@ async function buildWaybill4sDocuments(entries) {
       documents.push({
         id: key.replace(/\|/g, '-') + '-p' + partIndex,
         createdAt,
+        // Название завода БЕЗ подмены на полный адрес (в отличие от
+        // routesArr[].plantName, см. plantLabel выше) — нужно отдельно,
+        // для имени файла при скачивании (см. waybillFileName в
+        // waybill-xlsx-4s.js): "Джага", а не вся строка адреса.
+        plantName: group[0].plantName,
         driverName: group[0].driverName,
         driverLicenseNumber: group[0].driverLicenseNumber,
         mixerName: group[0].mixerName,
@@ -648,7 +665,7 @@ const routes = [
         const buf = await buildOrderWorkbook(withTrips[0], organization);
         res.writeHead(200, {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': 'attachment; filename="' + waybillFileName(withTrips[0]) + '"'
+          'Content-Disposition': contentDispositionHeader(waybillFileName(withTrips[0]))
         });
         res.end(buf);
       } else {
@@ -732,7 +749,7 @@ const routes = [
         const buf = await waybillXlsx4s.buildDocumentWorkbook(shaped[0], organization);
         res.writeHead(200, {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': 'attachment; filename="' + waybillXlsx4s.waybillFileName(shaped[0]) + '"'
+          'Content-Disposition': contentDispositionHeader(waybillXlsx4s.waybillFileName(shaped[0]))
         });
         res.end(buf);
       } else {

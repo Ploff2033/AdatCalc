@@ -289,10 +289,27 @@ async function buildDocumentWorkbook(doc, organization) {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
+// Символы, недопустимые в имени файла хотя бы на одной из поддерживаемых
+// ОС (Windows самая строгая: \ / : * ? " < > |) — вырезаем, а не заменяем
+// на "_", чтобы не плодить лишние подчёркивания в обычных ФИО/номерах.
+function sanitizeFilenamePart(s) {
+  return String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
+}
+
+// По просьбе пользователя — имя файла должно сразу показывать: дату,
+// завод, номер листа, водителя, гос. номер машины, без техматики (id
+// документа/версии формы), которую не видно и так.
 function waybillFileName(doc) {
-  var date = new Date(doc.createdAt).toISOString().slice(0, 10);
-  var numPrefix = doc.docNumber ? 'no' + doc.docNumber + '-' : '';
-  return 'putevoy-list-4s-' + numPrefix + date + '-' + doc.id + '.xlsx';
+  var d = new Date(doc.createdAt);
+  var dateStr = pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1) + '.' + d.getFullYear();
+  var parts = [
+    dateStr,
+    sanitizeFilenamePart(doc.plantName),
+    doc.docNumber ? '№' + doc.docNumber : '',
+    sanitizeFilenamePart(doc.driverName),
+    sanitizeFilenamePart(doc.mixerPlate)
+  ].filter(function (p) { return p; });
+  return 'Путевой лист — ' + parts.join(' — ') + '.xlsx';
 }
 
 async function buildWaybillsZip(docs, organization) {
