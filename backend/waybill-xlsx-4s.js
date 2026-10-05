@@ -188,20 +188,29 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.retOdometer, formatNum(doc.odometerEnd, 0));
 
   // Движение горючего — по просьбе пользователя: "выдано на 10% больше чем
-  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters), остаток
-  // при выезде = вся выданная заправка (система не ведёт реальный остаток в
-  // баке между сменами — то же допущение "план=факт", что и у расхода),
-  // остаток при возвращении = выдано минус фактически потрачено по норме.
+  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters). Остаток
+  // при выезде/возвращении раньше считался как сама выданная заправка
+  // (Б = А) — пользователь заметил, что так получается "задвоение": по
+  // смыслу граф бланка Б и В — это реальный остаток в баке, а не копия
+  // "выдано". Система не ведёт реальный остаток между сменами, поэтому
+  // вместо вывода остатка из "выдано"/"потрачено" печатаем правдоподобные
+  // независимые случайные 5-10% от нормы расхода для каждой графы отдельно
+  // (по просьбе пользователя — "рандомайзер от 5 до 10 на начало и от 10 до
+  // 5 на конец", то есть та же вилка 5-10%, просто независимо для Б и В).
   // Коэффициент изменения нормы — система его не применяет, печатаем 1,00
   // (это и есть правда: без коррекции). Время работы двигателя — отдельная
   // формула пользователя, см. engineMinutes в router.js; "спецоборудования"
   // не заполняем — формулы для него не было.
+  function randomFuelBalance(totalLiters) {
+    return totalLiters * (0.05 + Math.random() * 0.05); // 5%..10%, равномерно
+  }
   if (doc.totalFuelLiters > 0) {
     var issuedLiters = doc.totalFuelLiters * 1.1;
-    var balanceAtReturn = issuedLiters - doc.totalFuelLiters;
+    var balanceAtDeparture = randomFuelBalance(doc.totalFuelLiters);
+    var balanceAtReturn = randomFuelBalance(doc.totalFuelLiters);
     xml = setCell(xml, CELLS_FUEL.brand, FUEL_BRAND);
     xml = setCell(xml, CELLS_FUEL.issued, formatNum(issuedLiters, 1));
-    xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(issuedLiters, 1));
+    xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(balanceAtDeparture, 1));
     xml = setCell(xml, CELLS_FUEL.balanceAtReturn, formatNum(balanceAtReturn, 1));
     xml = setCell(xml, CELLS_FUEL.coefficient, '1,00');
   }
