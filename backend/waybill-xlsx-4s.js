@@ -188,26 +188,18 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.retOdometer, formatNum(doc.odometerEnd, 0));
 
   // Движение горючего — по просьбе пользователя: "выдано на 10% больше чем
-  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters). Остаток
-  // при выезде/возвращении раньше считался как сама выданная заправка
-  // (Б = А) — пользователь заметил, что так получается "задвоение": по
-  // смыслу граф бланка Б и В — это реальный остаток в баке, а не копия
-  // "выдано". Система не ведёт реальный остаток между сменами, поэтому
-  // вместо вывода остатка из "выдано"/"потрачено" печатаем правдоподобные
-  // независимые случайные 5-10% от нормы расхода для каждой графы отдельно
-  // (по просьбе пользователя — "рандомайзер от 5 до 10 на начало и от 10 до
-  // 5 на конец", то есть та же вилка 5-10%, просто независимо для Б и В).
-  // Коэффициент изменения нормы — система его не применяет, печатаем 1,00
-  // (это и есть правда: без коррекции). Время работы двигателя — отдельная
-  // формула пользователя, см. engineMinutes в router.js; "спецоборудования"
-  // не заполняем — формулы для него не было.
-  function randomFuelBalance(totalLiters) {
-    return totalLiters * (0.05 + Math.random() * 0.05); // 5%..10%, равномерно
-  }
+  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters). Б/В —
+  // реальный остаток в баке, который система не ведёт между сменами, но
+  // печатаемые числа должны соблюдать физическое сохранение топлива:
+  // Б (остаток при выезде) + А (выдано) = В (остаток при возвращении) +
+  // Расход — то есть Б случайный (правдоподобные 5-10% от нормы расхода,
+  // "что уже было в баке"), а В — производная, не второе случайное число
+  // (первая версия считала Б и В независимо, пользователь поправил: это
+  // нарушает равенство выше).
   if (doc.totalFuelLiters > 0) {
     var issuedLiters = doc.totalFuelLiters * 1.1;
-    var balanceAtDeparture = randomFuelBalance(doc.totalFuelLiters);
-    var balanceAtReturn = randomFuelBalance(doc.totalFuelLiters);
+    var balanceAtDeparture = doc.totalFuelLiters * (0.05 + Math.random() * 0.05); // 5%..10%, равномерно
+    var balanceAtReturn = balanceAtDeparture + issuedLiters - doc.totalFuelLiters;
     xml = setCell(xml, CELLS_FUEL.brand, FUEL_BRAND);
     xml = setCell(xml, CELLS_FUEL.issued, formatNum(issuedLiters, 1));
     xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(balanceAtDeparture, 1));
