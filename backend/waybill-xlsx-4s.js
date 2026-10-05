@@ -188,18 +188,16 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.retOdometer, formatNum(doc.odometerEnd, 0));
 
   // Движение горючего — по просьбе пользователя: "выдано на 10% больше чем
-  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters). Б/В —
-  // реальный остаток в баке, который система не ведёт между сменами, но
-  // печатаемые числа должны соблюдать физическое сохранение топлива:
-  // Б (остаток при выезде) + А (выдано) = В (остаток при возвращении) +
-  // Расход — то есть Б случайный (правдоподобные 5-10% от нормы расхода,
-  // "что уже было в баке"), а В — производная, не второе случайное число
-  // (первая версия считала Б и В независимо, пользователь поправил: это
-  // нарушает равенство выше).
-  if (doc.totalFuelLiters > 0) {
+  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters). Б/В
+  // (fuelBalanceAtDeparture/fuelBalanceAtReturn) считаются и переносятся
+  // между документами ОДНОГО дня уже в router.js::buildWaybill4sDocuments
+  // (см. dayFuelBalance там) — тут только печатаем готовые числа, не
+  // генерируем заново, иначе каждый рендер документа давал бы новый
+  // случайный Б и рвал перенос остатка между соседними путевыми.
+  if (doc.totalFuelLiters > 0 && doc.fuelBalanceAtDeparture !== null) {
     var issuedLiters = doc.totalFuelLiters * 1.1;
-    var balanceAtDeparture = doc.totalFuelLiters * (0.05 + Math.random() * 0.05); // 5%..10%, равномерно
-    var balanceAtReturn = balanceAtDeparture + issuedLiters - doc.totalFuelLiters;
+    var balanceAtDeparture = doc.fuelBalanceAtDeparture;
+    var balanceAtReturn = doc.fuelBalanceAtReturn;
     xml = setCell(xml, CELLS_FUEL.brand, FUEL_BRAND);
     xml = setCell(xml, CELLS_FUEL.issued, formatNum(issuedLiters, 1));
     xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(balanceAtDeparture, 1));

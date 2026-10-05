@@ -325,6 +325,16 @@ async function buildWaybill4sDocuments(entries) {
     // того же дня продолжает время с того момента, на котором закончился
     // предыдущий, а не начинает заново с 9:00.
     let dayElapsedMinutes = cfg.shiftStartMinutes;
+    // Остаток топлива в баке — тем же приёмом переносится между документами
+    // ОДНОГО дня (группа уже ключуется driverId|mixerId|tripDate, см. groups
+    // выше, то есть один день — один водитель — одна техника). null — ещё
+    // не было ни одного документа с ненулевым расходом в этом дне: тогда
+    // "остаток при выезде" берём случайным (см. flushChunk), иначе — это
+    // реальный перенос "остаток при возвращении" предыдущего документа
+    // (по просьбе пользователя — рейсы подряд в одну дату одной техникой
+    // должны быть внутренне согласованы, а не каждый со своим случайным
+    // стартовым остатком).
+    let dayFuelBalance = null;
 
     const flushChunk = () => {
       if (!chunkTrips) return;
@@ -345,6 +355,22 @@ async function buildWaybill4sDocuments(entries) {
       // не заполняем, нет для него формулы и данных).
       const totalDrivingMinutes = chunkLegs.reduce((s, l) => s + 2 * oneWayMinutes(l.distanceKm), 0);
       const engineMinutes = totalDrivingMinutes + (chunkLegs.length * (cfg.unloadMinutes || 0)) / 2;
+      // Движение горючего — см. комментарий у dayFuelBalance выше и у
+      // "Движение горючего" в waybill-xlsx-4s.js::buildFrontXml (там же
+      // печатается "выдано" = totalFuelLiters × 1.1 и исходное равенство
+      // остаток_при_выезде + выдано = остаток_при_возвращении + расход).
+      // Документ с нулевым расходом (totalFuelLiters === 0, например пустой
+      // перегон) не трогает dayFuelBalance — следующий документ дня всё
+      // равно продолжит от последнего РЕАЛЬНОГО остатка, а не от null.
+      let fuelBalanceAtDeparture = null;
+      let fuelBalanceAtReturn = null;
+      if (totalFuelLiters > 0) {
+        fuelBalanceAtDeparture = dayFuelBalance !== null
+          ? dayFuelBalance
+          : totalFuelLiters * (0.05 + Math.random() * 0.05); // первый документ дня — случайные 5-10% от нормы
+        fuelBalanceAtReturn = fuelBalanceAtDeparture + totalFuelLiters * 1.1 - totalFuelLiters;
+        dayFuelBalance = fuelBalanceAtReturn;
+      }
       documents.push({
         id: key.replace(/\|/g, '-') + '-p' + partIndex,
         createdAt,
@@ -363,6 +389,8 @@ async function buildWaybill4sDocuments(entries) {
         timeStartMinutes: chunkTimeStart,
         timeEndMinutes: dayElapsedMinutes,
         totalFuelLiters,
+        fuelBalanceAtDeparture,
+        fuelBalanceAtReturn,
         engineMinutes,
         routes: routesArr,
         legs: chunkLegs
