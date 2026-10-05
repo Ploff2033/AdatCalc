@@ -483,3 +483,141 @@ CREATE INDEX IF NOT EXISTS idx_cash_entries_inserted ON cash_entries(inserted_at
 -- секрет, видимый только admin (см. handlers/config.js).
 ALTER TABLE config ADD COLUMN IF NOT EXISTS mailru_login TEXT;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS mailru_app_password TEXT;
+
+-- ==================== v2: поступления инертных материалов + периоды работы водителей ====================
+-- См. документ "AdatBeton Calc v2 — архитектура модулей" (обновление от
+-- 30.09.2026): нужно восстановить (оценочно, для внутреннего аудита) рейсы
+-- доставки инертных за 2025 год — учёт тогда не вёлся. Ведётся в отдельной
+-- локальной ветке (v2/aggregate-receipts), не затрагивая живые остатки на
+-- проде; заодно первая реальная нагрузочная проверка модуля путевых листов
+-- на исторических данных.
+
+-- Гос. номер инертовоза — раньше был только у миксеров (mixers.license_plate,
+-- см. выше), теперь путевой лист печатается и на рейсы поступлений инертных.
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS license_plate TEXT NOT NULL DEFAULT '';
+
+-- Периоды работы водителя — несколько на одного (не один диапазон): человек
+-- мог увольняться и возвращаться, оба периода фиксируются отдельно, а не
+-- затираются. end_date NULL = период ещё открыт (водитель работает по
+-- сегодняшний день включительно — решение пользователя). При распределении
+-- рейса на конкретную дату (см. handlers/waybill-entries.js) система жёстко
+-- проверяет, попадает ли дата хотя бы в один период — ровно как дневной
+-- лимит часов, не мягкое предупреждение (осознанное решение пользователя,
+-- несмотря на то что у всех текущих водителей периодов пока нет ни одного —
+-- ветка отдельная и не в проде, это ожидаемо).
+CREATE TABLE IF NOT EXISTS employee_work_periods (
+  id SERIAL PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  start_date DATE NOT NULL,
+  end_date DATE
+);
+CREATE INDEX IF NOT EXISTS idx_employee_work_periods_employee ON employee_work_periods(employee_id);
+
+-- Поступление инертного материала на завод — снимок на момент оформления
+-- (не живая ссылка), тот же принцип, что и у orders.recipe_name/mixer_name:
+-- material_id может стать NULL (материал удалён), material_name остаётся.
+-- Одна запись = один материал + один объём (как заказ на бетон — одна
+-- позиция за раз; несколько материалов сразу — несколько отдельных
+-- поступлений, см. документ). truck_id/truck_name — техника, по чьей
+-- грузоподъёмности считается trip_count при оформлении; сами рейсы при
+-- разнесении могут пойти на любую другую технику — тот же принцип, что и с
+-- mixer_name у заказа (источник числа рейсов при оформлении, не жёсткая
+-- привязка каждого фактического рейса).
+CREATE TABLE IF NOT EXISTS material_receipts (
+  id TEXT PRIMARY KEY,
+  plant_id TEXT NOT NULL REFERENCES plants(id) ON DELETE RESTRICT,
+  plant_name TEXT NOT NULL,
+  material_id TEXT REFERENCES materials(id) ON DELETE SET NULL,
+  material_name TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  qty NUMERIC NOT NULL,
+  truck_id TEXT NOT NULL,
+  truck_name TEXT NOT NULL,
+  distance_km NUMERIC NOT NULL,
+  trip_count NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  cancelled_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_material_receipts_plant ON material_receipts(plant_id, created_at DESC);
+
+-- Путевые листы теперь распределяют рейсы ИЛИ с заказа на бетон, ИЛИ с
+-- поступления инертных — тем же самым механизмом и той же формой (документ
+-- явно требует: "тот же экран, та же логика лимитов, никакой отдельной
+-- ветки кода на распределение"). order_id стал необязательным, добавлен
+-- receipt_id — CHECK гарантирует, что задан ровно один источник.
+-- mixer_id/mixer_name/mixer_plate используются и для рейсов поступлений —
+-- туда пишется id/имя/номер инертовоза (по факту это "техника рейса", а не
+-- обязательно миксер конкретно; не переименовывали, чтобы не трогать все
+-- существующие записи и печатные формы путевых листов).
+ALTER TABLE waybill_entries ALTER COLUMN order_id DROP NOT NULL;
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS receipt_id TEXT REFERENCES material_receipts(id) ON DELETE CASCADE;
+ALTER TABLE waybill_entries DROP CONSTRAINT IF EXISTS waybill_entries_source_check;
+ALTER TABLE waybill_entries ADD CONSTRAINT waybill_entries_source_check
+  CHECK ((order_id IS NOT NULL AND receipt_id IS NULL) OR (order_id IS NULL AND receipt_id IS NOT NULL));
+CREATE INDEX IF NOT EXISTS idx_waybill_entries_receipt ON waybill_entries(receipt_id);
+
+-- Журнал остатков (stock_movements) тоже должен уметь ссылаться на
+-- поступление, не только на заказ — иначе движение "receipt" от разнесения
+-- путевого листа поступления теряло бы, из-за какой именно записи оно
+-- возникло (см. handlers/stock.js).
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS receipt_id TEXT REFERENCES material_receipts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_stock_movements_receipt ON stock_movements(receipt_id);
+
+-- Дата поступления "для бухгалтерии" — отдельно от created_at (момент
+-- оформления записи в системе). Нужна, чтобы приход можно было отнести к
+-- нужному месяцу задним числом (запись вносится позже, чем реально пришла
+-- машина) — created_at для этого не годится, он не редактируется и не
+-- переживает "оформили сегодня приход за 28-е число". DATE, не TIMESTAMPTZ
+-- (только день имеет смысл, как и trip_date/ship_date в других таблицах).
+ALTER TABLE material_receipts ADD COLUMN IF NOT EXISTS receipt_date DATE NOT NULL DEFAULT CURRENT_DATE;
+CREATE INDEX IF NOT EXISTS idx_material_receipts_date ON material_receipts(receipt_date);
+
+-- Адрес поставщика ("откуда везли") — печатная форма путевого листа (№4-С,
+-- см. waybill-xlsx-4s.js) печатает waybill_entries.address как "откуда/куда"
+-- для КАЖДОГО рейса; для заказов туда шёл orders.address (адрес доставки
+-- клиенту), для поступлений раньше писалась пустая строка. Сохраняем на
+-- самом поступлении (одном адресе на всю партию, как и qty/truck/distance),
+-- validateAndBuild() в waybill-entries.js подставляет его в address так же,
+-- как order.address для заказов.
+ALTER TABLE material_receipts ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
+
+-- Адрес завода (физический, "откуда" для путевого листа) — по просьбе
+-- пользователя: "в путевом пишется просто 'Джага', нужен нормальный адрес".
+-- Печатная форма №4-С (waybill-xlsx-4s.js) раньше подставляла в "пункт
+-- погрузки" только plants.name — нечитаемо для реального документа.
+-- Правится в Настройках → Заводы, необязательное поле (пустая строка —
+-- печатается по-старому, одно название, обратная совместимость).
+ALTER TABLE plants ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
+
+-- Инертовозам — тот же набор полей, что и миксерам ("для инертовозов нужны
+-- все те же поля, что и для миксеров, а то одометр на них нельзя
+-- настроить"). mixers.odometer_baseline_km уже участвует в расчёте одометра
+-- путевого листа (см. buildWaybill4sDocuments в router.js) — до этой правки
+-- тот расчёт читал базовый пробег ТОЛЬКО из mixers, так что для рейсов
+-- поступлений (mixer_id там хранит id инертовоза, см. комментарий у
+-- waybill_entries.receipt_id) он всегда считался нулевым, даже если бы поле
+-- на инертовозе где-то и было — его читать было неоткуда. Теперь
+-- buildWaybill4sDocuments тоже обновлён, см. router.js.
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS odometer_baseline_km NUMERIC NOT NULL DEFAULT 0;
+
+-- Начало смены (минут от полуночи, 540 = 9:00) — "выезд с парковки условно
+-- в 9". Используется только для печати путевого листа №4-С (время выезда/
+-- возвращения в гараж + последовательность выполнения задания на обороте,
+-- см. buildWaybill4sDocuments в router.js) — НЕ участвует в проверке
+-- дневного лимита часов водителя/машины (та считает только суммарные часы,
+-- не привязываясь к часам суток, см. handlers/waybill-entries.js).
+ALTER TABLE config ADD COLUMN IF NOT EXISTS shift_start_minutes NUMERIC NOT NULL DEFAULT 540;
+
+-- Номера путевых листов — по просьбе пользователя ("у путевых листов
+-- должны быть номера"). Сами документы №4-С не хранятся как отдельная
+-- сущность — собираются на лету при каждой выгрузке из waybill_entries
+-- (группировка водитель+машина+дата, разбивка по 3 поездки, см.
+-- buildWaybill4sDocuments в router.js), поэтому номер выдаётся и
+-- запоминается по стабильному ключу документа (doc_key = та же строка,
+-- что уже служит его id — "водитель-машина-дата-pN") — один раз при первой
+-- выгрузке, дальше переживает повторную печать тех же рейсов. SERIAL — не
+-- хронология рейсов, а порядок первого запроса печати.
+CREATE TABLE IF NOT EXISTS waybill_doc_numbers (
+  doc_key TEXT PRIMARY KEY,
+  number SERIAL
+);

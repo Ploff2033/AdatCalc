@@ -72,6 +72,7 @@
       <a href="#/main" data-route="main"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h2M12 12h2M16 12v5M8 16h2M12 16h2"/></svg><span>Расчёт и заказ</span></a>
       <a href="#/orders" data-route="orders"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>Заказы</span></a>
       <a href="#/waybills" data-route="waybills"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg><span>Путевые листы</span></a>
+      <a href="#/receipts" data-route="receipts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>Поступления</span></a>
       <a href="#/stock" data-route="stock"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span>Остатки</span></a>
       <a href="#/cash" data-route="cash"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg><span>ДДС</span></a>
     </nav>
@@ -113,6 +114,9 @@
 
     <!-- ---------- Путевые листы ---------- -->
     <section class="page" data-route="waybills" hidden id="page-waybills"></section>
+
+    <!-- ---------- Поступления инертных ---------- -->
+    <section class="page" data-route="receipts" hidden id="page-receipts"></section>
 
     <!-- ---------- Остатки ---------- -->
     <section class="page" data-route="stock" hidden id="page-stock"></section>
@@ -165,6 +169,7 @@
 <script src="/v2/js/screen-main.js"></script>
 <script src="/v2/js/screen-orders.js"></script>
 <script src="/v2/js/screen-waybills.js"></script>
+<script src="/v2/js/screen-material-receipts.js"></script>
 <script src="/v2/js/screen-stock.js"></script>
 <script src="/v2/js/screen-cash.js"></script>
 <script src="/v2/js/screen-dashboard.js"></script>

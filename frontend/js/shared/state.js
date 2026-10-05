@@ -12,7 +12,11 @@
     waybillEntries: [],
     // Клиенты — не привязаны к заводу (см. schema.sql), поэтому без
     // withPlantFilter, как mixers/aggregateTrucks ниже (общий список сразу).
-    clients: []
+    clients: [],
+    // Поступления инертных (см. handlers/material-receipts.js) — тот же
+    // принцип, что и orders: не фильтруются по заводу при загрузке, фильтр
+    // по заводу — на самом экране, как и у заказов.
+    materialReceipts: []
   };
 
   var listeners = [];
@@ -68,7 +72,11 @@
       Api.get(ordersPath),
       Api.get('/plants'),
       Api.get('/waybill-entries'),
-      Api.get('/clients')
+      Api.get('/clients'),
+      // Поступления инертных — тот же read:'manager', что и waybill-entries
+      // выше (403 у анонимного/работника тихо проглатывается
+      // Promise.allSettled, как и у остальных manager-only ресурсов тут).
+      Api.get('/material-receipts')
     ]);
     var allFailed = results.every(function (r) { return r.status === 'rejected'; });
     if (allFailed) throw results[0].reason;
@@ -84,6 +92,7 @@
     data.plants = results[8].status === 'fulfilled' ? results[8].value : [];
     data.waybillEntries = results[9].status === 'fulfilled' ? results[9].value : [];
     data.clients = results[10].status === 'fulfilled' ? results[10].value : [];
+    data.materialReceipts = results[11].status === 'fulfilled' ? results[11].value : [];
     notify();
   }
 
