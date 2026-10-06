@@ -37,6 +37,12 @@
             '<div class="field"><span style="font-size:12px;color:var(--ink-soft);font-weight:500">Завод</span><div class="seg" role="group" aria-label="Завод" id="pn-f-plant-seg"></div></div>' +
             '<div class="field"><label for="pn-f-salary">Оклад</label><div class="unit"><input id="pn-f-salary" class="inp num" inputmode="decimal"><span>₽/мес</span></div></div>' +
             '<label style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 14px;border:1px solid var(--border-soft);border-radius:4px;background:#fff;cursor:pointer"><span style="font-weight:500">Водитель</span><button type="button" class="tog" id="pn-f-driver" aria-pressed="false"><i></i></button></label>' +
+            // Показывать в ДДС — по просьбе пользователя: отдельная настройка,
+            // не привязанная к "Водитель" (зарплату в ДДС заводят и не на
+            // водителей тоже) — скрывает сотрудника только из выбора в
+            // ДДС-формах (screen-cash.js/mobile-cash.js), остальные экраны
+            // (Персонал, Путевые листы) его видят как обычно.
+            '<label style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 14px;border:1px solid var(--border-soft);border-radius:4px;background:#fff;cursor:pointer"><span style="font-weight:500">Показывать в ДДС</span><button type="button" class="tog on" id="pn-f-show-in-cash" aria-pressed="true"><i></i></button></label>' +
             '<div class="field" id="pn-f-license-field" hidden><label for="pn-f-license">Номер водительского удостоверения</label><input id="pn-f-license" class="inp num" inputmode="numeric"></div>' +
             '<div class="field" id="pn-f-periods-field" hidden>' +
               '<span style="font-size:12px;color:var(--ink-soft);font-weight:500">Периоды работы</span>' +
@@ -382,6 +388,8 @@
     NumericInput.setFormattedValue(document.getElementById('pn-f-salary'), '');
     document.getElementById('pn-f-driver').classList.remove('on');
     document.getElementById('pn-f-driver').setAttribute('aria-pressed', 'false');
+    document.getElementById('pn-f-show-in-cash').classList.add('on');
+    document.getElementById('pn-f-show-in-cash').setAttribute('aria-pressed', 'true');
     LicenseInput.setValue(document.getElementById('pn-f-license'), '');
     document.getElementById('pn-f-period-start').value = '';
     document.getElementById('pn-f-period-end').value = '';
@@ -404,6 +412,9 @@
     NumericInput.setFormattedValue(document.getElementById('pn-f-salary'), emp.salary);
     document.getElementById('pn-f-driver').classList.toggle('on', !!emp.isDriver);
     document.getElementById('pn-f-driver').setAttribute('aria-pressed', emp.isDriver ? 'true' : 'false');
+    var showInCash = emp.showInCash !== false;
+    document.getElementById('pn-f-show-in-cash').classList.toggle('on', showInCash);
+    document.getElementById('pn-f-show-in-cash').setAttribute('aria-pressed', showInCash ? 'true' : 'false');
     LicenseInput.setValue(document.getElementById('pn-f-license'), emp.licenseNumber || '');
     document.getElementById('pn-f-period-start').value = '';
     document.getElementById('pn-f-period-end').value = '';
@@ -427,7 +438,8 @@
       salary: NumericInput.parseNumber(document.getElementById('pn-f-salary').value) || 0,
       plantId: draftPlantId || null,
       isDriver: isDriver,
-      licenseNumber: isDriver ? document.getElementById('pn-f-license').value.trim() : ''
+      licenseNumber: isDriver ? document.getElementById('pn-f-license').value.trim() : '',
+      showInCash: document.getElementById('pn-f-show-in-cash').classList.contains('on')
     };
     if (!payload.name) { errorEl.textContent = 'Укажите ФИО.'; errorEl.hidden = false; return; }
     if (!payload.position) { errorEl.textContent = 'Укажите должность.'; errorEl.hidden = false; return; }
@@ -475,6 +487,10 @@
       this.classList.toggle('on');
       this.setAttribute('aria-pressed', this.classList.contains('on') ? 'true' : 'false');
       applyDriverFieldVisibility();
+    });
+    document.getElementById('pn-f-show-in-cash').addEventListener('click', function () {
+      this.classList.toggle('on');
+      this.setAttribute('aria-pressed', this.classList.contains('on') ? 'true' : 'false');
     });
     NumericInput.attach(document.getElementById('pn-f-salary'));
     document.getElementById('pn-f-salary').addEventListener('input', updatePreview);

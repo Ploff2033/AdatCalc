@@ -35,6 +35,10 @@ function rowToEmployee(row, workPeriods) {
     salary: Number(row.salary),
     isDriver: !!row.is_driver,
     licenseNumber: row.license_number || '',
+    // По просьбе пользователя — админ может скрыть сотрудника из выбора в
+    // ДДС (screen-cash.js/mobile-cash.js::renderEmployeePicker), не трогая
+    // остальные экраны (Персонал/Путевые листы его всё равно видят).
+    showInCash: row.show_in_cash !== false,
     workPeriods: workPeriods || []
   };
 }
@@ -46,7 +50,7 @@ function rowToEmployee(row, workPeriods) {
 // видит только админ (см. read:'admin' в старой версии этого списка и
 // ветку ниже).
 function rowToDriverOption(row, workPeriods) {
-  return { id: row.id, plantId: row.plant_id, name: row.name, licenseNumber: row.license_number || '', isDriver: true, workPeriods: workPeriods || [] };
+  return { id: row.id, plantId: row.plant_id, name: row.name, licenseNumber: row.license_number || '', isDriver: true, showInCash: row.show_in_cash !== false, workPeriods: workPeriods || [] };
 }
 
 async function validatePlantId(plantId) {
@@ -76,7 +80,7 @@ async function list(query, role) {
 
   if (!query || !query.plantId) return [];
   const { rows } = await db.pool.query(
-    'SELECT id, plant_id, name, license_number FROM employees WHERE is_driver = TRUE AND (plant_id = $1 OR plant_id IS NULL) ORDER BY name',
+    'SELECT id, plant_id, name, license_number, show_in_cash FROM employees WHERE is_driver = TRUE AND (plant_id = $1 OR plant_id IS NULL) ORDER BY name',
     [query.plantId]
   );
   const periods = await loadWorkPeriodsByEmployee(rows.map((r) => r.id));
@@ -90,11 +94,15 @@ async function create(body) {
   const plantId = await validatePlantId(body.plantId || null);
   const isDriver = !!body.isDriver;
   const licenseNumber = (body.licenseNumber || '').trim();
+  // showInCash не присылают старые формы (например, если когда-нибудь
+  // появится импорт без этого поля) — по умолчанию TRUE, как и в schema.sql,
+  // явно скрыть можно только body.showInCash === false.
+  const showInCash = body.showInCash !== false;
 
   const id = db.genId('emp');
   await db.pool.query(
-    'INSERT INTO employees (id, plant_id, name, position, salary, is_driver, license_number) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-    [id, plantId, name, position, salary, isDriver, licenseNumber]
+    'INSERT INTO employees (id, plant_id, name, position, salary, is_driver, license_number, show_in_cash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [id, plantId, name, position, salary, isDriver, licenseNumber, showInCash]
   );
   const { rows } = await db.pool.query('SELECT * FROM employees WHERE id = $1', [id]);
   return rowToEmployee(rows[0], []);
@@ -110,10 +118,11 @@ async function update(id, body) {
   const plantId = await validatePlantId(body.plantId || null);
   const isDriver = !!body.isDriver;
   const licenseNumber = (body.licenseNumber || '').trim();
+  const showInCash = body.showInCash !== false;
 
   await db.pool.query(
-    'UPDATE employees SET name=$2, position=$3, salary=$4, plant_id=$5, is_driver=$6, license_number=$7 WHERE id=$1',
-    [id, name, position, salary, plantId, isDriver, licenseNumber]
+    'UPDATE employees SET name=$2, position=$3, salary=$4, plant_id=$5, is_driver=$6, license_number=$7, show_in_cash=$8 WHERE id=$1',
+    [id, name, position, salary, plantId, isDriver, licenseNumber, showInCash]
   );
   const { rows } = await db.pool.query('SELECT * FROM employees WHERE id = $1', [id]);
   const periods = await loadWorkPeriodsByEmployee([id]);

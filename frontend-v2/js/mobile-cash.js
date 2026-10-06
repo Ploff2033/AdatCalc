@@ -18,6 +18,8 @@
         '<span class="sub">Категория</span>' +
         '<div class="grid-2" id="mc-category-grid" style="gap:8px"></div>' +
         '<div id="mc-order-field" hidden><span class="sub">Заказ</span><div id="mc-order-list" class="stack g8" style="margin-top:6px"></div></div>' +
+        '<div id="mc-employee-field" hidden><span class="sub">Сотрудник (необязательно)</span><div id="mc-employee-list" class="stack g8" style="margin-top:6px"></div></div>' +
+        '<div id="mc-vehicle-field" hidden><span class="sub">Техника (необязательно)</span><div id="mc-vehicle-list" class="stack g8" style="margin-top:6px"></div></div>' +
         '<div class="field"><label for="mc-cash-amount">Сумма</label><div class="unit"><input id="mc-cash-amount" class="inp num" style="height:56px;font-size:24px;font-weight:600" inputmode="decimal"><span>₽</span></div>' +
           '<div id="mc-order-hint" class="hint" hidden></div>' +
         '</div>' +
@@ -79,6 +81,11 @@
   var draftType = 'expense';
   var draftCategory = 'fuel';
   var draftOrderId = null;
+  // По желанию — та же привязка "ЗП"/"Топливо" к сотруднику/технике, что и
+  // в desktop screen-cash.js (см. тот же комментарий там).
+  var draftEmployeeId = null;
+  var draftVehicleKind = null; // 'mixer' | 'truck' | null
+  var draftVehicleId = null;
   var draftReceiptDataUrl = null;
   var editingId = null;
   var entries = [];
@@ -133,6 +140,77 @@
     document.getElementById('mc-order-field').hidden = !isOrder;
     document.getElementById('mc-order-hint').hidden = !isOrder;
     if (isOrder) renderOrderPicker();
+    var isSalary = draftCategory === 'salary';
+    document.getElementById('mc-employee-field').hidden = !isSalary;
+    if (isSalary) renderEmployeePicker();
+    var isFuel = draftCategory === 'fuel';
+    document.getElementById('mc-vehicle-field').hidden = !isFuel;
+    if (isFuel) renderVehiclePicker();
+  }
+
+  // Список сотрудников уже отфильтрован бэкендом по роли (не-admin — только
+  // водители своего завода, без оклада/должности, см. employees.js::list) —
+  // тот же State.data.employees, что используется для выбора водителя в
+  // Путевых листах.
+  function renderEmployeePicker() {
+    var list = document.getElementById('mc-employee-list');
+    var plantId = Plant.currentPlantId();
+    // showInCash === false и общие сотрудники (plantId === null) — та же
+    // логика, что в desktop screen-cash.js::renderEmployeePicker, см.
+    // комментарий там.
+    var employees = (State.data.employees || []).filter(function (e) { return e.plantId === plantId && e.showInCash !== false; });
+    var noneOn = !draftEmployeeId;
+    var html = '<label class="pick' + (noneOn ? ' on' : '') + '" data-employee-id="">' +
+      '<input type="radio" name="mc-employee" ' + (noneOn ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+      '<span style="font-weight:600">Без сотрудника</span>' +
+    '</label>';
+    html += employees.map(function (e) {
+      var on = e.id === draftEmployeeId;
+      return '<label class="pick' + (on ? ' on' : '') + '" data-employee-id="' + e.id + '">' +
+        '<input type="radio" name="mc-employee" ' + (on ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+        '<span class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + e.name + '</span>' + (e.position ? '<span class="hint">' + e.position + '</span>' : '') + '</span>' +
+      '</label>';
+    }).join('');
+    list.innerHTML = html;
+    Array.prototype.forEach.call(list.querySelectorAll('[data-employee-id]'), function (label) {
+      label.addEventListener('click', function () {
+        draftEmployeeId = label.dataset.employeeId || null;
+        renderEmployeePicker();
+      });
+    });
+  }
+
+  // Единый список техники — миксеры + инертовозы вместе, см. тот же
+  // комментарий и vehicleOptions() в desktop screen-cash.js.
+  function vehicleOptions() {
+    var mixers = (State.data.mixers || []).map(function (m) { return { id: m.id, kind: 'mixer', name: m.name, licensePlate: m.licensePlate }; });
+    var trucks = (State.data.aggregateTrucks || []).map(function (t) { return { id: t.id, kind: 'truck', name: t.name, licensePlate: t.licensePlate }; });
+    return mixers.concat(trucks);
+  }
+
+  function renderVehiclePicker() {
+    var list = document.getElementById('mc-vehicle-list');
+    var vehicles = vehicleOptions();
+    var noneOn = !draftVehicleId;
+    var html = '<label class="pick' + (noneOn ? ' on' : '') + '" data-vehicle-id="" data-vehicle-kind="">' +
+      '<input type="radio" name="mc-vehicle" ' + (noneOn ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+      '<span style="font-weight:600">Без техники</span>' +
+    '</label>';
+    html += vehicles.map(function (v) {
+      var on = v.id === draftVehicleId && v.kind === draftVehicleKind;
+      return '<label class="pick' + (on ? ' on' : '') + '" data-vehicle-id="' + v.id + '" data-vehicle-kind="' + v.kind + '">' +
+        '<input type="radio" name="mc-vehicle" ' + (on ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+        '<span style="font-weight:600">' + v.name + (v.licensePlate ? ' (' + v.licensePlate + ')' : '') + '</span>' +
+      '</label>';
+    }).join('');
+    list.innerHTML = html;
+    Array.prototype.forEach.call(list.querySelectorAll('[data-vehicle-id]'), function (label) {
+      label.addEventListener('click', function () {
+        draftVehicleId = label.dataset.vehicleId || null;
+        draftVehicleKind = label.dataset.vehicleKind || null;
+        renderVehiclePicker();
+      });
+    });
   }
 
   function recentOrders() {
@@ -198,6 +276,9 @@
   function resetForm() {
     editingId = null;
     draftOrderId = null;
+    draftEmployeeId = null;
+    draftVehicleKind = null;
+    draftVehicleId = null;
     draftReceiptDataUrl = null;
     document.getElementById('mc-cash-save-btn').textContent = 'Сохранить';
     document.getElementById('mc-cancel-edit-btn').hidden = true;
@@ -217,6 +298,9 @@
     if (!Auth.isAtLeast('admin') && ageMinutes > 20) { alert('Окно редактирования (20 мин) истекло — используйте «Сторно».'); return; }
     editingId = entry.id;
     draftOrderId = entry.orderId;
+    draftEmployeeId = entry.employeeId || null;
+    draftVehicleKind = entry.mixerId ? 'mixer' : (entry.aggregateTruckId ? 'truck' : null);
+    draftVehicleId = entry.mixerId || entry.aggregateTruckId || null;
     draftReceiptDataUrl = null;
     setDraftType(entry.type);
     draftCategory = entry.category;
@@ -247,6 +331,9 @@
       occurredAt: document.getElementById('mc-cash-date').value
     };
     if (draftCategory === 'concrete_sale') payload.orderId = draftOrderId;
+    payload.employeeId = draftCategory === 'salary' ? (draftEmployeeId || null) : null;
+    payload.mixerId = draftCategory === 'fuel' && draftVehicleKind === 'mixer' ? draftVehicleId : null;
+    payload.aggregateTruckId = draftCategory === 'fuel' && draftVehicleKind === 'truck' ? draftVehicleId : null;
     if (!(payload.amount > 0)) { errorEl.textContent = 'Укажите сумму больше нуля.'; errorEl.hidden = false; return; }
     if (rule.commentRequired && !payload.comment) { errorEl.textContent = 'Для категории «' + rule.label + '» комментарий обязателен.'; errorEl.hidden = false; return; }
     if (draftReceiptDataUrl) payload.receiptDataUrl = draftReceiptDataUrl;
@@ -346,6 +433,16 @@
         var orderDetail = orderDetailFor(e.orderId);
         if (orderDetail) detailLine = orderDetail + (detailLine ? ' · ' + detailLine : '');
       }
+      if (e.employeeId) {
+        var emp = (State.data.employees || []).find(function (x) { return x.id === e.employeeId; });
+        if (emp) detailLine = emp.name + (detailLine ? ' · ' + detailLine : '');
+      }
+      if (e.mixerId || e.aggregateTruckId) {
+        var veh = e.mixerId
+          ? (State.data.mixers || []).find(function (x) { return x.id === e.mixerId; })
+          : (State.data.aggregateTrucks || []).find(function (x) { return x.id === e.aggregateTruckId; });
+        if (veh) detailLine = (veh.name + (veh.licensePlate ? ' (' + veh.licensePlate + ')' : '')) + (detailLine ? ' · ' + detailLine : '');
+      }
       return '<article class="card-flat stack g8" style="padding:12px 14px;opacity:' + (e.stornoed ? '.6' : '1') + '" data-entry-id="' + e.id + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">' +
           '<span style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + CATEGORY_LABELS[e.category] + '</span>' +
@@ -377,6 +474,8 @@
   function render() {
     if (activeTab === 'history') { loadEntries().then(renderHistory); }
     else if (draftCategory === 'concrete_sale') { renderOrderPicker(); }
+    else if (draftCategory === 'salary') { renderEmployeePicker(); }
+    else if (draftCategory === 'fuel') { renderVehiclePicker(); }
   }
 
   var initialized = false;

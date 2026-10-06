@@ -37,6 +37,14 @@
             '<span class="hint">Заказ</span>' +
             '<div id="c-f-order-list" class="stack g8" style="margin-top:6px"></div>' +
           '</div>' +
+          '<div id="c-f-employee-field" hidden>' +
+            '<span class="hint">Сотрудник (необязательно)</span>' +
+            '<div id="c-f-employee-list" class="stack g8" style="margin-top:6px"></div>' +
+          '</div>' +
+          '<div id="c-f-vehicle-field" hidden>' +
+            '<span class="hint">Техника (необязательно)</span>' +
+            '<div id="c-f-vehicle-list" class="stack g8" style="margin-top:6px"></div>' +
+          '</div>' +
           '<div class="field"><label for="c-f-amount">Сумма</label><div class="unit"><input id="c-f-amount" class="inp num" inputmode="decimal"><span>₽</span></div></div>' +
           '<div class="field"><label for="c-f-date">Дата</label><input id="c-f-date" type="date" class="inp"></div>' +
           '<div class="field" id="c-f-receipt-field"><label>Фото чека <span class="req" id="c-f-receipt-req">*</span></label>' +
@@ -96,6 +104,13 @@
   var draftType = 'expense';
   var draftCategory = 'fuel';
   var draftOrderId = null;
+  // По желанию — привязка "ЗП"/"Топливо" к сотруднику/технике вместо/в
+  // дополнение к комментарию (по просьбе пользователя — "чтобы не писать
+  // имена и номера в комментариях"). draftVehicleKind различает mixers и
+  // aggregate_trucks — общей таблицы техники нет (см. schema.sql).
+  var draftEmployeeId = null;
+  var draftVehicleKind = null; // 'mixer' | 'truck' | null
+  var draftVehicleId = null;
   var draftReceiptDataUrl = null; // новое фото, выбранное в этой сессии редактирования (ещё не отправлено)
   var draftReceiptCleared = false;
 
@@ -215,6 +230,16 @@
             var orderDetail = order2.recipeName + ' · ' + Format.fmtNum(order2.saleVolume, 1, 'м³') + ' · ' + new Date(order2.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
             detailLine = orderDetail + (detailLine ? ' · ' + detailLine : '');
           }
+        }
+        if (e.employeeId) {
+          var emp2 = (State.data.employees || []).find(function (x) { return x.id === e.employeeId; });
+          if (emp2) detailLine = emp2.name + (detailLine ? ' · ' + detailLine : '');
+        }
+        if (e.mixerId || e.aggregateTruckId) {
+          var veh2 = e.mixerId
+            ? (State.data.mixers || []).find(function (x) { return x.id === e.mixerId; })
+            : (State.data.aggregateTrucks || []).find(function (x) { return x.id === e.aggregateTruckId; });
+          if (veh2) detailLine = (veh2.name + (veh2.licensePlate ? ' (' + veh2.licensePlate + ')' : '')) + (detailLine ? ' · ' + detailLine : '');
         }
         return '<div class="row" style="grid-template-columns:70px 90px minmax(0,1fr) 70px 130px 130px 44px;min-height:54px;opacity:' + (isStornoed ? '.6' : '1') + '">' +
           '<div class="num hint">' + timeLabel(e.insertedAt) + '</div>' +
@@ -390,6 +415,79 @@
     document.getElementById('c-f-comment-req').hidden = !rule.commentRequired;
     document.getElementById('c-f-order-field').hidden = draftCategory !== 'concrete_sale';
     if (draftCategory === 'concrete_sale') renderOrderPicker();
+    document.getElementById('c-f-employee-field').hidden = draftCategory !== 'salary';
+    if (draftCategory === 'salary') renderEmployeePicker();
+    document.getElementById('c-f-vehicle-field').hidden = draftCategory !== 'fuel';
+    if (draftCategory === 'fuel') renderVehiclePicker();
+  }
+
+  // Список сотрудников уже отфильтрован по роли на бэкенде (см.
+  // employees.js::list — не-admin видит только водителей своего завода, без
+  // оклада/должности, как и в Путевых листах) — тут просто показываем, что
+  // пришло в State.data.employees, без дополнительных ограничений.
+  function renderEmployeePicker() {
+    var list = document.getElementById('c-f-employee-list');
+    var plantId = document.getElementById('c-f-plant').value;
+    // showInCash === false — по просьбе пользователя — админ скрывает
+    // сотрудника из этого выбора отдельной настройкой в Персонале
+    // (screen-personnel.js), не трогая остальные экраны. Общие сотрудники
+    // (plantId === null, "на все заводы сразу") тоже не попадают сюда —
+    // зарплату через ДДС им не платят (по словам пользователя), в отличие
+    // от Путевых листов, где общий водитель наоборот нужен везде.
+    var employees = (State.data.employees || []).filter(function (e) { return e.plantId === plantId && e.showInCash !== false; });
+    var noneOn = !draftEmployeeId;
+    var html = '<label class="pick' + (noneOn ? ' on' : '') + '" data-employee-id="">' +
+      '<input type="radio" name="c-employee" ' + (noneOn ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+      '<span style="font-weight:600">Без сотрудника</span>' +
+    '</label>';
+    html += employees.map(function (e) {
+      var on = e.id === draftEmployeeId;
+      return '<label class="pick' + (on ? ' on' : '') + '" data-employee-id="' + e.id + '">' +
+        '<input type="radio" name="c-employee" ' + (on ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+        '<span class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + e.name + '</span>' + (e.position ? '<span class="hint">' + e.position + '</span>' : '') + '</span>' +
+      '</label>';
+    }).join('');
+    list.innerHTML = html;
+    Array.prototype.forEach.call(list.querySelectorAll('[data-employee-id]'), function (label) {
+      label.addEventListener('click', function () {
+        draftEmployeeId = label.dataset.employeeId || null;
+        renderEmployeePicker();
+      });
+    });
+  }
+
+  // Единый список техники для "Топливо" — миксеры + инертовозы вместе (по
+  // явному выбору пользователя при обсуждении фичи): топливо льют что в
+  // миксер, что в инертовоз, разделять по типу в селекторе не нужно.
+  function vehicleOptions() {
+    var mixers = (State.data.mixers || []).map(function (m) { return { id: m.id, kind: 'mixer', name: m.name, licensePlate: m.licensePlate }; });
+    var trucks = (State.data.aggregateTrucks || []).map(function (t) { return { id: t.id, kind: 'truck', name: t.name, licensePlate: t.licensePlate }; });
+    return mixers.concat(trucks);
+  }
+
+  function renderVehiclePicker() {
+    var list = document.getElementById('c-f-vehicle-list');
+    var vehicles = vehicleOptions();
+    var noneOn = !draftVehicleId;
+    var html = '<label class="pick' + (noneOn ? ' on' : '') + '" data-vehicle-id="" data-vehicle-kind="">' +
+      '<input type="radio" name="c-vehicle" ' + (noneOn ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+      '<span style="font-weight:600">Без техники</span>' +
+    '</label>';
+    html += vehicles.map(function (v) {
+      var on = v.id === draftVehicleId && v.kind === draftVehicleKind;
+      return '<label class="pick' + (on ? ' on' : '') + '" data-vehicle-id="' + v.id + '" data-vehicle-kind="' + v.kind + '">' +
+        '<input type="radio" name="c-vehicle" ' + (on ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
+        '<span style="font-weight:600">' + v.name + (v.licensePlate ? ' (' + v.licensePlate + ')' : '') + '</span>' +
+      '</label>';
+    }).join('');
+    list.innerHTML = html;
+    Array.prototype.forEach.call(list.querySelectorAll('[data-vehicle-id]'), function (label) {
+      label.addEventListener('click', function () {
+        draftVehicleId = label.dataset.vehicleId || null;
+        draftVehicleKind = label.dataset.vehicleKind || null;
+        renderVehiclePicker();
+      });
+    });
   }
 
   function recentPlantOrders() {
@@ -463,6 +561,9 @@
     draftType = 'expense';
     draftCategory = 'fuel';
     draftOrderId = null;
+    draftEmployeeId = null;
+    draftVehicleKind = null;
+    draftVehicleId = null;
     document.getElementById('c-drawer-title').textContent = 'Новая запись';
     document.getElementById('c-save-btn').textContent = 'Добавить запись';
     document.getElementById('c-delete-btn').hidden = true;
@@ -485,6 +586,9 @@
     draftType = entry.type;
     draftCategory = entry.category;
     draftOrderId = entry.orderId;
+    draftEmployeeId = entry.employeeId || null;
+    draftVehicleKind = entry.mixerId ? 'mixer' : (entry.aggregateTruckId ? 'truck' : null);
+    draftVehicleId = entry.mixerId || entry.aggregateTruckId || null;
     document.getElementById('c-drawer-title').textContent = 'Изменить запись';
     document.getElementById('c-save-btn').textContent = 'Сохранить';
     document.getElementById('c-delete-btn').hidden = false;
@@ -530,6 +634,9 @@
       occurredAt: document.getElementById('c-f-date').value
     };
     if (draftCategory === 'concrete_sale') payload.orderId = draftOrderId;
+    payload.employeeId = draftCategory === 'salary' ? (draftEmployeeId || null) : null;
+    payload.mixerId = draftCategory === 'fuel' && draftVehicleKind === 'mixer' ? draftVehicleId : null;
+    payload.aggregateTruckId = draftCategory === 'fuel' && draftVehicleKind === 'truck' ? draftVehicleId : null;
     if (!(payload.amount > 0)) { errorEl.textContent = 'Укажите сумму больше нуля.'; errorEl.hidden = false; return; }
     if (rule.commentRequired && !payload.comment) { errorEl.textContent = 'Для категории «' + rule.label + '» комментарий обязателен.'; errorEl.hidden = false; return; }
     if (draftReceiptDataUrl) payload.receiptDataUrl = draftReceiptDataUrl;
@@ -806,7 +913,10 @@
     document.getElementById('c-f-type-seg').querySelectorAll('button').forEach(function (btn) {
       btn.addEventListener('click', function () { setDraftType(btn.dataset.type); });
     });
-    document.getElementById('c-f-plant').addEventListener('change', function () { if (draftCategory === 'concrete_sale') { draftOrderId = null; renderOrderPicker(); } });
+    document.getElementById('c-f-plant').addEventListener('change', function () {
+      if (draftCategory === 'concrete_sale') { draftOrderId = null; renderOrderPicker(); }
+      if (draftCategory === 'salary') { draftEmployeeId = null; renderEmployeePicker(); }
+    });
     NumericInput.attach(document.getElementById('c-f-amount'));
     document.getElementById('c-f-receipt-btn').addEventListener('click', function () {
       document.getElementById('c-f-receipt-input').click();

@@ -621,3 +621,22 @@ CREATE TABLE IF NOT EXISTS waybill_doc_numbers (
   doc_key TEXT PRIMARY KEY,
   number SERIAL
 );
+
+-- Необязательная привязка записи ДДС к сотруднику/технике (категории "ЗП" и
+-- "Топливо") — по просьбе пользователя, чтобы не писать имя/гос.номер в
+-- комментарии руками. Ровно одна из mixer_id/aggregate_truck_id заполняется
+-- за раз (техника завода — это либо миксер, либо инертовоз, общей таблицы
+-- техники нет), employee_id — независимо от них. ON DELETE SET NULL, как и
+-- у order_materials.material_id — удаление сотрудника/техники не трогает
+-- старые записи ДДС, просто привязка пропадает, сам комментарий остаётся.
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS employee_id TEXT REFERENCES employees(id) ON DELETE SET NULL;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS mixer_id TEXT REFERENCES mixers(id) ON DELETE SET NULL;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS aggregate_truck_id TEXT REFERENCES aggregate_trucks(id) ON DELETE SET NULL;
+
+-- По просьбе пользователя — у сотрудника можно отдельно настроить, появляется
+-- ли он в списке выбора для ДДС (категория "ЗП", см. employee_id выше), не
+-- трогая сам факт его существования/видимость в Персонале/Путевых листах.
+-- DEFAULT TRUE — существующие сотрудники продолжают появляться как раньше,
+-- пока админ явно не скроет кого-то (например, уволенного, которого рано
+-- удалять из-за истории расчётов).
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS show_in_cash BOOLEAN NOT NULL DEFAULT TRUE;
