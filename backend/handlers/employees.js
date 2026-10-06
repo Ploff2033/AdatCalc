@@ -43,14 +43,17 @@ function rowToEmployee(row, workPeriods) {
   };
 }
 
-// Для выбора водителя на Главной (доступно менеджеру и работнику по
-// ссылке) — ФИО, номер удостоверения (нужен путевому листу), периоды
-// работы (нужны путевому листу поступлений/бетона — см. выше) и отметка
-// "водитель", без должности/оклада: это чувствительные данные, которые
-// видит только админ (см. read:'admin' в старой версии этого списка и
-// ветку ниже).
-function rowToDriverOption(row, workPeriods) {
-  return { id: row.id, plantId: row.plant_id, name: row.name, licenseNumber: row.license_number || '', isDriver: true, showInCash: row.show_in_cash !== false, workPeriods: workPeriods || [] };
+// Урезанный список для менеджера/работника по ссылке (ФИО, номер
+// удостоверения — нужен путевому листу, периоды работы, отметка "водитель",
+// showInCash) — без должности/оклада, это чувствительные данные, которые
+// видит только админ (см. read:'admin' в старой версии этого списка и ветку
+// ниже). Раньше сюда попадали ТОЛЬКО водители (функция называлась ровно под
+// это) — реальный баг, найденный пользователем: не-админ не мог завести в
+// ДДС запись "ЗП" не на водителя, потому что такого сотрудника просто не
+// было в списке выбора. Теперь это урезанный список ВСЕХ сотрудников
+// завода, isDriver — настоящее значение поля, не всегда true.
+function rowToLimitedEmployee(row, workPeriods) {
+  return { id: row.id, plantId: row.plant_id, name: row.name, licenseNumber: row.license_number || '', isDriver: !!row.is_driver, showInCash: row.show_in_cash !== false, workPeriods: workPeriods || [] };
 }
 
 async function validatePlantId(plantId) {
@@ -62,7 +65,10 @@ async function validatePlantId(plantId) {
 
 // admin — полный список (query.plantId задан — сотрудники этого завода +
 // общие; не задан — все, для дашборда). Менеджер/работник (по ссылке) —
-// только отмеченные "водитель" сотрудники своего завода, без зарплат.
+// все сотрудники своего завода + общие, без зарплат/должности (см.
+// rowToLimitedEmployee выше — раньше здесь фильтровалось ещё и по
+// is_driver, из-за чего не-админ не мог выбрать не-водителя ни для путевого
+// листа, ни для ЗП в ДДС).
 async function list(query, role) {
   if (role === 'admin') {
     let rows;
@@ -80,11 +86,11 @@ async function list(query, role) {
 
   if (!query || !query.plantId) return [];
   const { rows } = await db.pool.query(
-    'SELECT id, plant_id, name, license_number, show_in_cash FROM employees WHERE is_driver = TRUE AND (plant_id = $1 OR plant_id IS NULL) ORDER BY name',
+    'SELECT id, plant_id, name, license_number, is_driver, show_in_cash FROM employees WHERE plant_id = $1 OR plant_id IS NULL ORDER BY name',
     [query.plantId]
   );
   const periods = await loadWorkPeriodsByEmployee(rows.map((r) => r.id));
-  return rows.map((r) => rowToDriverOption(r, periods[r.id]));
+  return rows.map((r) => rowToLimitedEmployee(r, periods[r.id]));
 }
 
 async function create(body) {
