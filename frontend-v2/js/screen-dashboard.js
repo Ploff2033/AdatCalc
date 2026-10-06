@@ -10,7 +10,7 @@
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap" id="d-scope">Все заводы · только администратор</span><h1 id="d-title">Дашборд</h1></div>' +
-      '<div class="page-head-actions"><a href="#/settings" class="btn ghost sm" data-route="settings">Настройки заводов</a></div>' +
+      '<div class="page-head-actions"><select class="inp" id="d-month" style="width:190px" aria-label="Месяц"></select><a href="#/settings" class="btn ghost sm" data-route="settings">Настройки заводов</a></div>' +
     '</div>' +
     '<div class="grid-4" id="d-kpi"></div>' +
     '<div class="grid-2" id="d-plants" style="gap:16px"></div>' +
@@ -32,12 +32,36 @@
 
   var MONTH_NAMES = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
-  function monthRange() {
+  // 'YYYY-MM' -> границы месяца, как в v1 (tab-dashboard.js::monthRange) —
+  // только там это отдельный блок «Безубыточность», а тут месяц теперь
+  // выбирается для всего дашборда разом (см. #d-month).
+  function monthRange(monthStr) {
+    var parts = (monthStr || '').split('-');
+    var year = parts.length === 2 ? parseInt(parts[0], 10) : new Date().getFullYear();
+    var month = parts.length === 2 ? parseInt(parts[1], 10) - 1 : new Date().getMonth();
+    var start = new Date(year, month, 1);
+    var end = new Date(year, month + 1, 1);
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
     var now = new Date();
-    var start = new Date(now.getFullYear(), now.getMonth(), 1);
-    var end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    return { start: start, end: end, lastDay: now.getDate(), daysInMonth: daysInMonth, label: MONTH_NAMES[now.getMonth()] + ' ' + now.getFullYear() };
+    var isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
+    return { start: start, end: end, lastDay: isCurrentMonth ? now.getDate() : daysInMonth, daysInMonth: daysInMonth, label: MONTH_NAMES[month] + ' ' + year };
+  }
+
+  var selectedMonth = '';
+  function populateMonthOptions() {
+    var select = document.getElementById('d-month');
+    if (select.options.length) return; // заполняем один раз при init
+    var now = new Date();
+    for (var i = 0; i < 12; i++) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      var opt = document.createElement('option');
+      opt.value = value;
+      var label = MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
+      opt.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+      select.appendChild(opt);
+    }
+    selectedMonth = select.value;
   }
 
   function contributionInRange(orders, plantId, range) {
@@ -191,17 +215,21 @@
     var plants = State.data.plants || [];
     var orders = State.data.orders || [];
     var summary = State.data.personnelSummary || { byPlant: {}, sharedTotal: 0 };
-    var range = monthRange();
+    var range = monthRange(selectedMonth);
     document.getElementById('d-title').textContent = 'Дашборд · ' + range.label;
 
+    // KPI-плитки сверху — за тот же выбранный месяц, что и всё остальное на
+    // странице (заголовок уже называет месяц — плитки должны ему
+    // соответствовать, а не показывать статистику за всё время).
+    var monthOrders = orders.filter(function (o) { var d = new Date(o.createdAt); return d >= range.start && d < range.end; });
     var totalOutput = plants.reduce(function (s, p) { return s + (p.targetOutput || 0); }, 0);
-    var totalRevenue = orders.reduce(function (s, o) { return s + (o.totalRevenue || 0); }, 0);
-    var totalProfit = orders.reduce(function (s, o) { return s + (o.totalProfit || 0); }, 0);
-    var totalVolume = orders.reduce(function (s, o) { return s + (o.saleVolume || 0); }, 0);
+    var totalRevenue = monthOrders.reduce(function (s, o) { return s + (o.totalRevenue || 0); }, 0);
+    var totalProfit = monthOrders.reduce(function (s, o) { return s + (o.totalProfit || 0); }, 0);
+    var totalVolume = monthOrders.reduce(function (s, o) { return s + (o.saleVolume || 0); }, 0);
 
     document.getElementById('d-kpi').innerHTML = [
       { label: 'Выработка', value: Format.fmtNum(totalVolume, 0, 'м³'), sub: plants.length + ' завод(ов)' },
-      { label: 'Заказов', value: Format.fmtNum(orders.length, 0), sub: '' },
+      { label: 'Заказов', value: Format.fmtNum(monthOrders.length, 0), sub: '' },
       { label: 'Выручка', value: Format.fmt(totalRevenue, 0), sub: 'смесь + доставка' },
       { label: 'Чистая прибыль', value: Format.fmt(totalProfit, 0), sub: 'после постоянных затрат' }
     ].map(function (k) {
@@ -222,7 +250,10 @@
       var deprUtilPct = fixed.deprUtilities > 0 ? (deprUtilCoveredAmount / fixed.deprUtilities) * 100 : (remainderAfterPayroll > 0 ? 100 : 0);
       var payrollBarPct = fixed.total > 0 ? (payrollCoveredAmount / fixed.total) * 100 : 0;
       var deprUtilBarPct = fixed.total > 0 ? (deprUtilCoveredAmount / fixed.total) * 100 : 0;
-      var plantOrders = orders.filter(function (o) { return o.plantId === plant.id; });
+      // Отфильтровано по тому же выбранному месяцу, что и contribution выше —
+      // карточка завода описывает один период целиком, иначе полоса
+      // покрытия и цифры под ней показывали бы разные месяцы.
+      var plantOrders = orders.filter(function (o) { return o.plantId === plant.id && new Date(o.createdAt) >= range.start && new Date(o.createdAt) < range.end; });
       var plantVolume = plantOrders.reduce(function (s, o) { return s + (o.saleVolume || 0); }, 0);
       var plantRevenue = plantOrders.reduce(function (s, o) { return s + (o.totalRevenue || 0); }, 0);
       var plantProfit = plantOrders.reduce(function (s, o) { return s + (o.totalProfit || 0); }, 0);
@@ -268,6 +299,11 @@
     document.getElementById('d-chart-material').addEventListener('change', function () {
       chartMaterialId = this.value;
       renderChart(chartMaterialId);
+    });
+    populateMonthOptions();
+    document.getElementById('d-month').addEventListener('change', function () {
+      selectedMonth = this.value;
+      render();
     });
     initialized = true;
   }
