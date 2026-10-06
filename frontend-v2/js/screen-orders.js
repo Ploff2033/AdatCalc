@@ -266,8 +266,12 @@
             '<div class="spread" style="font-weight:600;border-top:1px solid var(--border-soft);padding-top:4px"><span>Себестоимость смеси</span><span class="num">' + Format.fmt(order.mixCost, 2) + '</span></div>' +
           '</div>' +
           '<div class="stack g6"><b>Бетон — доход</b>' +
-            '<div class="spread"><span>Цена, по которой отдали</span><span class="num">' + Format.fmt(order.salePrice, 2) + '/м³</span></div>' +
-            '<div class="spread"><span>Выручка</span><span class="num">' + Format.fmt(order.mixRevenue, 2) + '</span></div>' +
+            // salePrice/mixRevenue в заказе хранятся всегда БЕЗ НДС (см.
+            // order-calc.js) — здесь, по просьбе пользователя, показываем
+            // цену именно в том виде, в каком её реально получил клиент: с
+            // НДС, если НДС применялся к заказу, без — если нет.
+            '<div class="spread"><span>Цена смеси (' + (order.vatApplied ? 'с НДС' : 'без НДС') + ')</span><span class="num">' + Format.fmt(order.vatApplied ? order.salePrice * 1.22 : order.salePrice, 2) + '/м³</span></div>' +
+            '<div class="spread"><span>Выручка</span><span class="num">' + Format.fmt(order.vatApplied ? order.mixRevenue * 1.22 : order.mixRevenue, 2) + '</span></div>' +
             (order.vatApplied ? '<div class="spread hint"><span>в т.ч. НДС</span><span class="num">' + Format.fmt((order.mixRevenue || 0) * 0.22, 2) + '</span></div>' : '') +
           '</div>' +
         '</div>' +
@@ -282,6 +286,10 @@
             '<div class="spread" style="font-weight:600"><span>Итого расход</span><span class="num">' + Format.fmt(order.deliveryCostTotal, 2) + '</span></div>' +
           '</div>' +
           '<div class="stack g6"><b>Доставка — доход</b>' +
+            // Доставка НДС не облагается (отдельная услуга, см.
+            // order-calc.js) — deliveryChargePerM3 это уже цена, по которой
+            // отдали клиенту за 1 м³, без дополнительной поправки.
+            '<div class="spread"><span>Цена доставки</span><span class="num">' + Format.fmt(order.deliveryChargePerM3, 2) + '/м³</span></div>' +
             '<div class="spread"><span>Сколько с доставки</span><span class="num">' + Format.fmt(order.deliveryRevenue, 2) + '</span></div>' +
           '</div>' +
         '</div>' +

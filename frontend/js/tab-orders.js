@@ -164,7 +164,7 @@
           '<div class="split-col income">' +
             '<div class="split-col-label">Смесь — доход</div>' +
             '<div class="breakdown compact">' +
-              '<div class="line"><span class="l">Цена</span><span class="v" data-f="salePrice">—</span></div>' +
+              '<div class="line"><span class="l" data-price-label>Цена смеси</span><span class="v" data-f="salePrice">—</span></div>' +
               '<div class="line"><span class="l">Выручка</span><span class="v" data-f="mixRevenue">—</span></div>' +
               '<div class="line" data-vat-row hidden><span class="l">в т.ч. НДС</span><span class="v" data-f="ndsAmount">—</span></div>' +
             '</div>' +
@@ -185,7 +185,10 @@
           '</div>' +
           '<div class="split-col income">' +
             '<div class="split-col-label">Доставка — доход</div>' +
-            '<div class="breakdown compact"><div class="line"><span class="l">Доход от доставки</span><span class="v" data-f="deliveryRevenue">—</span></div></div>' +
+            '<div class="breakdown compact">' +
+              '<div class="line"><span class="l">Цена доставки</span><span class="v" data-f="deliveryChargePerM3">—</span></div>' +
+              '<div class="line"><span class="l">Доход от доставки</span><span class="v" data-f="deliveryRevenue">—</span></div>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<div class="split-total"><span class="l">Прибыль от доставки</span><span class="v-wrap"><span class="v" data-f="deliveryProfit">—</span><span class="margin" data-f="deliveryMarginPercent">—</span></span></div>' +
@@ -211,12 +214,21 @@
     card.querySelector('.order-meta').textContent = metaParts.join(' · ');
 
     [
-      'materialsCost', 'payrollCost', 'deprCost', 'utilitiesCost', 'costPerM3', 'mixCost', 'salePrice', 'mixRevenue',
-      'fuelCostPerTrip', 'amortCostPerTrip', 'surchargePerTrip', 'deliveryCostTotal', 'deliveryRevenue',
+      'materialsCost', 'payrollCost', 'deprCost', 'utilitiesCost', 'costPerM3', 'mixCost',
+      'fuelCostPerTrip', 'amortCostPerTrip', 'surchargePerTrip', 'deliveryCostTotal', 'deliveryChargePerM3', 'deliveryRevenue',
       'totalRevenue', 'totalProfit', 'profitPerM3'
     ].forEach(function (key) {
       fillAll(card, key, Format.fmt(order[key] || 0, 2));
     });
+
+    // salePrice/mixRevenue хранятся в заказе всегда БЕЗ НДС (см.
+    // order-calc.js) — по просьбе пользователя показываем цену в том виде,
+    // в каком её реально получил клиент: с НДС, если НДС применялся к
+    // заказу, без — если нет (доставка НДС не облагается, её не трогаем).
+    var vatMult = order.vatApplied ? 1.22 : 1;
+    fillAll(card, 'salePrice', Format.fmt((order.salePrice || 0) * vatMult, 2));
+    fillAll(card, 'mixRevenue', Format.fmt((order.mixRevenue || 0) * vatMult, 2));
+    card.querySelector('[data-price-label]').textContent = 'Цена смеси (' + (order.vatApplied ? 'с НДС' : 'без НДС') + ')';
 
     ['materialsCost', 'payrollCost', 'deprCost', 'utilitiesCost'].forEach(function (key) {
       fillAll(card, key + 'Total', Format.fmt((order[key] || 0) * (order.saleVolume || 0), 2));
