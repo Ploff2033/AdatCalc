@@ -640,3 +640,18 @@ ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS aggregate_truck_id TEXT REFERE
 -- пока админ явно не скроет кого-то (например, уволенного, которого рано
 -- удалять из-за истории расчётов).
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS show_in_cash BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- "Другое" — по просьбе пользователя: техника, которая не возит груз по
+-- дорогам (погрузчики и т.п.), поэтому не нужен весь набор полей
+-- мик­серов/инертовозов (грузоподъёмность, амортизация, расход топлива на
+-- 100 км, Платон, одометр для путевых листов — всё это не имеет смысла для
+-- погрузчика). Только имя и гос.номер (необязательно) — чтобы просто можно
+-- было выбрать такую технику в "Топливо" в ДДС (см. vehicleOptions() в
+-- screen-cash.js/mobile-cash.js), без участия в себестоимости/путевых листах.
+CREATE TABLE IF NOT EXISTS other_equipment (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  license_plate TEXT NOT NULL DEFAULT ''
+);
+
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS other_equipment_id TEXT REFERENCES other_equipment(id) ON DELETE SET NULL;

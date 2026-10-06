@@ -109,7 +109,7 @@
   // имена и номера в комментариях"). draftVehicleKind различает mixers и
   // aggregate_trucks — общей таблицы техники нет (см. schema.sql).
   var draftEmployeeId = null;
-  var draftVehicleKind = null; // 'mixer' | 'truck' | null
+  var draftVehicleKind = null; // 'mixer' | 'truck' | 'other' | null
   var draftVehicleId = null;
   var draftReceiptDataUrl = null; // новое фото, выбранное в этой сессии редактирования (ещё не отправлено)
   var draftReceiptCleared = false;
@@ -235,10 +235,11 @@
           var emp2 = (State.data.employees || []).find(function (x) { return x.id === e.employeeId; });
           if (emp2) detailLine = emp2.name + (detailLine ? ' · ' + detailLine : '');
         }
-        if (e.mixerId || e.aggregateTruckId) {
+        if (e.mixerId || e.aggregateTruckId || e.otherEquipmentId) {
           var veh2 = e.mixerId
             ? (State.data.mixers || []).find(function (x) { return x.id === e.mixerId; })
-            : (State.data.aggregateTrucks || []).find(function (x) { return x.id === e.aggregateTruckId; });
+            : (e.aggregateTruckId ? (State.data.aggregateTrucks || []).find(function (x) { return x.id === e.aggregateTruckId; })
+              : (State.data.otherEquipment || []).find(function (x) { return x.id === e.otherEquipmentId; }));
           if (veh2) detailLine = (veh2.name + (veh2.licensePlate ? ' (' + veh2.licensePlate + ')' : '')) + (detailLine ? ' · ' + detailLine : '');
         }
         return '<div class="row" style="grid-template-columns:70px 90px minmax(0,1fr) 70px 130px 130px 44px;min-height:54px;opacity:' + (isStornoed ? '.6' : '1') + '">' +
@@ -462,7 +463,11 @@
   function vehicleOptions() {
     var mixers = (State.data.mixers || []).map(function (m) { return { id: m.id, kind: 'mixer', name: m.name, licensePlate: m.licensePlate }; });
     var trucks = (State.data.aggregateTrucks || []).map(function (t) { return { id: t.id, kind: 'truck', name: t.name, licensePlate: t.licensePlate }; });
-    return mixers.concat(trucks);
+    // "Другое" (погрузчики и т.п., см. other-equipment.js) — та же техника,
+    // что на экране Техники во вкладке "Другое", добавлена в общий список по
+    // просьбе пользователя — тоже заправляется топливом.
+    var other = (State.data.otherEquipment || []).map(function (o) { return { id: o.id, kind: 'other', name: o.name, licensePlate: o.licensePlate }; });
+    return mixers.concat(trucks, other);
   }
 
   function renderVehiclePicker() {
@@ -587,8 +592,8 @@
     draftCategory = entry.category;
     draftOrderId = entry.orderId;
     draftEmployeeId = entry.employeeId || null;
-    draftVehicleKind = entry.mixerId ? 'mixer' : (entry.aggregateTruckId ? 'truck' : null);
-    draftVehicleId = entry.mixerId || entry.aggregateTruckId || null;
+    draftVehicleKind = entry.mixerId ? 'mixer' : (entry.aggregateTruckId ? 'truck' : (entry.otherEquipmentId ? 'other' : null));
+    draftVehicleId = entry.mixerId || entry.aggregateTruckId || entry.otherEquipmentId || null;
     document.getElementById('c-drawer-title').textContent = 'Изменить запись';
     document.getElementById('c-save-btn').textContent = 'Сохранить';
     document.getElementById('c-delete-btn').hidden = false;
@@ -637,6 +642,7 @@
     payload.employeeId = draftCategory === 'salary' ? (draftEmployeeId || null) : null;
     payload.mixerId = draftCategory === 'fuel' && draftVehicleKind === 'mixer' ? draftVehicleId : null;
     payload.aggregateTruckId = draftCategory === 'fuel' && draftVehicleKind === 'truck' ? draftVehicleId : null;
+    payload.otherEquipmentId = draftCategory === 'fuel' && draftVehicleKind === 'other' ? draftVehicleId : null;
     if (!(payload.amount > 0)) { errorEl.textContent = 'Укажите сумму больше нуля.'; errorEl.hidden = false; return; }
     if (rule.commentRequired && !payload.comment) { errorEl.textContent = 'Для категории «' + rule.label + '» комментарий обязателен.'; errorEl.hidden = false; return; }
     if (draftReceiptDataUrl) payload.receiptDataUrl = draftReceiptDataUrl;

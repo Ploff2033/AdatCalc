@@ -49,6 +49,7 @@ function rowToEntry(row) {
     employeeId: row.employee_id,
     mixerId: row.mixer_id,
     aggregateTruckId: row.aggregate_truck_id,
+    otherEquipmentId: row.other_equipment_id,
     // occurred_at — DATE, pg отдаёт уже строкой 'YYYY-MM-DD' (см.
     // types.setTypeParser в db.js — без него тут был бы сдвиг на день назад
     // на сервере в часовом поясе восточнее UTC).
@@ -185,6 +186,7 @@ async function create(body) {
   const employeeId = (await optionalEmployeeRef(body.employeeId, plantId)) || null;
   const mixerId = (await optionalVehicleRef(body.mixerId, 'mixers')) || null;
   const aggregateTruckId = (await optionalVehicleRef(body.aggregateTruckId, 'aggregate_trucks')) || null;
+  const otherEquipmentId = (await optionalVehicleRef(body.otherEquipmentId, 'other_equipment')) || null;
 
   const id = db.genId('cash');
   let receiptPath = null;
@@ -192,9 +194,9 @@ async function create(body) {
   if (rule.receiptRequired && !receiptPath) throw new HttpError(400, `Для категории "${rule.label}" нужно фото чека`);
 
   await db.pool.query(
-    `INSERT INTO cash_entries (id, plant_id, type, category, amount, comment, receipt_path, order_id, occurred_at, employee_id, mixer_id, aggregate_truck_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-    [id, plantId, type, category, amount, comment, receiptPath, orderId, occurredAt, employeeId, mixerId, aggregateTruckId]
+    `INSERT INTO cash_entries (id, plant_id, type, category, amount, comment, receipt_path, order_id, occurred_at, employee_id, mixer_id, aggregate_truck_id, other_equipment_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [id, plantId, type, category, amount, comment, receiptPath, orderId, occurredAt, employeeId, mixerId, aggregateTruckId, otherEquipmentId]
   );
   const { rows } = await db.pool.query(
     `SELECT c.*, p.name AS plant_name, FALSE AS stornoed FROM cash_entries c JOIN plants p ON p.id = c.plant_id WHERE c.id = $1`,
@@ -242,10 +244,12 @@ async function update(id, body, role) {
   const mixerId = mixerIdRef === undefined ? current.mixer_id : mixerIdRef;
   const aggregateTruckIdRef = await optionalVehicleRef(body.aggregateTruckId, 'aggregate_trucks');
   const aggregateTruckId = aggregateTruckIdRef === undefined ? current.aggregate_truck_id : aggregateTruckIdRef;
+  const otherEquipmentIdRef = await optionalVehicleRef(body.otherEquipmentId, 'other_equipment');
+  const otherEquipmentId = otherEquipmentIdRef === undefined ? current.other_equipment_id : otherEquipmentIdRef;
 
   await db.pool.query(
-    'UPDATE cash_entries SET category=$2, amount=$3, comment=$4, receipt_path=$5, occurred_at=$6, employee_id=$7, mixer_id=$8, aggregate_truck_id=$9 WHERE id=$1',
-    [id, category, amount, comment, receiptPath, occurredAt, employeeId, mixerId, aggregateTruckId]
+    'UPDATE cash_entries SET category=$2, amount=$3, comment=$4, receipt_path=$5, occurred_at=$6, employee_id=$7, mixer_id=$8, aggregate_truck_id=$9, other_equipment_id=$10 WHERE id=$1',
+    [id, category, amount, comment, receiptPath, occurredAt, employeeId, mixerId, aggregateTruckId, otherEquipmentId]
   );
   const { rows: full } = await db.pool.query(
     `SELECT c.*, p.name AS plant_name, FALSE AS stornoed FROM cash_entries c JOIN plants p ON p.id = c.plant_id WHERE c.id = $1`,

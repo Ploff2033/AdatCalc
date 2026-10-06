@@ -11,6 +11,7 @@ const clients = require('./handlers/clients');
 const cashEntries = require('./handlers/cash-entries');
 const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
+const otherEquipment = require('./handlers/other-equipment');
 const orders = require('./handlers/orders');
 const waybillEntries = require('./handlers/waybill-entries');
 const materialReceipts = require('./handlers/material-receipts');
@@ -638,6 +639,7 @@ const routes = [
   // Техника — общая на все заводы. Читать может кто угодно, менять — только админ.
   ...crudRoutes('/api/mixers', mixers, { read: null, write: 'admin' }),
   ...crudRoutes('/api/aggregate-trucks', aggregateTrucks, { read: null, write: 'admin' }),
+  ...crudRoutes('/api/other-equipment', otherEquipment, { read: null, write: 'admin' }),
 
   // Заказы — открыты всем, включая незалогиненных работников. Работник по
   // своей ссылке (?token=) видит только заказы своего завода — см. scopeByToken.
