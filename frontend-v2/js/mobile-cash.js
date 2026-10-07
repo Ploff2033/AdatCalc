@@ -148,17 +148,31 @@
     if (isFuel) renderVehiclePicker();
   }
 
-  // Список сотрудников уже отфильтрован бэкендом по роли (не-admin — только
-  // водители своего завода, без оклада/должности, см. employees.js::list) —
-  // тот же State.data.employees, что используется для выбора водителя в
-  // Путевых листах.
+  // Список сотрудников уже отфильтрован бэкендом по роли (не-admin — без
+  // оклада/должности, см. employees.js::list) — тот же State.data.employees,
+  // что используется для выбора водителя в Путевых листах. Бэкенд теперь
+  // отдаёт сотрудников ВСЕХ заводов (не только своего) — см. тот же
+  // комментарий и employeePlantName() в desktop screen-cash.js: реальный
+  // баг, сотрудник в командировке на другом заводе не появлялся в выборе.
+  function employeePlantName(plantId) {
+    var p = (State.data.plants || []).find(function (pl) { return pl.id === plantId; });
+    return p ? p.name : '';
+  }
+
   function renderEmployeePicker() {
     var list = document.getElementById('mc-employee-list');
     var plantId = Plant.currentPlantId();
     // showInCash === false и общие сотрудники (plantId === null) — та же
     // логика, что в desktop screen-cash.js::renderEmployeePicker, см.
-    // комментарий там.
-    var employees = (State.data.employees || []).filter(function (e) { return e.plantId === plantId && e.showInCash !== false; });
+    // комментарий там. Свой завод — впереди списка, у остальных рядом с
+    // именем подпись завода.
+    var employees = (State.data.employees || []).filter(function (e) { return e.plantId && e.showInCash !== false; });
+    employees.sort(function (a, b) {
+      var aOwn = a.plantId === plantId ? 0 : 1;
+      var bOwn = b.plantId === plantId ? 0 : 1;
+      if (aOwn !== bOwn) return aOwn - bOwn;
+      return a.name.localeCompare(b.name, 'ru');
+    });
     var noneOn = !draftEmployeeId;
     var html = '<label class="pick' + (noneOn ? ' on' : '') + '" data-employee-id="">' +
       '<input type="radio" name="mc-employee" ' + (noneOn ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
@@ -166,9 +180,12 @@
     '</label>';
     html += employees.map(function (e) {
       var on = e.id === draftEmployeeId;
+      var hintBits = [];
+      if (e.position) hintBits.push(e.position);
+      if (e.plantId !== plantId) hintBits.push(employeePlantName(e.plantId) || 'другой завод');
       return '<label class="pick' + (on ? ' on' : '') + '" data-employee-id="' + e.id + '">' +
         '<input type="radio" name="mc-employee" ' + (on ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
-        '<span class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + e.name + '</span>' + (e.position ? '<span class="hint">' + e.position + '</span>' : '') + '</span>' +
+        '<span class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + e.name + '</span>' + (hintBits.length ? '<span class="hint">' + hintBits.join(' · ') + '</span>' : '') + '</span>' +
       '</label>';
     }).join('');
     list.innerHTML = html;

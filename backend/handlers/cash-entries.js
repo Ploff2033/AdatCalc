@@ -66,16 +66,18 @@ function todayStr() {
 
 // Проверяет необязательную привязку к сотруднику/технике. undefined (поле не
 // передано) — не трогаем текущее значение; null/'' — явная очистка.
-// Сотрудник может быть привязан к заводу или общим (plant_id IS NULL, см.
-// schema.sql) — тогда он доступен с любого завода, как и в Персонале/
-// Путевых листах. Техника (mixers/aggregate_trucks) вообще без plant_id —
-// "общая на все заводы" (см. комментарий в schema.sql), поэтому для неё
-// проверяем только факт существования id.
-async function optionalEmployeeRef(value, plantId) {
+// Сотрудник — без привязки к заводу записи: раньше проверялось "свой завод
+// ИЛИ общий", но это ломало реальный кейс — водитель/работник в
+// командировке на другом заводе, ЗП которому по факту проводят через ДДС
+// ТОГО завода, где он сейчас работает, а не через ДДС его "домашнего"
+// завода (найденный пользователем баг). Поэтому для сотрудника, как и для
+// техники ниже, проверяем только факт существования id, без привязки к
+// заводу записи.
+async function optionalEmployeeRef(value) {
   if (value === undefined) return undefined;
   if (!value) return null;
-  const { rows } = await db.pool.query('SELECT id FROM employees WHERE id = $1 AND (plant_id = $2 OR plant_id IS NULL)', [value, plantId]);
-  if (!rows.length) throw new HttpError(400, 'Сотрудник не найден на этом заводе');
+  const { rows } = await db.pool.query('SELECT id FROM employees WHERE id = $1', [value]);
+  if (!rows.length) throw new HttpError(400, 'Сотрудник не найден');
   return value;
 }
 
@@ -183,7 +185,7 @@ async function create(body) {
 
   const occurredAt = body.occurredAt ? str(body.occurredAt, 'occurredAt') : todayStr();
 
-  const employeeId = (await optionalEmployeeRef(body.employeeId, plantId)) || null;
+  const employeeId = (await optionalEmployeeRef(body.employeeId)) || null;
   const mixerId = (await optionalVehicleRef(body.mixerId, 'mixers')) || null;
   const aggregateTruckId = (await optionalVehicleRef(body.aggregateTruckId, 'aggregate_trucks')) || null;
   const otherEquipmentId = (await optionalVehicleRef(body.otherEquipmentId, 'other_equipment')) || null;
@@ -238,7 +240,7 @@ async function update(id, body, role) {
 
   const occurredAt = body.occurredAt ? str(body.occurredAt, 'occurredAt') : current.occurred_at;
 
-  const employeeIdRef = await optionalEmployeeRef(body.employeeId, current.plant_id);
+  const employeeIdRef = await optionalEmployeeRef(body.employeeId);
   const employeeId = employeeIdRef === undefined ? current.employee_id : employeeIdRef;
   const mixerIdRef = await optionalVehicleRef(body.mixerId, 'mixers');
   const mixerId = mixerIdRef === undefined ? current.mixer_id : mixerIdRef;

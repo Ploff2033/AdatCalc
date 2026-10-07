@@ -63,33 +63,22 @@ async function validatePlantId(plantId) {
   return plantId;
 }
 
-// admin — полный список (query.plantId задан — сотрудники этого завода +
-// общие; не задан — все, для дашборда). Менеджер/работник (по ссылке) —
-// все сотрудники своего завода + общие, без зарплат/должности (см.
-// rowToLimitedEmployee выше — раньше здесь фильтровалось ещё и по
-// is_driver, из-за чего не-админ не мог выбрать не-водителя ни для путевого
-// листа, ни для ЗП в ДДС).
+// Всегда список ВСЕХ сотрудников компании (не только своего завода) — admin
+// видит полностью (зарплата/должность), остальные — урезанно (см.
+// rowToLimitedEmployee). Раньше список резался по текущему заводу (сначала
+// по is_driver, потом по plant_id = свой завод ИЛИ общий) — оба раза
+// реальный баг, найденный пользователем: сотрудник в командировке на другом
+// заводе (ЗП ему проводят через ДДС ТОГО завода, где он сейчас работает,
+// не "домашнего") просто не появлялся в списке выбора ни для путевого
+// листа, ни для ЗП в ДДС. Та же логика, что уже применена к технике
+// (mixers/aggregate_trucks/other_equipment — "общая на все заводы"):
+// сотрудники компании тоже общий список, завод — просто атрибут для
+// подсказки в UI (см. employeePlantName() в screen-cash.js), не граница
+// видимости.
 async function list(query, role) {
-  if (role === 'admin') {
-    let rows;
-    if (query && query.plantId) {
-      ({ rows } = await db.pool.query(
-        'SELECT * FROM employees WHERE plant_id = $1 OR plant_id IS NULL ORDER BY name',
-        [query.plantId]
-      ));
-    } else {
-      ({ rows } = await db.pool.query('SELECT * FROM employees ORDER BY name'));
-    }
-    const periods = await loadWorkPeriodsByEmployee(rows.map((r) => r.id));
-    return rows.map((r) => rowToEmployee(r, periods[r.id]));
-  }
-
-  if (!query || !query.plantId) return [];
-  const { rows } = await db.pool.query(
-    'SELECT id, plant_id, name, license_number, is_driver, show_in_cash FROM employees WHERE plant_id = $1 OR plant_id IS NULL ORDER BY name',
-    [query.plantId]
-  );
+  const { rows } = await db.pool.query('SELECT * FROM employees ORDER BY name');
   const periods = await loadWorkPeriodsByEmployee(rows.map((r) => r.id));
+  if (role === 'admin') return rows.map((r) => rowToEmployee(r, periods[r.id]));
   return rows.map((r) => rowToLimitedEmployee(r, periods[r.id]));
 }
 

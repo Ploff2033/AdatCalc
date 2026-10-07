@@ -426,6 +426,11 @@
   // employees.js::list — не-admin видит только водителей своего завода, без
   // оклада/должности, как и в Путевых листах) — тут просто показываем, что
   // пришло в State.data.employees, без дополнительных ограничений.
+  function employeePlantName(plantId) {
+    var p = (State.data.plants || []).find(function (pl) { return pl.id === plantId; });
+    return p ? p.name : '';
+  }
+
   function renderEmployeePicker() {
     var list = document.getElementById('c-f-employee-list');
     var plantId = document.getElementById('c-f-plant').value;
@@ -435,7 +440,21 @@
     // (plantId === null, "на все заводы сразу") тоже не попадают сюда —
     // зарплату через ДДС им не платят (по словам пользователя), в отличие
     // от Путевых листов, где общий водитель наоборот нужен везде.
-    var employees = (State.data.employees || []).filter(function (e) { return e.plantId === plantId && e.showInCash !== false; });
+    //
+    // Раньше список резался ещё и по текущему заводу формы (e.plantId ===
+    // plantId) — реальный баг, найденный пользователем: водитель/работник в
+    // командировке на другом заводе физически получает ЗП через ДДС ТОГО
+    // завода, где сейчас работает, а не через ДДС своего "домашнего". Теперь
+    // показываем сотрудников всех заводов, свой завод — впереди списка, у
+    // остальных рядом с именем подпись завода, чтобы не перепутать
+    // однофамильцев/одноимённых с разных заводов.
+    var employees = (State.data.employees || []).filter(function (e) { return e.plantId && e.showInCash !== false; });
+    employees.sort(function (a, b) {
+      var aOwn = a.plantId === plantId ? 0 : 1;
+      var bOwn = b.plantId === plantId ? 0 : 1;
+      if (aOwn !== bOwn) return aOwn - bOwn;
+      return a.name.localeCompare(b.name, 'ru');
+    });
     var noneOn = !draftEmployeeId;
     var html = '<label class="pick' + (noneOn ? ' on' : '') + '" data-employee-id="">' +
       '<input type="radio" name="c-employee" ' + (noneOn ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
@@ -443,9 +462,12 @@
     '</label>';
     html += employees.map(function (e) {
       var on = e.id === draftEmployeeId;
+      var hintBits = [];
+      if (e.position) hintBits.push(e.position);
+      if (e.plantId !== plantId) hintBits.push(employeePlantName(e.plantId) || 'другой завод');
       return '<label class="pick' + (on ? ' on' : '') + '" data-employee-id="' + e.id + '">' +
         '<input type="radio" name="c-employee" ' + (on ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--ink)">' +
-        '<span class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + e.name + '</span>' + (e.position ? '<span class="hint">' + e.position + '</span>' : '') + '</span>' +
+        '<span class="stack" style="gap:1px;min-width:0"><span style="font-weight:600">' + e.name + '</span>' + (hintBits.length ? '<span class="hint">' + hintBits.join(' · ') + '</span>' : '') + '</span>' +
       '</label>';
     }).join('');
     list.innerHTML = html;
