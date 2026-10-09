@@ -62,7 +62,8 @@
   var STYLES_XML =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="Calibri"/></font></fonts>' +
     '<fills count="4">' +
       '<fill><patternFill patternType="none"/></fill>' +
       '<fill><patternFill patternType="gray125"/></fill>' +
@@ -75,7 +76,7 @@
         '<top style="thin"><color indexed="64"/></top><bottom style="thin"><color indexed="64"/></bottom><diagonal/></border>' +
     '</borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-    '<cellXfs count="7">' +
+    '<cellXfs count="8">' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>' +
       '<xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"/>' +
@@ -83,11 +84,16 @@
       '<xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
       '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>' +
+      // LINK — та же обёртка переноса строк, что и NOTE, но шрифтом
+      // гиперссылки (подчёркнутый, синий) — ячейка с резолвленным фото чека
+      // (см. screen-cash.js::exportToExcel, opts.hyperlinks) получает этот
+      // стиль + настоящую OOXML-ссылку, чтобы клик по ячейке открывал фото.
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>' +
     '</cellXfs>' +
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
     '</styleSheet>';
 
-  var STYLE = { DEFAULT: 0, TEXT: 1, NUM: 2, HEAD_INCOME: 3, HEAD_EXPENSE: 4, HEAD_PLAIN: 5, NOTE: 6 };
+  var STYLE = { DEFAULT: 0, TEXT: 1, NUM: 2, HEAD_INCOME: 3, HEAD_EXPENSE: 4, HEAD_PLAIN: 5, NOTE: 6, LINK: 7 };
 
   function cellXml(ref, cell) {
     var s = (cell && cell.style != null) ? cell.style : STYLE.DEFAULT;
@@ -96,7 +102,12 @@
     return '<c r="' + ref + '" s="' + s + '" t="inlineStr"><is><t xml:space="preserve">' + esc(cell.v) + '</t></is></c>';
   }
 
-  function sheetXml(rows, merges, colWidths) {
+  // hyperlinks — [{ref: 'H5', url: '...'}, ...], уже с присвоенными rId
+  // (см. build() ниже) — ссылка сама по себе лежит во внешнем
+  // xl/worksheets/_rels/sheet1.xml.rels (TargetMode="External", как и
+  // положено для внешних URL, не для ссылок внутри книги), тут только
+  // список ячеек с их rId.
+  function sheetXml(rows, merges, colWidths, hyperlinks) {
     var body = rows.map(function (row, rIdx) {
       var cells = row.map(function (cell, cIdx) { return cellXml(colLetter(cIdx) + (rIdx + 1), cell); }).join('');
       return '<row r="' + (rIdx + 1) + '">' + cells + '</row>';
@@ -107,28 +118,47 @@
     var mergeXml = (merges && merges.length)
       ? '<mergeCells count="' + merges.length + '">' + merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>'
       : '';
+    var linksXml = (hyperlinks && hyperlinks.length)
+      ? '<hyperlinks>' + hyperlinks.map(function (h) { return '<hyperlink ref="' + h.ref + '" r:id="' + h.relId + '"/>'; }).join('') + '</hyperlinks>'
+      : '';
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      colsXml + '<sheetData>' + body + '</sheetData>' + mergeXml +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      colsXml + '<sheetData>' + body + '</sheetData>' + mergeXml + linksXml +
       '</worksheet>';
   }
 
   // opts.rows — двумерный массив ячеек ({v, num, style} или null/undefined
   // для пустой ячейки); opts.merges — ['A1:A2', ...]; opts.colWidths —
-  // ширины колонок в Excel-единицах. Возвращает Blob (сам .xlsx).
+  // ширины колонок в Excel-единицах; opts.hyperlinks — [{ref: 'H5',
+  // url: '...'}, ...] (по просьбе пользователя — кликабельная ссылка на
+  // фото чека в облаке, см. screen-cash.js::exportToExcel). Возвращает
+  // Blob (сам .xlsx).
   function build(opts) {
     var sheetName = (opts.sheetName || 'Sheet1').slice(0, 31);
     var enc = new TextEncoder();
+    var rawLinks = opts.hyperlinks || [];
+    // rId присваиваем тут же, по порядку — тот же приём, что и во всех
+    // остальных .xml.rels файлах этого писателя (rId1, rId2, ...).
+    var links = rawLinks.map(function (h, i) { return { ref: h.ref, url: h.url, relId: 'rId' + (i + 1) }; });
     var files = [
       { name: '[Content_Types].xml', data: enc.encode(CONTENT_TYPES) },
       { name: '_rels/.rels', data: enc.encode(RELS_ROOT) },
       { name: 'xl/workbook.xml', data: enc.encode(workbookXml(sheetName)) },
       { name: 'xl/_rels/workbook.xml.rels', data: enc.encode(WORKBOOK_RELS) },
       { name: 'xl/styles.xml', data: enc.encode(STYLES_XML) },
-      { name: 'xl/worksheets/sheet1.xml', data: enc.encode(sheetXml(opts.rows, opts.merges || [], opts.colWidths)) }
+      { name: 'xl/worksheets/sheet1.xml', data: enc.encode(sheetXml(opts.rows, opts.merges || [], opts.colWidths, links)) }
     ];
+    if (links.length) {
+      var relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        links.map(function (h) {
+          return '<Relationship Id="' + h.relId + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' + esc(h.url) + '" TargetMode="External"/>';
+        }).join('') +
+        '</Relationships>';
+      files.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', data: enc.encode(relsXml) });
+    }
     return ZipWriter.build(files);
   }
 
-  window.XlsxWriter = { build: build, STYLE: STYLE };
+  window.XlsxWriter = { build: build, STYLE: STYLE, colLetter: colLetter };
 })();

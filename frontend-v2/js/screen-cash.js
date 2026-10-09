@@ -853,7 +853,15 @@
       // операция без комментария/чека/заказа не оставляла в "Примечании"
       // вообще никакого следа). Теперь у каждой операции своя строка и свой
       // остаток сразу после неё.
-      var dataRows = visible.map(function (e) {
+      // Кликабельные ссылки на фото — по просьбе пользователя: настоящий
+      // OOXML-гиперлинк на всю ячейку "Примечание" (не только часть текста
+      // про фото — формат ячейки Excel не поддерживает ссылку на часть
+      // строки, только на ячейку целиком), см. XlsxWriter.build(opts.hyperlinks).
+      // Только когда реально резолвлен folderLink — без него photoRef это
+      // просто голое имя файла, не настоящий URL, ссылку на него делать нет
+      // смысла.
+      var hyperlinks = [];
+      var dataRows = visible.map(function (e, rowIdx) {
         var income = {}, expense = {}, note;
         if (e.category === 'storno') {
           // Сторно — в ту сторону (приход/расход), куда реально сдвинулась
@@ -892,16 +900,24 @@
             if (veh) bits.push('техника: ' + veh.name + (veh.licensePlate ? ' (' + veh.licensePlate + ')' : ''));
           }
           if (e.comment) bits.push(e.comment);
+          var photoUrl = null;
           if (e.receiptPath) {
-            var photoRef = receiptNameById[e.id] ? (folderLink ? folderLink + '/' + receiptNameById[e.id] : receiptNameById[e.id]) : null;
-            bits.push(photoRef ? 'фото: ' + photoRef : 'фото не загрузилось');
+            if (receiptNameById[e.id]) {
+              var photoRef = folderLink ? folderLink + '/' + receiptNameById[e.id] : receiptNameById[e.id];
+              bits.push('фото: ' + photoRef);
+              if (folderLink) photoUrl = photoRef;
+            } else {
+              bits.push('фото не загрузилось');
+            }
           }
           note = bits.join(', ');
         }
         var row = [{ v: ledgerDateLabel(e.occurredAt), style: S.TEXT }];
         LEDGER_INCOME_COLUMNS.forEach(function (c) { row.push({ v: income[c] || '', num: true, style: S.NUM }); });
         LEDGER_EXPENSE_COLUMNS.forEach(function (c) { row.push({ v: expense[c] || '', num: true, style: S.NUM }); });
-        row.push({ v: note, style: S.NOTE });
+        var noteColIdx = LEDGER_INCOME_COLUMNS.length + LEDGER_EXPENSE_COLUMNS.length + 1; // +1 за колонку "Дата"
+        if (photoUrl) hyperlinks.push({ ref: XlsxWriter.colLetter(noteColIdx) + (rowIdx + 3), url: photoUrl });
+        row.push({ v: note, style: photoUrl ? S.LINK : S.NOTE });
         row.push({ v: e.balanceAfter, num: true, style: S.NUM });
         return row;
       });
@@ -910,7 +926,8 @@
         sheetName: 'ДДС',
         rows: [row1, row2].concat(dataRows),
         merges: ['A1:A2', 'B1:C1', 'D1:G1', 'H1:H2', 'I1:I2'],
-        colWidths: [12, 16, 12, 12, 12, 20, 12, 42, 14]
+        colWidths: [12, 16, 12, 12, 12, 20, 12, 42, 14],
+        hyperlinks: hyperlinks
       });
       var xlsxName = 'ДДС ' + folderName + '.xlsx';
 
