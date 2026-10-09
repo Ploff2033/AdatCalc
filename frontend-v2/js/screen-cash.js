@@ -867,6 +867,22 @@
             var order = (State.data.orders || []).find(function (o) { return o.id === e.orderId; });
             if (order) bits.push('заказ: ' + order.recipeName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + (order.clientName ? ' · ' + order.clientName : ''));
           }
+          // Сотрудник/техника ("ЗП"/"Топливо") — та же привязка, что уже
+          // показана в журнале на экране (см. renderRows выше), раньше в
+          // выгрузку не попадала вообще — по отзыву пользователя при
+          // экспорте не было видно, кому выплачена ЗП и какая машина
+          // заправлена.
+          if (e.employeeId) {
+            var emp = (State.data.employees || []).find(function (x) { return x.id === e.employeeId; });
+            if (emp) bits.push('сотрудник: ' + emp.name);
+          }
+          if (e.mixerId || e.aggregateTruckId || e.otherEquipmentId) {
+            var veh = e.mixerId
+              ? (State.data.mixers || []).find(function (x) { return x.id === e.mixerId; })
+              : (e.aggregateTruckId ? (State.data.aggregateTrucks || []).find(function (x) { return x.id === e.aggregateTruckId; })
+                : (State.data.otherEquipment || []).find(function (x) { return x.id === e.otherEquipmentId; }));
+            if (veh) bits.push('техника: ' + veh.name + (veh.licensePlate ? ' (' + veh.licensePlate + ')' : ''));
+          }
           if (e.comment) bits.push(e.comment);
           if (e.receiptPath) bits.push(receiptNameById[e.id] ? 'фото: ' + receiptNameById[e.id] : 'фото не загрузилось');
           note = bits.join(', ');
