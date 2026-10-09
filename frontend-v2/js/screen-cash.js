@@ -771,6 +771,14 @@
       return;
     }
 
+    // Ссылка на облачную папку — по просьбе пользователя: таблицу он сам
+    // перекладывает в облако после экспорта и расставляет перекрёстные
+    // ссылки на фото чеков вручную. Спрашиваем один раз при экспорте и сразу
+    // подставляем в "Примечание" вместо голого имени файла — необязательно,
+    // Cancel/пустое поле просто оставляет текущее поведение (только имя).
+    var folderLinkRaw = window.prompt('Ссылка на папку в облаке, куда вы перенесёте фото чеков из архива (необязательно — тогда в примечании останется просто имя файла):', '');
+    var folderLink = (folderLinkRaw || '').trim().replace(/\/+$/, '');
+
     var btn = document.getElementById('c-export-btn');
     var originalLabel = btn.textContent;
     btn.disabled = true;
@@ -884,7 +892,10 @@
             if (veh) bits.push('техника: ' + veh.name + (veh.licensePlate ? ' (' + veh.licensePlate + ')' : ''));
           }
           if (e.comment) bits.push(e.comment);
-          if (e.receiptPath) bits.push(receiptNameById[e.id] ? 'фото: ' + receiptNameById[e.id] : 'фото не загрузилось');
+          if (e.receiptPath) {
+            var photoRef = receiptNameById[e.id] ? (folderLink ? folderLink + '/' + receiptNameById[e.id] : receiptNameById[e.id]) : null;
+            bits.push(photoRef ? 'фото: ' + photoRef : 'фото не загрузилось');
+          }
           note = bits.join(', ');
         }
         var row = [{ v: ledgerDateLabel(e.occurredAt), style: S.TEXT }];
