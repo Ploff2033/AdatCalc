@@ -9,6 +9,7 @@
     mixers: [],
     aggregateTrucks: [],
     otherEquipment: [],
+    trailers: [],
     orders: [],
     waybillEntries: [],
     // Клиенты — не привязаны к заводу (см. schema.sql), поэтому без
@@ -71,6 +72,7 @@
       Api.get('/mixers'),
       Api.get('/aggregate-trucks'),
       Api.get('/other-equipment'),
+      Api.get('/trailers'),
       Api.get(ordersPath),
       Api.get('/plants'),
       Api.get('/waybill-entries'),
@@ -91,11 +93,12 @@
     data.mixers = results[5].status === 'fulfilled' ? results[5].value : [];
     data.aggregateTrucks = results[6].status === 'fulfilled' ? results[6].value : [];
     data.otherEquipment = results[7].status === 'fulfilled' ? results[7].value : [];
-    data.orders = results[8].status === 'fulfilled' ? results[8].value : [];
-    data.plants = results[9].status === 'fulfilled' ? results[9].value : [];
-    data.waybillEntries = results[10].status === 'fulfilled' ? results[10].value : [];
-    data.clients = results[11].status === 'fulfilled' ? results[11].value : [];
-    data.materialReceipts = results[12].status === 'fulfilled' ? results[12].value : [];
+    data.trailers = results[8].status === 'fulfilled' ? results[8].value : [];
+    data.orders = results[9].status === 'fulfilled' ? results[9].value : [];
+    data.plants = results[10].status === 'fulfilled' ? results[10].value : [];
+    data.waybillEntries = results[11].status === 'fulfilled' ? results[11].value : [];
+    data.clients = results[12].status === 'fulfilled' ? results[12].value : [];
+    data.materialReceipts = results[13].status === 'fulfilled' ? results[13].value : [];
     notify();
   }
 

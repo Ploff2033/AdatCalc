@@ -32,6 +32,7 @@ const CELLS = {
   organization: 'H6',
   vehicleModel: 'I12',
   vehiclePlate: 'L13',
+  trailerPlate: 'R22',
   driverName: 'E14',
   driverLicense: 'E16',
   // Блок "Работа водителя и автомобиля": строка "выезд из гаража" (13/14 —
@@ -174,6 +175,13 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.organization, organization || (doc.routes[0] && doc.routes[0].plantName) || '');
   xml = setCell(xml, CELLS.vehicleModel, doc.mixerName || '');
   xml = setCell(xml, CELLS.vehiclePlate, doc.mixerPlate || '');
+  // Прицеп — по просьбе пользователя, печатаем гос.номер в блоке "Прицеп 1"
+  // бланка (строка 22, R22:U22 — сразу после лейбла "Государственный
+  // номерной знак" I22:Q22; снято вручную по сырому XML шаблона — ячейка
+  // R22, саму раскладку визуально не проверял, стоит сверить на реальной
+  // распечатке). Пусто — ничего не печатаем, строка "Прицеп 1" остаётся
+  // как в чистом бланке.
+  if (doc.trailerPlate) xml = setCell(xml, CELLS.trailerPlate, doc.trailerPlate);
   xml = setCell(xml, CELLS.driverName, doc.driverName || '');
   xml = setCell(xml, CELLS.driverLicense, doc.driverLicenseNumber || '');
   xml = setCell(xml, CELLS.depDay, String(d.getDate()));

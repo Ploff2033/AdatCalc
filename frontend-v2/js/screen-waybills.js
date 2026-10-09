@@ -36,6 +36,7 @@
               '<div class="field" style="flex:1;min-width:140px" id="wb-date-to-field" hidden><label for="wb-date-to">по (включительно)</label><input id="wb-date-to" type="date" class="inp"></div>' +
               '<div class="field" style="flex:1.3;min-width:160px"><label for="wb-driver">Водитель</label><select id="wb-driver" class="inp"></select></div>' +
               '<div class="field" style="flex:1.3;min-width:160px"><label for="wb-mixer" id="wb-mixer-label">Миксер</label><select id="wb-mixer" class="inp"></select></div>' +
+              '<div class="field" style="flex:1;min-width:140px"><label for="wb-trailer">Прицеп (необязательно)</label><select id="wb-trailer" class="inp"></select></div>' +
               '<div class="field" style="flex:0.7;min-width:90px" id="wb-trips-field"><label for="wb-trips">Рейсов</label><input id="wb-trips" class="inp num" inputmode="numeric"></div>' +
               '<button type="button" class="btn ghost sm" id="wb-max-btn">MAX</button>' +
             '</div>' +
@@ -163,6 +164,18 @@
     if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
   }
 
+  // Прицеп — по просьбе пользователя, необязательный, один общий список
+  // (не переключается по типу рейса, в отличие от wb-mixer — прицеп может
+  // таскаться и миксером, и инертовозом).
+  function populateTrailerSelect() {
+    var select = document.getElementById('wb-trailer');
+    var prev = select.value;
+    select.innerHTML = '<option value="">Без прицепа</option>' + (State.data.trailers || []).slice()
+      .sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); })
+      .map(function (t) { return '<option value="' + t.id + '">' + t.name + (t.licensePlate ? ' (' + t.licensePlate + ')' : '') + '</option>'; }).join('');
+    if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
+  }
+
   // Разбирает "order:<id>"/"receipt:<id>" из select в единый объект —
   // remaining/distanceKm/tripCount читаются одинаково дальше по коду,
   // независимо от того, заказ это или поступление.
@@ -245,6 +258,7 @@
     var endDateStr = document.getElementById('wb-date-to').value;
     var driverId = document.getElementById('wb-driver').value;
     var mixerId = document.getElementById('wb-mixer').value;
+    var trailerId = document.getElementById('wb-trailer').value;
     if (!src || !startDateStr || !endDateStr || !driverId || !mixerId) {
       errorEl.textContent = 'Заполните заказ/поступление, обе даты диапазона, водителя и машину.';
       errorEl.hidden = false;
@@ -302,7 +316,8 @@
         var body = {
           tripDate: dateStr, driverId: driver.id, driverName: driver.name,
           driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
-          mixerPlate: mixer.licensePlate || '', distanceKm: src.distanceKm, tripCount: maxResult.max
+          mixerPlate: mixer.licensePlate || '', distanceKm: src.distanceKm, tripCount: maxResult.max,
+          trailerId: trailerId || null
         };
         if (src.kind === 'receipt') body.receiptId = src.id; else body.orderId = src.id;
 
@@ -378,10 +393,12 @@
     var driver = State.data.employees.find(function (e) { return e.id === driverId; });
     var vehicleList = src.kind === 'receipt' ? State.data.aggregateTrucks : State.data.mixers;
     var mixer = vehicleList.find(function (m) { return m.id === mixerId; });
+    var trailerId = document.getElementById('wb-trailer').value;
     var body = {
       tripDate: date, driverId: driver.id, driverName: driver.name,
       driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
-      mixerPlate: mixer.licensePlate || '', distanceKm: src.distanceKm, tripCount: trips
+      mixerPlate: mixer.licensePlate || '', distanceKm: src.distanceKm, tripCount: trips,
+      trailerId: trailerId || null
     };
     if (src.kind === 'receipt') body.receiptId = src.id; else body.orderId = src.id;
     try {
@@ -444,7 +461,7 @@
       row.innerHTML =
         '<div><input type="checkbox" class="wb-check"></div>' +
         '<div class="num" style="font-size:13px">' + entry.tripDate + '</div>' +
-        '<div class="stack" style="gap:1px"><span style="font-weight:500">' + entry.driverName + ' · ' + entry.mixerName + '</span><span class="hint">' + entry.plantName + sourceLabel + '</span></div>' +
+        '<div class="stack" style="gap:1px"><span style="font-weight:500">' + entry.driverName + ' · ' + entry.mixerName + (entry.trailerName ? ' + ' + entry.trailerName : '') + '</span><span class="hint">' + entry.plantName + sourceLabel + '</span></div>' +
         '<div class="r num">' + Format.fmtNum(entry.distanceKm, 1) + '</div>' +
         '<div class="r num">' + Format.fmtNum(entry.tripCount, 0) + '</div>' +
         '<div class="r num">' + Format.fmtNum(hours, 1) + '</div>' +
@@ -484,6 +501,7 @@
     populateSourceSelect();
     populateDriverSelect();
     populateVehicleSelect();
+    populateTrailerSelect();
     renderQueue();
     renderEntries();
     renderHint();

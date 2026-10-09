@@ -44,6 +44,12 @@ const COLUMNS = [
   ['mixer_id', 'mixerId'],
   ['mixer_name', 'mixerName'],
   ['mixer_plate', 'mixerPlate'],
+  // Прицеп — по просьбе пользователя, необязательный (большинство рейсов
+  // без него), снимок на момент распределения, тот же принцип, что у
+  // mixer_name/mixer_plate выше.
+  ['trailer_id', 'trailerId'],
+  ['trailer_name', 'trailerName'],
+  ['trailer_plate', 'trailerPlate'],
   ['distance_km', 'distanceKm'],
   ['trip_count', 'tripCount'],
   ['fuel_price_per_liter', 'fuelPricePerLiter'],
@@ -113,6 +119,10 @@ function sanitize(body) {
     mixerId: str(body.mixerId, 'mixerId'),
     mixerName: str(body.mixerName, 'mixerName'),
     mixerPlate: (body.mixerPlate || '').trim(),
+    // Прицеп — необязательный, без строгой валидации имени/номера (их
+    // подставит validateAndBuild из карточки техники, см. ниже), trailerId
+    // пустой/не задан — значит рейс без прицепа.
+    trailerId: body.trailerId ? String(body.trailerId).trim() : null,
     distanceKm: num(body.distanceKm, 'distanceKm'),
     tripCount: num(body.tripCount, 'tripCount')
   };
@@ -154,6 +164,18 @@ async function validateAndBuild(client, body, excludeId) {
 
   const cfg = await getLimitsConfig();
   await assertDriverWorkPeriod(client, f.driverId, f.tripDate);
+
+  // Прицеп — подставляем имя/гос.номер из карточки техники, как и
+  // mixerName/mixerPlate подставляются фронтом из выбранного элемента
+  // State.data.mixers/aggregateTrucks (тут — своя небольшая сверка, раз
+  // прицепы необязательны и выбираются отдельным select'ом).
+  let trailerName = '', trailerPlate = '';
+  if (f.trailerId) {
+    const { rows: trailerRows } = await client.query('SELECT name, license_plate FROM trailers WHERE id = $1', [f.trailerId]);
+    if (!trailerRows.length) throw new HttpError(400, 'Прицеп не найден');
+    trailerName = trailerRows[0].name;
+    trailerPlate = trailerRows[0].license_plate || '';
+  }
 
   let plantId, plantName, address, fuelRate;
 
@@ -237,7 +259,9 @@ async function validateAndBuild(client, body, excludeId) {
     plantName,
     address,
     fuelPricePerLiter,
-    fuelCostPerTrip
+    fuelCostPerTrip,
+    trailerName,
+    trailerPlate
   });
 }
 

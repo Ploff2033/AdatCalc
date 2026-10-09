@@ -8,6 +8,7 @@
   var selectedOrderId = '';
   var selectedDriverId = '';
   var selectedMixerId = '';
+  var selectedTrailerId = '';
   var tripsValue = 1;
 
   var HTML =
@@ -26,6 +27,10 @@
       '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
         '<span class="sub">Миксер</span>' +
         '<div id="mw-mixers" class="stack g8"></div>' +
+      '</section>' +
+      '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
+        '<span class="sub">Прицеп (необязательно)</span>' +
+        '<div id="mw-trailers" class="stack g8"></div>' +
       '</section>' +
       '<section class="card-flat stack g12" style="padding:12px;margin:0 -12px">' +
         '<div class="spread">' +
@@ -149,6 +154,18 @@
     renderPickList('mw-mixers', mixers, selectedMixerId, function (id) { selectedMixerId = id; });
   }
 
+  // Прицеп — по просьбе пользователя, необязательный, без бюджета часов
+  // (в отличие от водителя/миксера выше) — просто список техники + "Без
+  // прицепа" первым пунктом, тот же renderPickList, но с нейтральными
+  // pct/цветом (прогресс-бар тут не несёт смысла).
+  function renderTrailers() {
+    var trailers = [{ id: '', name: 'Без прицепа', disabled: false, pct: 0, barColor: 'transparent', textColor: 'var(--ink-soft)', label: '' }]
+      .concat((State.data.trailers || []).map(function (t) {
+        return { id: t.id, name: t.name + (t.licensePlate ? ' (' + t.licensePlate + ')' : ''), disabled: false, pct: 0, barColor: 'transparent', textColor: 'var(--ink-soft)', label: '' };
+      }));
+    renderPickList('mw-trailers', trailers, selectedTrailerId, function (id) { selectedTrailerId = id; });
+  }
+
   function renderTripsAndValidation() {
     var order = currentOrder();
     var saveBtn = document.getElementById('mw-save-btn');
@@ -200,7 +217,7 @@
       var order = State.data.orders.find(function (o) { return o.id === e.orderId; });
       var hours = e.tripCount * WaybillCalc.tripHours(e.distanceKm, cfg);
       return '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:8px 0;border-top:1px solid var(--border-soft)">' +
-        '<span style="font-weight:500;font-size:13px">' + e.driverName + ' · ' + e.mixerName + '</span><span class="num" style="font-size:13px">' + e.tripCount + ' рейс(ов)</span>' +
+        '<span style="font-weight:500;font-size:13px">' + e.driverName + ' · ' + e.mixerName + (e.trailerName ? ' + ' + e.trailerName : '') + '</span><span class="num" style="font-size:13px">' + e.tripCount + ' рейс(ов)</span>' +
         '<span class="hint">' + (order ? order.recipeName + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') : e.plantName) + '</span><span class="num hint">' + Format.fmtNum(hours, 1, 'ч') + '</span>' +
       '</div>';
     }).join('');
@@ -211,6 +228,7 @@
     renderOrderPicker();
     renderOrderMeta();
     renderDriversAndMixers();
+    renderTrailers();
     renderTripsAndValidation();
     renderDoneList();
   }
@@ -226,9 +244,11 @@
       await Api.post('/waybill-entries', {
         orderId: order.id, tripDate: selectedDate, driverId: driver.id, driverName: driver.name,
         driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
-        mixerPlate: mixer.licensePlate || '', distanceKm: order.distanceKm, tripCount: tripsValue
+        mixerPlate: mixer.licensePlate || '', distanceKm: order.distanceKm, tripCount: tripsValue,
+        trailerId: selectedTrailerId || null
       });
       tripsValue = 1;
+      selectedTrailerId = '';
       await State.loadAll();
       render();
     } catch (err) {

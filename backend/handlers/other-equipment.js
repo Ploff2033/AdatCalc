@@ -3,19 +3,21 @@ const HttpError = require('../http-error');
 const { str } = require('../validate');
 
 // "Другое" — упрощённая техника (погрузчики и т.п.), см. комментарий у
-// other_equipment в schema.sql: только имя и гос.номер, без грузоподъёмности/
-// амортизации/расхода топлива/Платона/одометра, как у mixers/aggregate-trucks
-// — она не участвует в себестоимости доставки или путевых листах, нужна
-// только для выбора в "Топливо" в ДДС (см. handlers/cash-entries.js).
+// other_equipment в schema.sql: только имя, гос.номер и гаражный номер,
+// без грузоподъёмности/амортизации/расхода топлива/Платона/одометра, как у
+// mixers/aggregate-trucks — она не участвует в себестоимости доставки или
+// путевых листах, нужна только для выбора в "Топливо" в ДДС (см.
+// handlers/cash-entries.js).
 
 function rowToItem(row) {
-  return { id: row.id, name: row.name, licensePlate: row.license_plate || '' };
+  return { id: row.id, name: row.name, licensePlate: row.license_plate || '', garageNumber: row.garage_number || '' };
 }
 
 function sanitize(body) {
   return {
     name: str(body.name, 'name'),
-    licensePlate: (body.licensePlate || '').trim()
+    licensePlate: (body.licensePlate || '').trim(),
+    garageNumber: (body.garageNumber || '').trim()
   };
 }
 
@@ -28,8 +30,8 @@ async function create(body) {
   const f = sanitize(body);
   const id = db.genId('oeq');
   await db.pool.query(
-    'INSERT INTO other_equipment (id, name, license_plate) VALUES ($1,$2,$3)',
-    [id, f.name, f.licensePlate]
+    'INSERT INTO other_equipment (id, name, license_plate, garage_number) VALUES ($1,$2,$3,$4)',
+    [id, f.name, f.licensePlate, f.garageNumber]
   );
   const { rows } = await db.pool.query('SELECT * FROM other_equipment WHERE id = $1', [id]);
   return rowToItem(rows[0]);
@@ -38,8 +40,8 @@ async function create(body) {
 async function update(id, body) {
   const f = sanitize(body);
   const { rowCount } = await db.pool.query(
-    'UPDATE other_equipment SET name=$2, license_plate=$3 WHERE id=$1',
-    [id, f.name, f.licensePlate]
+    'UPDATE other_equipment SET name=$2, license_plate=$3, garage_number=$4 WHERE id=$1',
+    [id, f.name, f.licensePlate, f.garageNumber]
   );
   if (!rowCount) throw new HttpError(404, 'Техника не найдена');
   const { rows } = await db.pool.query('SELECT * FROM other_equipment WHERE id = $1', [id]);

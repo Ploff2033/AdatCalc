@@ -12,6 +12,7 @@ const cashEntries = require('./handlers/cash-entries');
 const mixers = require('./handlers/mixers');
 const aggregateTrucks = require('./handlers/aggregate-trucks');
 const otherEquipment = require('./handlers/other-equipment');
+const trailers = require('./handlers/trailers');
 const orders = require('./handlers/orders');
 const waybillEntries = require('./handlers/waybill-entries');
 const materialReceipts = require('./handlers/material-receipts');
@@ -384,6 +385,13 @@ async function buildWaybill4sDocuments(entries) {
         driverLicenseNumber: group[0].driverLicenseNumber,
         mixerName: group[0].mixerName,
         mixerPlate: group[0].mixerPlate,
+        // Прицеп — по просьбе пользователя печатаем на бланке рядом с
+        // номером машины (см. buildFrontXml в waybill-xlsx-4s.js). Берём с
+        // первой записи группы — тот же приём, что у driverName/mixerName
+        // выше (один документ = один водитель+машина+день, прицеп на
+        // практике тоже не меняется внутри дня).
+        trailerName: group[0].trailerName || '',
+        trailerPlate: group[0].trailerPlate || '',
         fuelPricePerLiter: group[0].fuelPricePerLiter,
         odometerStart: chunkOdometerStart,
         odometerEnd,
@@ -640,6 +648,7 @@ const routes = [
   ...crudRoutes('/api/mixers', mixers, { read: null, write: 'admin' }),
   ...crudRoutes('/api/aggregate-trucks', aggregateTrucks, { read: null, write: 'admin' }),
   ...crudRoutes('/api/other-equipment', otherEquipment, { read: null, write: 'admin' }),
+  ...crudRoutes('/api/trailers', trailers, { read: null, write: 'admin' }),
 
   // Заказы — открыты всем, включая незалогиненных работников. Работник по
   // своей ссылке (?token=) видит только заказы своего завода — см. scopeByToken.

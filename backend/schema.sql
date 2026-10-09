@@ -655,3 +655,33 @@ CREATE TABLE IF NOT EXISTS other_equipment (
 );
 
 ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS other_equipment_id TEXT REFERENCES other_equipment(id) ON DELETE SET NULL;
+
+-- Прицепы — по просьбе пользователя: тот же набор полей, что у миксера/
+-- инертовоза (грузоподъёмность, амортизация, гос.номер, гаражный номер),
+-- БЕЗ расхода топлива/мочевины/Платона и одометра — прицеп не жжёт топливо
+-- сам (нет двигателя) и не имеет собственного пробега для путевого листа
+-- (считается по технике, которая его тащит).
+CREATE TABLE IF NOT EXISTS trailers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  capacity NUMERIC NOT NULL DEFAULT 0,
+  balance NUMERIC NOT NULL DEFAULT 0,
+  residual NUMERIC NOT NULL DEFAULT 0,
+  mileage NUMERIC NOT NULL DEFAULT 0,
+  license_plate TEXT NOT NULL DEFAULT '',
+  garage_number TEXT NOT NULL DEFAULT ''
+);
+
+-- Гаражные номера — по просьбе пользователя, у всей техники (внутренняя
+-- нумерация парка, отдельная от гос.номера).
+ALTER TABLE mixers ADD COLUMN IF NOT EXISTS garage_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS garage_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE other_equipment ADD COLUMN IF NOT EXISTS garage_number TEXT NOT NULL DEFAULT '';
+
+-- Прицеп на рейсе путевого листа — необязательный, снимок на момент
+-- распределения (тот же принцип, что у mixer_name/mixer_plate в
+-- waybill_entries выше: источник мог быть позже изменён/удалён, путевой
+-- лист остаётся таким, каким был напечатан).
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_id TEXT REFERENCES trailers(id) ON DELETE SET NULL;
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_plate TEXT NOT NULL DEFAULT '';
