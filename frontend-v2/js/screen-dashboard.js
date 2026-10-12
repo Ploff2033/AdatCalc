@@ -14,8 +14,23 @@
     '</div>' +
     '<div class="grid-4" id="d-kpi"></div>' +
     '<div class="grid-2" id="d-plants" style="gap:16px"></div>' +
-    '<div class="page-head" style="padding-top:8px"><h2 style="font-size:18px;font-weight:600">Остатки на складах</h2></div>' +
+    '<div class="page-head" style="padding-top:8px">' +
+      '<h2 style="font-size:18px;font-weight:600">Остатки на складах</h2>' +
+      '<span class="num" id="d-restock-total" style="font-weight:600"></span>' +
+    '</div>' +
     '<div class="grid-2" id="d-stock" style="gap:16px"></div>' +
+    // Сумма, необходимая на пополнение инертных — по просьбе пользователя:
+    // дефицит/предупреждение по порогу (stockThreshold) уже считался в
+    // renderStockSection ниже, но только как факт "мало" — без суммы в
+    // деньгах, из-за чего непонятно, сколько из выручки на самом деле уже
+    // "занято" будущей закупкой. Докупаем ДО порога (решение пользователя —
+    // отдельного "целевого запаса" сверх порога не завели), по всем
+    // материалам сразу (не только top-4 из карточки завода выше, где список
+    // обрезан для компактности) — полная картина важнее тут, чем краткость.
+    '<section class="card stack g12" id="d-restock-section" style="padding:18px 20px" hidden>' +
+      '<div class="spread" style="align-items:baseline"><h2 style="font-size:18px;font-weight:600">Нужно докупить инертных</h2><span class="num" id="d-restock-total-2" style="font-weight:600;font-size:17px"></span></div>' +
+      '<div id="d-restock-list" class="stack g6"></div>' +
+    '</section>' +
     '<section class="card stack g14" style="padding:20px">' +
       '<div class="spread" style="align-items:center;flex-wrap:wrap;gap:10px">' +
         '<h2 style="font-size:18px;font-weight:600">Динамика остатка</h2>' +
@@ -89,6 +104,50 @@
 
   function plantMaterials(plantId) {
     return allMaterials.filter(function (m) { return m.plantId === plantId && !m.stockUnlimited; });
+  }
+
+  // Сумма на докупку — по всем материалам всех заводов, где остаток
+  // (с учётом брони) ниже порога. needed = max(0, порог - доступно) — до
+  // порога, не до какого-то отдельного "целевого" запаса (решение
+  // пользователя, см. комментарий у HTML выше). cost = needed × цена
+  // материала (та же цена, что и в себестоимости заказа — без доставки,
+  // чистая закупочная цена единицы).
+  function restockItems() {
+    var plants = State.data.plants || [];
+    var items = [];
+    plants.forEach(function (plant) {
+      plantMaterials(plant.id).forEach(function (m) {
+        var avail = m.stockOnHand - m.stockReserved;
+        var needed = Math.max(0, m.stockThreshold - avail);
+        if (needed <= 0) return;
+        items.push({
+          plantName: plant.name,
+          materialName: m.name,
+          unit: m.unit,
+          neededQty: needed,
+          neededCost: needed * (m.price || 0)
+        });
+      });
+    });
+    return items;
+  }
+
+  function renderRestockSection() {
+    var items = restockItems();
+    var total = items.reduce(function (s, it) { return s + it.neededCost; }, 0);
+    var totalLabel = 'Нужно на закупку: ' + Format.fmt(total, 0);
+    document.getElementById('d-restock-total').textContent = items.length ? totalLabel : '';
+    document.getElementById('d-restock-total-2').textContent = Format.fmt(total, 0);
+    var section = document.getElementById('d-restock-section');
+    section.hidden = items.length === 0;
+    if (!items.length) return;
+    items.sort(function (a, b) { return b.neededCost - a.neededCost; });
+    document.getElementById('d-restock-list').innerHTML = items.map(function (it) {
+      return '<div class="spread" style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--border-soft)">' +
+        '<span>' + it.materialName + ' <span class="hint">· ' + it.plantName + '</span></span>' +
+        '<span class="num" style="white-space:nowrap"><span class="hint">' + Format.fmtNum(it.neededQty, 1, it.unit) + '</span> · <b>' + Format.fmt(it.neededCost, 0) + '</b></span>' +
+      '</div>';
+    }).join('');
   }
 
   function renderStockSection() {
@@ -281,6 +340,7 @@
     }).join('') || '<p class="empty-state">Заводов ещё нет — добавьте в <a href="#/settings" data-route="settings">Настройках</a>.</p>';
 
     renderStockSection();
+    renderRestockSection();
     renderChartSection();
   }
 
@@ -310,7 +370,7 @@
   function show() {
     if (!initialized) init();
     render();
-    loadMaterials().then(function () { renderStockSection(); renderChartSection(); });
+    loadMaterials().then(function () { renderStockSection(); renderRestockSection(); renderChartSection(); });
   }
 
   window.DashboardScreen = { show: show };
