@@ -451,6 +451,14 @@ button.row.rg-row:focus-visible { outline: 2px solid var(--accent); outline-offs
 .rg-photo .btn.sm.ghost-dark { background: transparent; border-color: #4A4D47; color: #fff; height: 40px; }
 .rg-photo-img { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; touch-action: pinch-zoom pan-x pan-y; }
 .rg-photo-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.rg-photo-foot {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.rg-photo-done { width: 100%; max-width: 420px; height: 48px; background: #fff; color: var(--ink); border-color: #fff; font-size: 15px; }
+.rg-photo-hint { font-size: 12px; color: #A3A69E; }
+/* На компьютере есть ✕ и Escape — нижняя кнопка и подсказка про свайп не нужны. */
+@media (hover: hover) and (pointer: fine) { .rg-photo-foot { display: none; } }
 body.rg-noscroll { overflow: hidden; }
 
 /* мобильный реестр (MobileRegistry.dc.html) */

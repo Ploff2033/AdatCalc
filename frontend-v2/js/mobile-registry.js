@@ -159,7 +159,7 @@
         '<div class="rgm-kv"><span>Оплачено</span><b class="num">' + R.rub(s.paid) + '</b></div>' +
         '<div class="rgm-kv"><span>Не оплачено</span><b class="num"' + (s.overdue ? ' style="color:var(--bad-fg)"' : '') + '>' + R.rub(s.unpaid) + '</b></div>' +
         it.payments.map(function (p) {
-          return '<div class="rgm-kv"><span class="num">' + R.ddmmyyyy(p.paidOn) + (p.file ? ' · <a href="' + esc(p.file.url) + '" target="_blank" rel="noopener">платёжка</a>' : '') + '</span>' +
+          return '<div class="rgm-kv"><span class="num">' + R.ddmmyyyy(p.paidOn) + (p.file ? ' · <a href="' + esc(p.file.url) + '"' + R.docTarget() + '>платёжка</a>' : '') + '</span>' +
             '<span class="num">' + R.rub(p.amount) + (canPay() ? ' <button type="button" class="btn ghost icon rgm-del-pay" data-id="' + esc(p.id) + '" aria-label="Удалить оплату">✕</button>' : '') + '</span></div>';
         }).join('') +
         (canPay() && s.unpaid > 0

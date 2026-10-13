@@ -312,6 +312,32 @@
 
   // ---------- просмотр фото на весь экран ----------
 
+  // Ссылки на документы (PDF, «Открыть» оригинал фото, платёжки). На
+  // компьютере — новая вкладка. На телефоне — та же вкладка: на iPhone (Safari
+  // и встроенный браузер Telegram) из новой вкладки нет очевидного пути назад,
+  // а в той же — работают свайп от левого края и «Назад» Telegram; адрес с
+  // #/registry/<номер> возвращает в ту же карточку.
+  function isTouch() {
+    return Boolean(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+  }
+
+  function docTarget() {
+    return isTouch() ? '' : ' target="_blank" rel="noopener"';
+  }
+
+  // Полноэкранное фото — слой поверх страницы, но с собственным шагом в
+  // истории браузера: на телефоне кнопка «Назад» должна закрыть фото, а не
+  // увести страницу под ним (баг: слой оставался открытым поверх нового
+  // экрана, и фото «открывалось повторно»). pushState без смены адреса —
+  // hashchange не срабатывает, роутер ничего не перерисовывает.
+  var photoInHistory = false;
+
+  function hidePhoto() {
+    var el = document.getElementById('rg-photo');
+    if (el) el.hidden = true;
+    document.body.classList.remove('rg-noscroll');
+  }
+
   function openPhoto(url, title) {
     var el = document.getElementById('rg-photo');
     if (!el) {
@@ -322,25 +348,96 @@
       el.setAttribute('aria-modal', 'true');
       el.innerHTML =
         '<div class="rg-photo-bar"><span class="rg-photo-title"></span>' +
-        '<a class="btn sm ghost-dark rg-photo-open" target="_blank" rel="noopener">Открыть</a>' +
+        '<a class="btn sm ghost-dark rg-photo-open">Открыть</a>' +
         '<button type="button" class="btn sm ghost-dark rg-photo-close" aria-label="Закрыть">✕</button></div>' +
-        '<div class="rg-photo-img"><img alt=""></div>';
+        '<div class="rg-photo-img"><img alt=""></div>' +
+        // Большая кнопка внизу — под большой палец: на iPhone ✕ наверху
+        // перекрывают «чёлка» и панель Telegram, а аппаратной «Назад» нет.
+        '<div class="rg-photo-foot"><button type="button" class="btn rg-photo-done">Закрыть</button>' +
+        '<span class="rg-photo-hint">или смахните фото вниз</span></div>';
       document.body.appendChild(el);
       el.querySelector('.rg-photo-close').addEventListener('click', closePhoto);
-      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePhoto(); });
+      el.querySelector('.rg-photo-done').addEventListener('click', closePhoto);
+      bindPhotoGestures(el);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !el.hidden) closePhoto();
+      });
+      // «Назад» (кнопка телефона/браузера) снимает наш шаг истории — закрываем слой.
+      window.addEventListener('popstate', function () {
+        if (!photoInHistory) return;
+        photoInHistory = false;
+        hidePhoto();
+      });
+      // Страница ушла на другой экран при открытом фото (например, по ссылке)
+      // — слой не должен остаться висеть поверх нового экрана.
+      window.addEventListener('hashchange', function () {
+        photoInHistory = false;
+        hidePhoto();
+      });
     }
     el.querySelector('img').src = url;
     el.querySelector('img').alt = title || 'Фото';
     el.querySelector('.rg-photo-title').textContent = title || '';
-    el.querySelector('.rg-photo-open').href = url;
+    var openLink = el.querySelector('.rg-photo-open');
+    openLink.href = url;
+    if (isTouch()) { openLink.removeAttribute('target'); openLink.removeAttribute('rel'); }
+    else { openLink.target = '_blank'; openLink.rel = 'noopener'; }
     el.hidden = false;
     document.body.classList.add('rg-noscroll');
+    if (!photoInHistory) {
+      history.pushState({ rgPhoto: true }, '');
+      photoInHistory = true;
+    }
   }
 
+  // Тап по тёмному фону (мимо фото) и свайп вниз — закрыть. Свайп не
+  // мешает масштабированию: при двух пальцах или увеличенной странице
+  // (visualViewport.scale > 1) жест не перехватывается.
+  function bindPhotoGestures(el) {
+    var wrap = el.querySelector('.rg-photo-img');
+    var img = wrap.querySelector('img');
+    var startX = 0, startY = null, dy = 0;
+    var zoomed = function () { return window.visualViewport && window.visualViewport.scale > 1.01; };
+    var reset = function () {
+      startY = null;
+      dy = 0;
+      img.style.transition = 'transform .18s ease';
+      img.style.transform = '';
+      el.style.backgroundColor = '';
+    };
+    wrap.addEventListener('click', function (e) {
+      if (e.target !== img) closePhoto();
+    });
+    wrap.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1 || zoomed()) { startY = null; return; }
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dy = 0;
+      img.style.transition = 'none';
+    }, { passive: true });
+    wrap.addEventListener('touchmove', function (e) {
+      if (startY === null) return;
+      if (e.touches.length !== 1 || zoomed()) { reset(); return; }
+      var dx = e.touches[0].clientX - startX;
+      dy = e.touches[0].clientY - startY;
+      if (dy <= 0 || Math.abs(dx) > dy) { img.style.transform = ''; return; }
+      img.style.transform = 'translateY(' + dy + 'px)';
+      el.style.backgroundColor = 'rgba(17,17,17,' + Math.max(0.35, 1 - dy / 450) + ')';
+    }, { passive: true });
+    wrap.addEventListener('touchend', function () {
+      if (startY === null) return;
+      var shouldClose = dy > 90;
+      reset();
+      if (shouldClose) closePhoto();
+    });
+    wrap.addEventListener('touchcancel', reset);
+  }
+
+  // Закрытие кнопкой ✕ / Escape — убираем и свой шаг истории, иначе
+  // следующее «Назад» ничего бы видимо не делало. Сам слой спрячет popstate.
   function closePhoto() {
-    var el = document.getElementById('rg-photo');
-    if (el) el.hidden = true;
-    document.body.classList.remove('rg-noscroll');
+    if (photoInHistory) history.back();
+    else hidePhoto();
   }
 
   // Миниатюра файла: фото — превью, открывается во весь экран; PDF —
@@ -350,7 +447,7 @@
       return '<button type="button" class="rg-thumb" data-photo="' + esc(f.url) + '" data-title="' + esc(f.kindLabel + ': ' + f.name) + '" aria-label="Открыть фото ' + esc(f.name) + '">' +
         '<img src="' + esc(f.url) + '" alt="" loading="lazy"></button>';
     }
-    return '<a class="rg-thumb pdf" href="' + esc(f.url) + '" target="_blank" rel="noopener" aria-label="Открыть PDF ' + esc(f.name) + '">PDF</a>';
+    return '<a class="rg-thumb pdf" href="' + esc(f.url) + '"' + docTarget() + ' aria-label="Открыть PDF ' + esc(f.name) + '">PDF</a>';
   }
 
   // Делегированный обработчик для всех .rg-thumb[data-photo] внутри root.
@@ -390,6 +487,7 @@
     openPhoto: openPhoto,
     closePhoto: closePhoto,
     thumb: thumb,
-    bindThumbs: bindThumbs
+    bindThumbs: bindThumbs,
+    docTarget: docTarget
   };
 })();
