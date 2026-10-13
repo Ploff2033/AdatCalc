@@ -13,7 +13,7 @@ const { genToken } = require('../tokens');
 // заводам сразу.
 async function get(role) {
   const { rows } = await db.pool.query(
-    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, shift_start_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id, mailru_login, mailru_app_password FROM config WHERE id = 1'
+    'SELECT company_requisites, driver_shift_hours, vehicle_shift_hours, avg_speed_kmh, unload_minutes, shift_start_minutes, universal_worker_token, universal_token_last_used_at, universal_token_last_used_ip, rentability_threshold_percent, telegram_bot_token, telegram_chat_id, telegram_proxy_url, mailru_login, mailru_app_password FROM config WHERE id = 1'
   );
   const row = rows[0];
   const out = {
@@ -37,6 +37,10 @@ async function get(role) {
     // поэтому наружу только admin (как universalWorkerToken выше).
     out.telegramBotToken = row.telegram_bot_token || '';
     out.telegramChatId = row.telegram_chat_id || '';
+    // Прокси для исходящих запросов к Telegram — найденный пользователем
+    // реальный случай (TCP до api.telegram.org недоступен с части серверов),
+    // см. telegram.js::proxyAgentFor. Пусто — прямое соединение.
+    out.telegramProxyUrl = row.telegram_proxy_url || '';
     // Логин/пароль Mail.ru — та же категория секрета (см. mailru-sync.js).
     out.mailruLogin = row.mailru_login || '';
     out.mailruAppPassword = row.mailru_app_password || '';
@@ -86,6 +90,10 @@ async function update(body, role) {
   if (role === 'admin' && body.telegramChatId !== undefined) {
     values.push(String(body.telegramChatId).trim());
     sets.push(`telegram_chat_id = $${values.length}`);
+  }
+  if (role === 'admin' && body.telegramProxyUrl !== undefined) {
+    values.push(String(body.telegramProxyUrl).trim());
+    sets.push(`telegram_proxy_url = $${values.length}`);
   }
   if (role === 'admin' && body.mailruLogin !== undefined) {
     values.push(String(body.mailruLogin).trim());

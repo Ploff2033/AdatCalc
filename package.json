@@ -9,7 +9,9 @@
     "test": "node --test --test-concurrency=1 \"backend/test/**/*.test.js\""
   },
   "dependencies": {
+    "https-proxy-agent": "^9.1.0",
     "jszip": "^3.10.2",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "socks-proxy-agent": "^10.1.0"
   }
 }

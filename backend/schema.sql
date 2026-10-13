@@ -775,3 +775,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pay_files_payment ON pay_files(payment_id)
 -- (бот тот же, что у заказов — telegram_bot_token). Секреты — видит только admin.
 ALTER TABLE config ADD COLUMN IF NOT EXISTS owner_token TEXT;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_chat_id TEXT;
+
+-- Прокси для исходящих запросов к api.telegram.org — найденный пользователем
+-- реальный случай: с части серверов (РФ-хостинг) Telegram недоступен
+-- напрямую на уровне TCP (TCP SYN до 443 не проходит ни из контейнера, ни с
+-- хоста — не баг кода, подтверждено диагностикой). http(s)://user:pass@host:port
+-- или socks5://user:pass@host:port — схема URL определяет тип (см.
+-- telegram.js::proxyAgentFor). Пусто — прямое соединение, как раньше.
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_proxy_url TEXT;

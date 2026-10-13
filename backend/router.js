@@ -829,7 +829,7 @@ const routes = [
     role: 'admin',
     handler: async (req, res, m, role) => {
       const body = await readBody(req);
-      if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined) {
+      if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined || body.telegramProxyUrl !== undefined) {
         await config.update(body, role);
       }
       try {

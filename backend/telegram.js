@@ -1,28 +1,50 @@
 const https = require('https');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const db = require('./db');
 
 // keepAlive — без него каждое сообщение заново делает TLS-хендшейк до
 // api.telegram.org (замерено: ~1.3с из ~1.5с общей задержки уходит именно на
 // него). С переиспользуемым соединением второе и последующие сообщения идут
 // заметно быстрее — только первое после старта сервера/простоя платит полную цену.
-const agent = new https.Agent({ keepAlive: true, timeout: 5000 });
+const directAgent = new https.Agent({ keepAlive: true, timeout: 5000 });
 
-// Токен/chat id читаются из config (правятся в Настройках без доступа к
-// серверу), при пустом значении — fallback на переменные окружения, чтобы
-// уже настроенные через .env боевые деплои не сломались, пока их явно не
-// перенастроят через интерфейс. Читаем заново на каждую отправку (не
-// кэшируем при старте сервера) — иначе смена токена в Настройках потребовала
-// бы перезапуска.
+// Прокси — найденный пользователем реальный случай: с части серверов (РФ-
+// хостинг) api.telegram.org недоступен напрямую на уровне TCP (TCP SYN до
+// 443 не проходит ни из контейнера, ни с хоста — подтверждено диагностикой,
+// не баг кода). Схема URL определяет тип прокси: http(s):// — обычный
+// HTTP(S)-прокси (HttpsProxyAgent, CONNECT-туннель), socks4/socks5:// —
+// SOCKS (SocksProxyAgent, то, что обычно отдают VPN-провайдеры). Агенты
+// кэшируются по URL прокси — тот же смысл, что у directAgent (не пересоздавать
+// TLS/туннель на каждое сообщение), просто один на каждый настроенный прокси,
+// а не один глобальный.
+const proxyAgentCache = new Map();
+function proxyAgentFor(proxyUrl) {
+  if (!proxyUrl) return directAgent;
+  if (proxyAgentCache.has(proxyUrl)) return proxyAgentCache.get(proxyUrl);
+  const isSocks = /^socks/i.test(proxyUrl);
+  const agent = isSocks ? new SocksProxyAgent(proxyUrl) : new HttpsProxyAgent(proxyUrl);
+  proxyAgentCache.set(proxyUrl, agent);
+  return agent;
+}
+
+// Токен/chat id/прокси читаются из config (правятся в Настройках без
+// доступа к серверу), при пустом значении — fallback на переменные
+// окружения, чтобы уже настроенные через .env боевые деплои не сломались,
+// пока их явно не перенастроят через интерфейс. Читаем заново на каждую
+// отправку (не кэшируем при старте сервера) — иначе смена токена/прокси в
+// Настройках потребовала бы перезапуска.
 async function getCredentials() {
   try {
-    const { rows } = await db.pool.query('SELECT telegram_bot_token, telegram_chat_id FROM config WHERE id = 1');
+    const { rows } = await db.pool.query('SELECT telegram_bot_token, telegram_chat_id, telegram_proxy_url FROM config WHERE id = 1');
     const row = rows[0] || {};
     return {
       botToken: row.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN,
-      chatId: row.telegram_chat_id || process.env.TELEGRAM_CHAT_ID
+      chatId: row.telegram_chat_id || process.env.TELEGRAM_CHAT_ID,
+      proxyUrl: row.telegram_proxy_url || process.env.TELEGRAM_PROXY_URL || ''
     };
   } catch (err) {
-    return { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID };
+    return { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID, proxyUrl: process.env.TELEGRAM_PROXY_URL || '' };
   }
 }
 
@@ -46,7 +68,7 @@ function describeError(err) {
   return parts.length ? parts.join(' ') : String(err);
 }
 
-function sendOnce(botToken, payload, onDone) {
+function sendOnce(botToken, payload, agent, onDone) {
   const req = https.request(
     {
       hostname: 'api.telegram.org',
@@ -79,8 +101,8 @@ function sendOnce(botToken, payload, onDone) {
 // ошибка только в консоли), а send() ниже передаёт — нужно для кнопки
 // "Отправить тестовое" в Настройках, которая должна показать реальный
 // результат, а не всегда "успех".
-function sendWithRetry(botToken, payload, attempt, resolve, reject) {
-  sendOnce(botToken, payload, (err) => {
+function sendWithRetry(botToken, payload, agent, attempt, resolve, reject) {
+  sendOnce(botToken, payload, agent, (err) => {
     if (!err) { if (resolve) resolve(); return; }
     if (attempt >= MAX_ATTEMPTS) {
       var described = describeError(err);
@@ -95,7 +117,7 @@ function sendWithRetry(botToken, payload, attempt, resolve, reject) {
       if (reject) reject(new Error(described));
       return;
     }
-    setTimeout(() => sendWithRetry(botToken, payload, attempt + 1, resolve, reject), RETRY_DELAY_MS);
+    setTimeout(() => sendWithRetry(botToken, payload, agent, attempt + 1, resolve, reject), RETRY_DELAY_MS);
   });
 }
 
@@ -104,37 +126,38 @@ function sendWithRetry(botToken, payload, attempt, resolve, reject) {
 // и т.п.) просто вешают .catch(()=>{}) и не ждут результата, а sendTest()
 // ниже действительно ждёт и сообщает об ошибке.
 async function send(text) {
-  const { botToken, chatId } = await getCredentials();
+  const { botToken, chatId, proxyUrl } = await getCredentials();
   if (!botToken || !chatId) throw new Error('Токен бота или ID чата не заданы');
-  return transport.post(botToken, chatId, text);
+  return transport.post(botToken, chatId, text, proxyUrl);
 }
 
 // Сам HTTP-вызов к Telegram — через объект, чтобы тесты реестра оплат могли
 // подменить его и проверить "что и в какой чат ушло" без сети.
 const transport = {
-  post(botToken, chatId, text) {
+  post(botToken, chatId, text, proxyUrl) {
     const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
-    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, 1, resolve, reject));
+    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, resolve, reject));
   }
 };
 
 // Реестр оплат — отдельный чат (config.telegram_registry_chat_id), бот тот
-// же, что у заказов. Чат не задан — молчим: уведомления реестра
-// необязательны, работа с заявками от них не зависит. Без fallback на env —
-// для реестра настройка только через интерфейс.
+// же, что у заказов, прокси (если настроен) — тоже тот же. Чат не задан —
+// молчим: уведомления реестра необязательны, работа с заявками от них не
+// зависит. Без fallback на env для чата — для реестра настройка только
+// через интерфейс.
 async function getRegistryCredentials() {
-  const { botToken } = await getCredentials();
+  const { botToken, proxyUrl } = await getCredentials();
   const { rows } = await db.pool.query('SELECT telegram_registry_chat_id FROM config WHERE id = 1');
-  return { botToken, chatId: (rows[0] && rows[0].telegram_registry_chat_id) || '' };
+  return { botToken, proxyUrl, chatId: (rows[0] && rows[0].telegram_registry_chat_id) || '' };
 }
 
 // Fire-and-forget, как notifyOrderCreated: вызывается без await из
 // handlers/registry.js, ошибка — только в лог, операцию не отменяет.
 function notifyRegistry(text) {
   return getRegistryCredentials()
-    .then(({ botToken, chatId }) => {
+    .then(({ botToken, chatId, proxyUrl }) => {
       if (!botToken || !chatId) return;
-      return transport.post(botToken, chatId, text);
+      return transport.post(botToken, chatId, text, proxyUrl);
     })
     .catch((err) => {
       console.error('Telegram (реестр оплат): ' + describeError(err));
@@ -143,10 +166,10 @@ function notifyRegistry(text) {
 
 // Кнопка "Отправить тестовое" в разделе реестра Настроек — ждёт результат.
 async function sendRegistryTest() {
-  const { botToken, chatId } = await getRegistryCredentials();
+  const { botToken, chatId, proxyUrl } = await getRegistryCredentials();
   if (!botToken) throw new Error('Токен бота не задан (раздел «Уведомления в Telegram»)');
   if (!chatId) throw new Error('ID чата реестра оплат не задан');
-  return transport.post(botToken, chatId, '✅ Тестовое сообщение реестра оплат AdatBeton Calc.');
+  return transport.post(botToken, chatId, '✅ Тестовое сообщение реестра оплат AdatBeton Calc.', proxyUrl);
 }
 
 function notifyOrderCreated(order) {

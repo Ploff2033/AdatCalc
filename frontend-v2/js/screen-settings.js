@@ -389,9 +389,16 @@
         '<div class="field"><label for="s-tg-token">Токен бота</label><input id="s-tg-token" class="inp num" value="' + (cfg.telegramBotToken || '') + '"></div>' +
         '<div class="field"><label for="s-tg-chat">ID чата</label><input id="s-tg-chat" class="inp num" value="' + (cfg.telegramChatId || '') + '"></div>' +
       '</div>' +
-      '<p class="hint" style="margin:0">Присылает: новый заказ, дефицит материала, материал ниже порога — сейчас все три вместе, отдельных переключателей пока нет.</p>';
+      // Прокси — по просьбе пользователя: с части серверов (РФ-хостинг)
+      // api.telegram.org недоступен напрямую на уровне TCP (подтверждено
+      // диагностикой — не баг кода). http(s)://user:pass@host:port или
+      // socks5://user:pass@host:port, см. telegram.js::proxyAgentFor. Пусто —
+      // прямое соединение, как раньше.
+      '<div class="field"><label for="s-tg-proxy">Прокси (необязательно)</label><input id="s-tg-proxy" class="inp" placeholder="socks5://user:pass@host:port или http://host:port" value="' + (cfg.telegramProxyUrl || '') + '"></div>' +
+      '<p class="hint" style="margin:0">Присылает: новый заказ, дефицит материала, материал ниже порога — сейчас все три вместе, отдельных переключателей пока нет. Прокси нужен, только если сервер не достаёт до Telegram напрямую (таймауты при отправке).</p>';
     document.getElementById('s-tg-token').addEventListener('input', function () { markDirty('Telegram-токен'); });
     document.getElementById('s-tg-chat').addEventListener('input', function () { markDirty('Telegram chat id'); });
+    document.getElementById('s-tg-proxy').addEventListener('input', function () { markDirty('Telegram-прокси'); });
     document.getElementById('s-tg-test').addEventListener('click', async function (e) {
       var btn = e.target;
       var original = btn.textContent;
@@ -403,7 +410,8 @@
         // POST /api/config/telegram-test в router.js.
         await Api.post('/config/telegram-test', {
           telegramBotToken: document.getElementById('s-tg-token').value.trim(),
-          telegramChatId: document.getElementById('s-tg-chat').value.trim()
+          telegramChatId: document.getElementById('s-tg-chat').value.trim(),
+          telegramProxyUrl: document.getElementById('s-tg-proxy').value.trim()
         });
         await State.loadAll();
         dirtyFields = {};
@@ -666,6 +674,7 @@
       if (tgTokenEl) {
         configBody.telegramBotToken = tgTokenEl.value.trim();
         configBody.telegramChatId = document.getElementById('s-tg-chat').value.trim();
+        configBody.telegramProxyUrl = document.getElementById('s-tg-proxy').value.trim();
       }
       // Поля Mail.ru — тоже только у admin (см. renderMailru), тот же приём.
       var mailruLoginEl = document.getElementById('s-mailru-login');
