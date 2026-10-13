@@ -22,7 +22,43 @@
     document.getElementById('app-shell').hidden = false;
   }
 
+  // Учредитель по своей ссылке (/v2/?owner=<токен>[#/registry/<номер>]) —
+  // реестр оплат, и больше ничего: без сайдбара, нижнего меню, выбора
+  // завода и State.loadAll() (остальное API ему всё равно закрыто). Роутер
+  // не запускаем — свой простой hashchange на один экран.
+  async function bootOwner() {
+    document.body.classList.add('owner-mode');
+    try {
+      await Registry.api.get('/owner/check');
+    } catch (err) {
+      var box = document.getElementById('load-error');
+      document.getElementById('login-screen').hidden = true;
+      document.getElementById('app-shell').hidden = false;
+      box.hidden = false;
+      box.textContent = err.status === 401
+        ? 'Ссылка недействительна. Попросите администратора прислать актуальную ссылку на реестр оплат.'
+        : 'Не удалось связаться с сервером: ' + err.message;
+      return;
+    }
+    showApp();
+    var page = document.getElementById('page-registry');
+    Array.prototype.forEach.call(document.querySelectorAll('.page[data-route]'), function (el) { el.hidden = el !== page; });
+    document.body.dataset.route = 'registry';
+    var showFromHash = function () {
+      var m = /^#\/registry\/(.+)$/.exec(location.hash);
+      var param = '';
+      if (m) { try { param = decodeURIComponent(m[1]); } catch (err) { param = ''; } }
+      MobileRegistryScreen.show(param, page);
+    };
+    window.addEventListener('hashchange', showFromHash);
+    showFromHash();
+  }
+
   async function boot() {
+    if (Registry.isOwnerMode()) {
+      await bootOwner();
+      return;
+    }
     LoginScreen.init();
 
     var role = await Auth.refreshMe();

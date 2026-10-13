@@ -23,6 +23,7 @@
       fleet: window.FleetScreen,
       clients: window.ClientsScreen,
       cash: window.CashScreen,
+      registry: window.RegistryScreen,
       personnel: window.PersonnelScreen
     };
   }
@@ -43,7 +44,9 @@
   // receipts — тот же уровень, что и waybills (admin-only): рейсы
   // поступлений распределяются тем же экраном путевых листов, доступ к
   // обоим должен совпадать.
-  var MIN_ROLE = { dashboard: 'admin', waybills: 'admin', receipts: 'admin', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager', stock: 'manager' };
+  // registry (реестр оплат) — admin; учредитель по своей ссылке попадает в
+  // реестр мимо роутера (см. app.js::bootOwner).
+  var MIN_ROLE = { registry: 'admin', dashboard: 'admin', waybills: 'admin', receipts: 'admin', settings: 'manager', materials: 'manager', recipes: 'manager', fleet: 'manager', personnel: 'admin', clients: 'manager', stock: 'manager' };
   var current = null;
 
   function routeFromHash() {
@@ -56,24 +59,32 @@
     return !min || Auth.isAtLeast(min);
   }
 
-  function show(route) {
+  // route может нести параметр после "/": "registry/121026-57" — экран
+  // получает его в show(param) (ссылка на конкретную заявку из Telegram).
+  function show(fullRoute) {
     if (window.Viewport) Viewport.applyBottomNavVisibility();
     var SCREENS = screens();
-    if (!SCREENS[route] || !allowed(route)) route = 'main';
+    var slash = fullRoute.indexOf('/');
+    var route = slash === -1 ? fullRoute : fullRoute.slice(0, slash);
+    var param = '';
+    if (slash !== -1) {
+      try { param = decodeURIComponent(fullRoute.slice(slash + 1)); } catch (err) { param = ''; }
+    }
+    if (!SCREENS[route] || !allowed(route)) { route = 'main'; param = ''; }
     Array.prototype.forEach.call(document.querySelectorAll('.page[data-route]'), function (el) {
       el.hidden = el.dataset.route !== route;
     });
     Shell.highlightActive(route);
     var screen = SCREENS[route];
-    if (screen && screen.show) screen.show();
-    current = route;
+    if (screen && screen.show) screen.show(param);
+    current = param ? route + '/' + encodeURIComponent(param) : route;
     // data-route на <body> — зацепка для CSS конкретного экрана (пока
     // только мобильный Расчёт, см. .mobile-page-flat/.sidebar-brand в
     // styles.css — эксперимент, не коммитить без решения пользователя),
     // без неё пришлось бы лезть в router.js каждый раз, когда у очередного
     // мобильного экрана появляется свой кастомный хедер.
     document.body.dataset.route = route;
-    if (location.hash.slice(1) !== '/' + route) history.replaceState(null, '', '#/' + route);
+    if (location.hash.slice(1) !== '/' + current) history.replaceState(null, '', '#/' + current);
   }
 
   // Перерисовать текущий экран без смены маршрута — после смены завода/после

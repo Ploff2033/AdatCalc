@@ -37,6 +37,9 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER:-calc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-calc}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      # Публичный адрес для ссылок учредителя в Telegram-уведомлениях реестра
+      # оплат (https://домен, без слэша в конце). Пусто — берётся из заголовков запроса.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
 
 volumes:
   pgdata:

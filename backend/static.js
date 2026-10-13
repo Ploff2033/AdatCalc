@@ -10,7 +10,7 @@ const ROOT_SHARED = path.join(__dirname, '..', 'frontend', 'js', 'shared');
 // frontend/frontend-v2 (не должны попасть под их SPA-fallback), отдаются
 // отдельным префиксом, тем же serveStatic (кэш/gzip им не нужны — картинки,
 // а не текст, но остальная механика —304 по Last-Modified и т.п. — общая).
-const ROOT_UPLOADS = path.join(__dirname, 'uploads');
+const ROOT_UPLOADS = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -22,7 +22,10 @@ const CONTENT_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
-  '.webp': 'image/webp'
+  '.webp': 'image/webp',
+  // Счета реестра оплат (backend/registry-files.js) — без явного типа
+  // телефон скачал бы PDF как бинарник вместо встроенного просмотрщика.
+  '.pdf': 'application/pdf'
 };
 
 // Сжимаем только текстовые форматы — картинки/иконки и так компактны,

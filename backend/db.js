@@ -28,6 +28,7 @@ async function migrate() {
   await pool.query(schema);
   await backfillAccessTokens();
   await backfillUniversalToken();
+  await backfillOwnerToken();
 }
 
 // Заводы, созданные до появления access_token (или через ALTER TABLE на уже
@@ -47,6 +48,12 @@ async function backfillUniversalToken() {
     'UPDATE config SET universal_worker_token = $1 WHERE id = 1 AND universal_worker_token IS NULL',
     [genToken()]
   );
+}
+
+// Токен ссылки учредителя (реестр оплат) — так же, один раз, если пуст:
+// ссылка в Настройках есть сразу, без отдельного шага "сгенерировать".
+async function backfillOwnerToken() {
+  await pool.query('UPDATE config SET owner_token = $1 WHERE id = 1 AND owner_token IS NULL', [genToken()]);
 }
 
 // Заполняет базу начальными данными только если она реально пустая (первый
@@ -132,6 +139,9 @@ async function seedIfEmpty() {
 async function load() {
   await migrate();
   await seedIfEmpty();
+  // На свежей базе строка config появляется только в seedIfEmpty() —
+  // после migrate(), так что токен учредителя дозаполняем ещё раз.
+  await backfillOwnerToken();
 }
 
 module.exports = { pool, genId, load, migrate, seedIfEmpty };

@@ -388,3 +388,110 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
   .login-card { width: auto; }
   .login-form-side { padding: 24px; }
 }
+
+/* ---------- реестр оплат (screen-registry.js / mobile-registry.js, макеты Payments*) ---------- */
+.chip.part { background: #E1E7F0; color: #28406A; }
+.rg-filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.rg-filter { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.rg-filter .inp { width: 180px; }
+.rg-tile { padding: 12px 16px; }
+.rg-tile-val { font-size: 22px; font-weight: 500; }
+.rg-tile.bad { background: var(--bad-bg); border-color: #E3B8B1; }
+.rg-tile.bad .cap, .rg-tile.bad .rg-tile-val { color: var(--bad-fg); }
+.rg-group {
+  display: flex; justify-content: space-between; align-items: center; padding: 0 16px; height: 38px;
+  background: var(--surface-3); border-bottom: 1px solid var(--border); font-weight: 600;
+}
+.rg-group .num { font-size: 12px; color: var(--ink-soft); }
+button.row.rg-row {
+  width: 100%; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; font: inherit;
+  color: inherit; text-align: left; cursor: pointer; min-height: 56px; padding-top: 6px; padding-bottom: 6px;
+}
+button.row.rg-row:hover { background: var(--surface-2); }
+button.row.rg-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rg-row.overdue { background: #FBECE8; box-shadow: inset 4px 0 0 #B3261E; }
+.rg-row.overdue:hover { background: #F8E2DD; }
+.rg-total { background: var(--surface-3); font-weight: 600; border-bottom: 0; }
+.rg-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rg-overdue-text { color: var(--bad-fg); font-weight: 600; }
+.rg-filecount {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--mute-bg); color: var(--mute-fg); font-size: 11px; font-weight: 600; vertical-align: 1px;
+}
+.rg-backdrop { position: fixed; inset: 0; background: rgba(28,29,27,.28); z-index: 30; }
+.drawer.rg-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 560px; max-width: 100vw; max-height: none; z-index: 31;
+  border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0;
+}
+.rg-block { display: flex; flex-direction: column; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
+.rg-block:last-child { border-bottom: 0; }
+.rg-block-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rg-block-h h3 { font-size: 15px; font-weight: 600; }
+.rg-sums { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+.rg-pay { display: grid; grid-template-columns: 96px 130px minmax(0,1fr) 36px; gap: 10px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border-soft); }
+.rg-pay-add { display: grid; grid-template-columns: 160px minmax(0,1fr) auto; gap: 10px; }
+.rg-drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px;
+  border: 1px dashed #B9B3A7; border-radius: 6px; background: #fff; text-align: center; font-size: 13px; color: var(--ink-soft);
+}
+.rg-drop.over { border-color: var(--accent); background: var(--act-bg); }
+.rg-file { display: grid; grid-template-columns: 44px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 6px 6px 6px 8px; border: 1px solid #CFCAC0; border-radius: 4px; background: #fff; }
+.rg-file-ico, .rg-thumb {
+  width: 44px; height: 44px; border-radius: 4px; border: 1px solid #CFCAC0; display: flex; align-items: center; justify-content: center;
+  font: 700 11px 'Rubik', sans-serif; background: var(--surface-3); color: var(--ink-soft); overflow: hidden; padding: 0; cursor: pointer; text-decoration: none; flex: none;
+}
+.rg-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rg-thumb.pdf { background: var(--bad-bg); color: var(--bad-fg); border-color: #E3B8B1; }
+.lbl-like { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+/* полноэкранное фото (Registry.openPhoto) */
+.rg-photo { position: fixed; inset: 0; z-index: 60; background: #111; display: flex; flex-direction: column; }
+.rg-photo-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px calc(8px) 12px; color: #fff; padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+.rg-photo-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.rg-photo .btn.sm.ghost-dark { background: transparent; border-color: #4A4D47; color: #fff; height: 40px; }
+.rg-photo-img { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; touch-action: pinch-zoom pan-x pan-y; }
+.rg-photo-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+body.rg-noscroll { overflow: hidden; }
+
+/* мобильный реестр (MobileRegistry.dc.html) */
+.rgm-head { padding: 10px 12px; background: var(--sidebar-bg); color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rgm-head h1 { font-size: 22px; font-weight: 600; }
+.rgm-cap { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--sidebar-muted); font-weight: 600; }
+.rgm-excel { height: 40px; padding: 0 12px; background: transparent; border-color: #4A4D47; color: #fff; }
+.rgm-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 16px; }
+.rgm-body .seg button { height: 42px; font-size: 14px; }
+.rgm-filters { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 6px; }
+.mf {
+  position: relative; display: flex; align-items: center; gap: 4px; height: 44px; box-sizing: border-box; border: 1px solid #CFCAC0;
+  border-radius: 4px; background: #fff; padding: 0 10px; font-size: 13px; min-width: 0;
+}
+.mf-l { color: var(--muted); flex: none; }
+.mf select { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--ink); appearance: none; -webkit-appearance: none; padding: 0; height: 100%; text-overflow: ellipsis; }
+.rgm-summary { padding: 2px 2px 4px; }
+.rgm-sep { margin: 4px -12px 0; padding: 8px 12px; background: var(--border-soft); border-top: 2px solid #CFCAC0; display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+.rgm-card { background: var(--surface); margin: 0 -12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+.rgm-card.overdue { background: #FBECE8; box-shadow: inset 4px 0 0 #B3261E; }
+.rgm-title { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 12px; align-items: baseline; font-weight: 600; }
+.rgm-title .num { font-size: 17px; white-space: nowrap; }
+.rgm-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+.rgm-thumbs .rg-thumb { width: 52px; height: 52px; }
+.rgm-thumbs.big .rg-thumb { width: 76px; height: 76px; }
+.rgm-actions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; }
+.rgm-actions .btn { height: 44px; padding: 0 6px; }
+.rgm-actions .btn.ghost { background: #fff; }
+.rgm-reject { color: var(--bad-fg) !important; border-color: #E3B8B1 !important; }
+.rgm-panel { background: var(--surface); margin: 0 -12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.rgm-kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 14px; }
+.rgm-kv > span:first-child { color: var(--muted); flex: none; }
+.rgm-kv > span:last-child { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
+/* режим учредителя (app.js::bootOwner): только реестр, без сайдбара и меню */
+body.owner-mode .sidebar, body.owner-mode .bottom-nav.nav, body.owner-mode .bottom-nav { display: none !important; }
+body.owner-mode .main-area { max-width: 720px; margin: 0 auto; width: 100%; }
+body.owner-mode .page { padding: 0; gap: 0; }
+
+@media (max-width: 860px) {
+  body[data-route="registry"] .page { padding: 0; gap: 0; }
+  body[data-route="registry"] .sidebar-brand .name, body[data-route="registry"] .sidebar-brand .role { display: none; }
+  .drawer.rg-drawer { width: 100vw; }
+}

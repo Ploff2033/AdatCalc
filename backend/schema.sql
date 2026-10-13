@@ -685,3 +685,93 @@ ALTER TABLE other_equipment ADD COLUMN IF NOT EXISTS garage_number TEXT NOT NULL
 ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_id TEXT REFERENCES trailers(id) ON DELETE SET NULL;
 ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_plate TEXT NOT NULL DEFAULT '';
+
+-- ==================== Реестр оплат (change reestr-oplat) ====================
+-- Заявки на оплату для учредителя: admin заводит заявку, учредитель (по
+-- своей токен-ссылке, config.owner_token) принимает решение, admin вносит
+-- фактические оплаты. Сам платёж — вне системы (бухгалтер, банк).
+-- Модуль самостоятельный: ни с ДДС (cash_entries), ни с plants/employees/
+-- clients не связан (решение пользователя — "два разных процесса").
+
+-- Справочники реестра — свои, не plants и не категории ДДС (у тех свои
+-- правила, см. cash-entries.js::categoriesFor). hidden — "скрыто из выбора":
+-- использованное значение не удаляется, а скрывается (старые заявки
+-- продолжают его показывать). Уникальность — без учёта регистра.
+CREATE TABLE IF NOT EXISTS pay_categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pay_categories_name ON pay_categories (lower(name));
+
+CREATE TABLE IF NOT EXISTS pay_units (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pay_units_name ON pay_units (lower(name));
+
+-- Статус заявки НЕ хранится — вычисляется из decision/approved_amount и
+-- суммы оплат (backend/registry-calc.js::computeState), тот же принцип,
+-- что и "сторнирована" у cash_entries: иначе рассинхрон при удалении
+-- оплаты или правке "К оплате". decision: NULL (ожидает решения) |
+-- 'approved' | 'rejected' | 'postponed'.
+-- seq — сквозной номер (SERIAL: удалённый номер повторно не выдаётся),
+-- number = 'DDMMYY-seq' — фиксируется при создании и при правках не меняется.
+CREATE TABLE IF NOT EXISTS pay_requests (
+  id TEXT PRIMARY KEY,
+  seq SERIAL UNIQUE,
+  number TEXT NOT NULL UNIQUE,
+  unit_id TEXT NOT NULL REFERENCES pay_units(id) ON DELETE RESTRICT,
+  category_id TEXT NOT NULL REFERENCES pay_categories(id) ON DELETE RESTRICT,
+  applicant TEXT NOT NULL DEFAULT '',
+  basis TEXT NOT NULL DEFAULT '',
+  recipient TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  due_date DATE,
+  decision TEXT CHECK (decision IN ('approved', 'rejected', 'postponed')),
+  approved_amount NUMERIC(14,2),
+  decision_comment TEXT NOT NULL DEFAULT '',
+  decided_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pay_requests_created ON pay_requests(created_at DESC);
+
+-- ON DELETE RESTRICT — заявку с оплатами удалить нельзя (спека: сначала
+-- удалить оплаты), а не каскадом молча.
+CREATE TABLE IF NOT EXISTS pay_payments (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES pay_requests(id) ON DELETE RESTRICT,
+  paid_on DATE NOT NULL,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pay_payments_request ON pay_payments(request_id);
+
+-- Файлы заявки (payment_id IS NULL) и платёжки (payment_id задан, не
+-- больше одной на оплату). stored_name — 128 бит случайности + расширение,
+-- лежит в uploads/registry/, отдаётся без входа (ссылки из Excel у
+-- бухгалтера); original_name — то, что показывается в интерфейсе.
+-- Каскады удаляют строки, сами файлы на диске удаляет код (registry-files.js).
+CREATE TABLE IF NOT EXISTS pay_files (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES pay_requests(id) ON DELETE CASCADE,
+  payment_id TEXT REFERENCES pay_payments(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'invoice' CHECK (kind IN ('invoice', 'contract', 'payment_order', 'other')),
+  original_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  stored_name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pay_files_request ON pay_files(request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pay_files_payment ON pay_files(payment_id) WHERE payment_id IS NOT NULL;
+
+-- Ссылка учредителя (/v2/?owner=<token>) и отдельный Telegram-чат реестра
+-- (бот тот же, что у заказов — telegram_bot_token). Секреты — видит только admin.
+ALTER TABLE config ADD COLUMN IF NOT EXISTS owner_token TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_chat_id TEXT;

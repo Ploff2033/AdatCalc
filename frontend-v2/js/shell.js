@@ -59,6 +59,13 @@
     // телефона пункта нет вообще (это не сценарий анонимного работника).
     var receiptsLink = document.querySelector('#sb-nav-main a[data-route="receipts"]');
     if (receiptsLink) receiptsLink.hidden = !Auth.isAtLeast('admin');
+    // «Реестр оплат» — только admin (учредитель попадает в реестр по своей
+    // ссылке, без сайдбара — см. app.js::bootOwner). На телефоне — пятый
+    // пункт нижнего меню, тоже только у admin.
+    var registryLink = document.querySelector('#sb-nav-main a[data-route="registry"]');
+    if (registryLink) registryLink.hidden = !Auth.isAtLeast('admin');
+    var bottomRegistryLink = document.querySelector('.bottom-nav a[data-route="registry"]');
+    if (bottomRegistryLink) bottomRegistryLink.hidden = !Auth.isAtLeast('admin');
     var stockLink = document.querySelector('#sb-nav-main a[data-route="stock"]');
     if (stockLink) stockLink.hidden = !Auth.isAtLeast('manager');
     // «Персонал» — как и в v1 (auth-ui.js: tabButton('personnel').hidden),

@@ -25,6 +25,7 @@ const auth = require('./handlers/auth');
 const db = require('./db');
 const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
 const waybillXlsx4s = require('./waybill-xlsx-4s');
+const registryRoutes = require('./registry-routes');
 
 const ROLE_RANK = { manager: 1, admin: 2 };
 
@@ -883,6 +884,10 @@ const routes = [
       sendJson(res, 204);
     }
   },
+  // Реестр оплат — своя модель доступа (admin / учредитель по токену),
+  // см. registry-routes.js.
+  ...registryRoutes({ readBody, sendJson }),
+
   {
     method: 'GET',
     pattern: /^\/api\/auth\/me$/,
@@ -903,7 +908,14 @@ async function handleRequest(req, res) {
       const match = pathname.match(route.pattern);
       if (match) {
         try {
-          const role = await resolveRole(req);
+          let role = await resolveRole(req);
+          if (route.registryRoles) {
+            role = await registryRoutes.resolveRegistryRole(req, role);
+            if (!route.registryRoles.includes(role)) {
+              sendError(res, new HttpError(403, 'Недостаточно прав'));
+              return;
+            }
+          }
           if (route.role && !hasRole(role, route.role)) {
             sendError(res, new HttpError(403, 'Недостаточно прав'));
             return;

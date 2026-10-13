@@ -1,0 +1,395 @@
+(function () {
+  // Реестр оплат — общее для десктопного экрана admin (screen-registry.js) и
+  // мобильного (mobile-registry.js, он же экран учредителя): запросы к
+  // /api/registry/*, форматирование, статусы, экспорт в Excel.
+  //
+  // Свой fetch-обёртка, а не shared/api.js: учредитель ходит без сессии, по
+  // токену из своей ссылки (?owner=...), и каждый запрос реестра несёт его в
+  // заголовке X-Owner-Token (см. backend/registry-routes.js). Токен остаётся
+  // в адресе страницы — ссылка из Telegram и ярлык "на экран Домой"
+  // работают сами по себе, без сохранения где-то ещё.
+
+  function ownerToken() {
+    try { return new URLSearchParams(location.search).get('owner') || ''; }
+    catch (err) { return ''; }
+  }
+
+  function isOwnerMode() {
+    return Boolean(ownerToken());
+  }
+
+  async function request(method, path, opts) {
+    var o = opts || {};
+    var headers = {};
+    var token = ownerToken();
+    if (token) headers['X-Owner-Token'] = token;
+    var body;
+    if (o.json !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(o.json);
+    } else if (o.raw !== undefined) {
+      headers['Content-Type'] = o.raw.type || 'application/octet-stream';
+      body = o.raw;
+    }
+    var res = await fetch('/api/registry' + path, { method: method, headers: headers, body: body });
+    if (res.status === 204) return null;
+    var data = null;
+    try { data = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok) {
+      var msg = (data && data.error) || ('Ошибка запроса (' + res.status + ')');
+      // Прокси перед приложением со своим лимитом тела отвечает 413 без
+      // нашего JSON — даём понятный текст вместо "Ошибка запроса (413)".
+      if (res.status === 413 && !(data && data.error)) msg = 'Файл слишком большой для сервера (больше 10 МБ или лимит прокси)';
+      var err = new Error(msg);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  var api = {
+    get: function (path) { return request('GET', path); },
+    post: function (path, json) { return request('POST', path, { json: json || {} }); },
+    put: function (path, json) { return request('PUT', path, { json: json || {} }); },
+    del: function (path) { return request('DELETE', path); },
+    // blob — File или Blob; имя и тип файла — в query, тело — сами байты.
+    upload: function (path, blob, query) {
+      var qs = new URLSearchParams(query || {}).toString();
+      return request('POST', path + (qs ? '?' + qs : ''), { raw: blob });
+    }
+  };
+
+  // ---------- форматирование ----------
+
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function money(n) {
+    return Number(n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function rub(n) {
+    return money(n) + ' ₽';
+  }
+
+  // 'YYYY-MM-DD' → '12.10' / '12.10.2026'
+  function ddmm(iso) {
+    if (!iso) return '';
+    var p = iso.split('-');
+    return p[2] + '.' + p[1];
+  }
+  function ddmmyyyy(iso) {
+    if (!iso) return '';
+    var p = iso.split('-');
+    return p[2] + '.' + p[1] + '.' + p[0];
+  }
+  function tsDate(ts) {
+    return ts ? new Date(ts).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+  }
+
+  // Локальная дата без ухода через UTC (тот же класс бага, что описан в
+  // screen-cash.js::localDateStr).
+  function localDateStr(d) {
+    d = d || new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function fileSize(bytes) {
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' МБ';
+    return Math.max(1, Math.round(bytes / 1024)) + ' КБ';
+  }
+
+  // Цвета по решению (просьба пользователя): одобрено — зелёный, отклонено —
+  // красный, отложено — жёлтый. "Ожидает решения" — оранжевый (требует
+  // действия), чтобы не сливаться с жёлтым "Отложена". Частичная оплата —
+  // синий: решение "одобрено", но деньги ещё в процессе.
+  var STATUS_CHIP = { pending: 'act', approved: 'ok', partial: 'part', paid: 'ok', rejected: 'bad', postponed: 'warn' };
+  var DECISION_CHIP = { approved: 'ok', rejected: 'bad', postponed: 'warn' };
+  var STATUS_OPTIONS = [
+    { id: '', label: 'все' },
+    { id: 'pending', label: 'Ожидает решения' },
+    { id: 'approved', label: 'Одобрена' },
+    { id: 'partial', label: 'Частично оплачена' },
+    { id: 'postponed', label: 'Отложена' },
+    { id: 'paid', label: 'Оплачена' },
+    { id: 'rejected', label: 'Отклонена' }
+  ];
+  var GROUP_LABELS = ['Ожидает решения', 'Одобрена / Частично оплачена', 'Отложена', 'Закрытые'];
+  var FILE_KINDS = [
+    { id: 'invoice', label: 'Счёт' },
+    { id: 'contract', label: 'Договор' },
+    { id: 'payment_order', label: 'Платёжка' },
+    { id: 'other', label: 'Прочее' }
+  ];
+
+  // Текст самого решения (а не статуса оплаты): у одобренной и частично
+  // оплаченной заявки решение одно — «Одобрено».
+  var DECISION_LABELS = { approved: 'Одобрено', rejected: 'Отклонено', postponed: 'Отложено' };
+  function decisionLabel(item) {
+    var label = DECISION_LABELS[item.decision] || '';
+    if (item.decision === 'approved' && item.approvedAmount < item.amount) label += ' ' + rub(item.approvedAmount) + ' из ' + rub(item.amount);
+    return label;
+  }
+
+  function decisionChip(item) {
+    return '<span class="chip ' + (DECISION_CHIP[item.decision] || 'mute') + '">' + esc(decisionLabel(item)) + '</span>';
+  }
+
+  function statusChip(item) {
+    var label = item.state.statusLabel;
+    if (item.state.status === 'paid' && item.lastPaidOn) label = 'Оплачена ' + ddmm(item.lastPaidOn);
+    return '<span class="chip ' + STATUS_CHIP[item.state.status] + '">' + esc(label) + '</span>';
+  }
+
+  // Период по дате создания: '' — всё время (по умолчанию: иначе старые
+  // неоплаченные заявки выпали бы из списка "Активные").
+  var PERIODS = [
+    { id: '', label: 'всё время' },
+    { id: 'month', label: 'этот месяц' },
+    { id: 'prev', label: 'прошлый месяц' },
+    { id: '30d', label: '30 дней' }
+  ];
+  function periodRange(id) {
+    var now = new Date();
+    if (id === 'month') return { from: localDateStr(new Date(now.getFullYear(), now.getMonth(), 1)), to: localDateStr(now) };
+    if (id === 'prev') {
+      return { from: localDateStr(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: localDateStr(new Date(now.getFullYear(), now.getMonth(), 0)) };
+    }
+    if (id === '30d') {
+      var d = new Date(now);
+      d.setDate(d.getDate() - 29);
+      return { from: localDateStr(d), to: localDateStr(now) };
+    }
+    return { from: '', to: '' };
+  }
+
+  // filters: { closed, status, unit, category, period }
+  function listQuery(f) {
+    var q = new URLSearchParams();
+    if (f.closed) q.set('closed', '1');
+    if (f.status) { q.set('status', f.status); q.set('closed', 'all'); }
+    if (f.unit) q.set('unit', f.unit);
+    if (f.category) q.set('category', f.category);
+    var r = periodRange(f.period);
+    if (r.from) q.set('from', r.from);
+    if (r.to) q.set('to', r.to);
+    var s = q.toString();
+    return s ? '?' + s : '';
+  }
+
+  function isImage(file) {
+    return /^image\//.test(file.mime);
+  }
+
+  // ---------- файлы: подготовка перед загрузкой ----------
+
+  // Фото — сжимаем тем же PhotoCompress, что и чеки ДДС (на телефоне
+  // оригиналы весят мегабайты); PDF — как есть. Возвращает { blob, name }.
+  async function prepareUpload(file) {
+    if (/^image\//.test(file.type)) {
+      var dataUrl = await PhotoCompress.fromFile(file, 2000, 0.8);
+      var bin = atob(dataUrl.split(',')[1]);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var base = (file.name || 'фото').replace(/\.[^.]+$/, '');
+      return { blob: new Blob([bytes], { type: 'image/jpeg' }), name: base + '.jpg' };
+    }
+    if (file.type && file.type !== 'application/pdf') {
+      throw new Error('Допустимы только PDF и фото (JPEG, PNG, WEBP)');
+    }
+    if (file.size > 10 * 1024 * 1024) throw new Error('Файл больше 10 МБ');
+    return { blob: file, name: file.name || 'документ.pdf' };
+  }
+
+  // ---------- экспорт в Excel (спека payment-registry/export) ----------
+
+  function exportXlsx(listResponse) {
+    var items = listResponse.items;
+    var S = XlsxWriter.STYLE;
+    var origin = location.origin;
+
+    // "Файлы" — по колонке на файл: в Excel одна гиперссылка на ячейку, а
+    // ссылка нужна на каждый файл. Колонок столько, сколько файлов у самой
+    // "толстой" заявки (минимум одна), общая шапка "Файлы" объединена.
+    var filesOf = function (it) {
+      var list = it.files.map(function (f) { return { label: f.kindLabel + ': ' + f.name, url: f.url }; });
+      it.payments.forEach(function (p) {
+        if (p.file) list.push({ label: 'Платёжка ' + ddmmyyyy(p.paidOn) + ': ' + p.file.name, url: p.file.url });
+      });
+      return list;
+    };
+    var fileCols = Math.max(1, items.reduce(function (m, it) { return Math.max(m, filesOf(it).length); }, 0));
+
+    var headBefore = ['№ заявки', 'Срок оплаты', 'Заявитель', 'Подразделение', 'Категория', 'Основание', 'Получатель', 'Сумма, ₽', 'Цель расхода', 'Решение по оплате'];
+    var headAfter = ['Дата фактической оплаты', 'К оплате, ₽', 'Оплачено, ₽', 'Не оплачено, ₽'];
+    var colFiles = headBefore.length; // 0-based индекс первой колонки файлов
+    var colAfter = colFiles + fileCols;
+    var col = { amount: 7, toPay: colAfter + 1, paid: colAfter + 2, unpaid: colAfter + 3 };
+
+    var sum = { amount: 0, toPay: 0, paid: 0, unpaid: 0 };
+    items.forEach(function (it) {
+      sum.amount += Math.round(it.amount * 100);
+      sum.toPay += Math.round((it.state.toPay || 0) * 100);
+      sum.paid += Math.round(it.state.paid * 100);
+      sum.unpaid += Math.round(it.state.unpaid * 100);
+    });
+
+    var width = colAfter + headAfter.length;
+    var blankRow = function (style) { var r = []; for (var i = 0; i < width; i++) r.push({ v: '', style: style }); return r; };
+
+    var totalRow = blankRow(S.DEFAULT);
+    totalRow[0] = { v: 'ИТОГО', style: S.HEAD_PLAIN };
+    totalRow[2] = { v: 'Всего заявок', style: S.HEAD_PLAIN };
+    totalRow[3] = { v: items.length, num: true, style: S.TEXT };
+    totalRow[col.amount] = { v: sum.amount / 100, num: true, style: S.NUM };
+    totalRow[col.toPay] = { v: sum.toPay / 100, num: true, style: S.NUM };
+    totalRow[col.paid] = { v: sum.paid / 100, num: true, style: S.NUM };
+    totalRow[col.unpaid] = { v: sum.unpaid / 100, num: true, style: S.NUM };
+
+    var headRow = blankRow(S.HEAD_PLAIN);
+    headBefore.forEach(function (h, i) { headRow[i] = { v: h, style: S.HEAD_PLAIN }; });
+    headRow[colFiles] = { v: 'Файлы', style: S.HEAD_PLAIN };
+    headAfter.forEach(function (h, i) { headRow[colAfter + i] = { v: h, style: S.HEAD_PLAIN }; });
+
+    var hyperlinks = [];
+    var dataRows = items.map(function (it, idx) {
+      var excelRow = idx + 3;
+      var decision = it.state.statusLabel;
+      if ((it.decision === 'rejected' || it.decision === 'postponed') && it.decisionComment) decision += ': ' + it.decisionComment;
+      var row = [
+        { v: it.number, style: S.TEXT },
+        { v: ddmmyyyy(it.dueDate), style: S.TEXT },
+        { v: it.applicant, style: S.TEXT },
+        { v: it.unitName, style: S.TEXT },
+        { v: it.categoryName, style: S.TEXT },
+        { v: it.basis, style: S.NOTE },
+        { v: it.recipient, style: S.TEXT },
+        { v: it.amount, num: true, style: S.NUM },
+        { v: it.purpose, style: S.NOTE },
+        { v: decision, style: S.NOTE }
+      ];
+      var fl = filesOf(it);
+      for (var i = 0; i < fileCols; i++) {
+        var f = fl[i];
+        if (f) {
+          hyperlinks.push({ ref: XlsxWriter.colLetter(colFiles + i) + excelRow, url: origin + f.url });
+          row.push({ v: f.label, style: S.LINK });
+        } else {
+          row.push({ v: '', style: S.TEXT });
+        }
+      }
+      row.push({ v: ddmmyyyy(it.lastPaidOn), style: S.TEXT });
+      row.push(it.state.toPay === null ? { v: '', style: S.NUM } : { v: it.state.toPay, num: true, style: S.NUM });
+      row.push({ v: it.state.paid, num: true, style: S.NUM });
+      row.push({ v: it.state.unpaid, num: true, style: S.NUM });
+      return row;
+    });
+
+    var colWidths = [12, 12, 16, 16, 16, 28, 26, 14, 36, 22];
+    for (var c = 0; c < fileCols; c++) colWidths.push(30);
+    colWidths.push(14, 14, 14, 14);
+    var merges = fileCols > 1 ? [XlsxWriter.colLetter(colFiles) + '2:' + XlsxWriter.colLetter(colAfter - 1) + '2'] : [];
+
+    var blob = XlsxWriter.build({
+      sheetName: 'Реестр оплат',
+      rows: [totalRow, headRow].concat(dataRows),
+      merges: merges,
+      colWidths: colWidths,
+      hyperlinks: hyperlinks
+    });
+    var a = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = 'Реестр оплат ' + ddmmyyyy(localDateStr()) + '.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // ---------- просмотр фото на весь экран ----------
+
+  function openPhoto(url, title) {
+    var el = document.getElementById('rg-photo');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'rg-photo';
+      el.className = 'rg-photo';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-modal', 'true');
+      el.innerHTML =
+        '<div class="rg-photo-bar"><span class="rg-photo-title"></span>' +
+        '<a class="btn sm ghost-dark rg-photo-open" target="_blank" rel="noopener">Открыть</a>' +
+        '<button type="button" class="btn sm ghost-dark rg-photo-close" aria-label="Закрыть">✕</button></div>' +
+        '<div class="rg-photo-img"><img alt=""></div>';
+      document.body.appendChild(el);
+      el.querySelector('.rg-photo-close').addEventListener('click', closePhoto);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePhoto(); });
+    }
+    el.querySelector('img').src = url;
+    el.querySelector('img').alt = title || 'Фото';
+    el.querySelector('.rg-photo-title').textContent = title || '';
+    el.querySelector('.rg-photo-open').href = url;
+    el.hidden = false;
+    document.body.classList.add('rg-noscroll');
+  }
+
+  function closePhoto() {
+    var el = document.getElementById('rg-photo');
+    if (el) el.hidden = true;
+    document.body.classList.remove('rg-noscroll');
+  }
+
+  // Миниатюра файла: фото — превью, открывается во весь экран; PDF —
+  // ссылка в новой вкладке (на телефоне — встроенный просмотрщик).
+  function thumb(f) {
+    if (isImage(f)) {
+      return '<button type="button" class="rg-thumb" data-photo="' + esc(f.url) + '" data-title="' + esc(f.kindLabel + ': ' + f.name) + '" aria-label="Открыть фото ' + esc(f.name) + '">' +
+        '<img src="' + esc(f.url) + '" alt="" loading="lazy"></button>';
+    }
+    return '<a class="rg-thumb pdf" href="' + esc(f.url) + '" target="_blank" rel="noopener" aria-label="Открыть PDF ' + esc(f.name) + '">PDF</a>';
+  }
+
+  // Делегированный обработчик для всех .rg-thumb[data-photo] внутри root.
+  function bindThumbs(root) {
+    root.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-photo]');
+      if (!btn || !root.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openPhoto(btn.dataset.photo, btn.dataset.title);
+    });
+  }
+
+  window.Registry = {
+    api: api,
+    ownerToken: ownerToken,
+    isOwnerMode: isOwnerMode,
+    esc: esc,
+    money: money,
+    rub: rub,
+    ddmm: ddmm,
+    ddmmyyyy: ddmmyyyy,
+    tsDate: tsDate,
+    localDateStr: localDateStr,
+    fileSize: fileSize,
+    STATUS_OPTIONS: STATUS_OPTIONS,
+    GROUP_LABELS: GROUP_LABELS,
+    FILE_KINDS: FILE_KINDS,
+    PERIODS: PERIODS,
+    statusChip: statusChip,
+    decisionLabel: decisionLabel,
+    decisionChip: decisionChip,
+    listQuery: listQuery,
+    isImage: isImage,
+    prepareUpload: prepareUpload,
+    exportXlsx: exportXlsx,
+    openPhoto: openPhoto,
+    closePhoto: closePhoto,
+    thumb: thumb,
+    bindThumbs: bindThumbs
+  };
+})();

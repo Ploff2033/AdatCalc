@@ -98,8 +98,47 @@ function sendWithRetry(botToken, payload, attempt, resolve, reject) {
 async function send(text) {
   const { botToken, chatId } = await getCredentials();
   if (!botToken || !chatId) throw new Error('Токен бота или ID чата не заданы');
-  const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
-  return new Promise((resolve, reject) => sendWithRetry(botToken, payload, 1, resolve, reject));
+  return transport.post(botToken, chatId, text);
+}
+
+// Сам HTTP-вызов к Telegram — через объект, чтобы тесты реестра оплат могли
+// подменить его и проверить "что и в какой чат ушло" без сети.
+const transport = {
+  post(botToken, chatId, text) {
+    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
+    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, 1, resolve, reject));
+  }
+};
+
+// Реестр оплат — отдельный чат (config.telegram_registry_chat_id), бот тот
+// же, что у заказов. Чат не задан — молчим: уведомления реестра
+// необязательны, работа с заявками от них не зависит. Без fallback на env —
+// для реестра настройка только через интерфейс.
+async function getRegistryCredentials() {
+  const { botToken } = await getCredentials();
+  const { rows } = await db.pool.query('SELECT telegram_registry_chat_id FROM config WHERE id = 1');
+  return { botToken, chatId: (rows[0] && rows[0].telegram_registry_chat_id) || '' };
+}
+
+// Fire-and-forget, как notifyOrderCreated: вызывается без await из
+// handlers/registry.js, ошибка — только в лог, операцию не отменяет.
+function notifyRegistry(text) {
+  return getRegistryCredentials()
+    .then(({ botToken, chatId }) => {
+      if (!botToken || !chatId) return;
+      return transport.post(botToken, chatId, text);
+    })
+    .catch((err) => {
+      console.error('Telegram (реестр оплат): ' + describeError(err));
+    });
+}
+
+// Кнопка "Отправить тестовое" в разделе реестра Настроек — ждёт результат.
+async function sendRegistryTest() {
+  const { botToken, chatId } = await getRegistryCredentials();
+  if (!botToken) throw new Error('Токен бота не задан (раздел «Уведомления в Telegram»)');
+  if (!chatId) throw new Error('ID чата реестра оплат не задан');
+  return transport.post(botToken, chatId, '✅ Тестовое сообщение реестра оплат AdatBeton Calc.');
 }
 
 function notifyOrderCreated(order) {
@@ -139,4 +178,4 @@ function sendTest() {
   return send('✅ Тестовое сообщение из AdatBeton Calc. Если вы это видите — бот настроен верно.');
 }
 
-module.exports = { notifyOrderCreated, notifyStockDeficit, sendTest };
+module.exports = { notifyOrderCreated, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, escapeHtml, transport };

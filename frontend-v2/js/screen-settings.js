@@ -12,6 +12,7 @@
     { id: 'trips', label: 'Доставка и смены' },
     { id: 'rent', label: 'Рентабельность' },
     { id: 'tg', label: 'Уведомления' },
+    { id: 'registry', label: 'Реестр оплат' },
     { id: 'access', label: 'Доступ' }
   ];
 
@@ -53,6 +54,7 @@
         '</section>' +
         '<section id="s-tg" class="card sec"></section>' +
         '<section id="s-mailru" class="card sec"></section>' +
+        '<section id="s-registry" class="card sec"></section>' +
         '<section id="s-access" class="card sec"></section>' +
       '</div>' +
     '</div>' +
@@ -470,6 +472,138 @@
     });
   }
 
+  // ---- Реестр оплат (admin) ----
+  // Всё здесь сохраняется сразу своими кнопками, мимо общего savebar: ссылка
+  // учредителя, ID Telegram-чата реестра и справочники — отдельный API
+  // (/api/registry/*, см. backend/registry-routes.js), а не PUT /api/config.
+  // Секция строится один раз, дальше обновляются только списки — render()
+  // настроек вызывается на каждый State.onChange.
+  function renderRegistry() {
+    var section = document.getElementById('s-registry');
+    if (!Auth.isAtLeast('admin')) {
+      section.innerHTML = '<div class="sec-h"><h2>Реестр оплат</h2></div><p class="hint" style="margin:0">Настраивается администратором.</p>';
+      section.dataset.built = '';
+      return;
+    }
+    if (section.dataset.built) return;
+    section.dataset.built = '1';
+    var esc = Registry.esc;
+    section.innerHTML =
+      '<div class="sec-h"><h2>Реестр оплат</h2></div>' +
+      '<div class="field"><label>Ссылка учредителя — реестр с телефона без пароля</label>' +
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px">' +
+        '<input class="inp num" id="s-rg-owner-link" readonly style="background:var(--surface-3);color:var(--muted)">' +
+        '<button type="button" class="btn ghost sm" id="s-rg-owner-copy" style="height:40px">Копировать</button>' +
+        '<button type="button" class="btn ghost sm" id="s-rg-owner-reissue" style="height:40px">Перевыпустить</button></div></div>' +
+      '<div class="field"><label for="s-rg-chat">ID Telegram-чата реестра оплат (бот — из раздела «Уведомления»; пусто — без уведомлений)</label>' +
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px">' +
+        '<input class="inp num" id="s-rg-chat">' +
+        '<button type="button" class="btn ghost sm" id="s-rg-chat-save" style="height:40px">Сохранить</button>' +
+        '<button type="button" class="btn ghost sm" id="s-rg-chat-test" style="height:40px">Отправить тестовое</button></div>' +
+        '<p class="hint" id="s-rg-chat-status" style="margin:0"></p></div>' +
+      '<div class="grid-2" style="align-items:start">' +
+        '<div class="stack g8" data-dict="categories"><b>Категории расходов</b><div class="stack g6 s-rg-list"></div>' +
+          '<form class="s-rg-add" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px"><input class="inp" placeholder="Новая категория" aria-label="Новая категория"><button class="btn ghost sm" style="height:40px">Добавить</button></form></div>' +
+        '<div class="stack g8" data-dict="units"><b>Подразделения реестра</b><div class="stack g6 s-rg-list"></div>' +
+          '<form class="s-rg-add" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px"><input class="inp" placeholder="Новое подразделение" aria-label="Новое подразделение"><button class="btn ghost sm" style="height:40px">Добавить</button></form></div>' +
+      '</div>' +
+      '<p class="hint" style="margin:0">Использованное в заявках значение не удаляется, а скрывается: из выбора пропадает, в старых заявках остаётся.</p>' +
+      '<p class="banner" id="s-rg-error" hidden></p>';
+
+    var setError = function (err) {
+      var el = document.getElementById('s-rg-error');
+      el.textContent = err ? err.message : '';
+      el.hidden = !err;
+    };
+    var ownerLink = '';
+    var loadSettings = async function () {
+      var st = await Registry.api.get('/settings');
+      ownerLink = location.origin + '/v2/?owner=' + encodeURIComponent(st.ownerToken);
+      document.getElementById('s-rg-owner-link').value = ownerLink;
+      var chat = document.getElementById('s-rg-chat');
+      if (document.activeElement !== chat) chat.value = st.telegramRegistryChatId;
+    };
+    var renderDict = async function (kind) {
+      var box = section.querySelector('[data-dict="' + kind + '"] .s-rg-list');
+      var list = await Registry.api.get('/' + kind);
+      box.innerHTML = list.map(function (d) {
+        return '<div class="s-rg-item" data-id="' + esc(d.id) + '" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;align-items:center;' + (d.hidden ? 'opacity:.6' : '') + '">' +
+          '<span>' + esc(d.name) + (d.hidden ? ' <span class="chip mute">скрыто</span>' : '') + '</span>' +
+          '<button type="button" class="btn ghost sm" data-op="rename">Переименовать</button>' +
+          '<button type="button" class="btn ghost sm" data-op="toggle" data-hidden="' + d.hidden + '">' + (d.hidden ? 'Показать' : 'Скрыть') + '</button>' +
+          (d.used ? '<span class="hint" style="width:70px;text-align:center">в заявках</span>' : '<button type="button" class="btn ghost icon" data-op="delete" aria-label="Удалить ' + esc(d.name) + '">✕</button>') +
+        '</div>';
+      }).join('') || '<p class="hint" style="margin:0">Пока пусто.</p>';
+    };
+    var refreshAll = function () {
+      return Promise.all([loadSettings(), renderDict('categories'), renderDict('units')]).catch(setError);
+    };
+
+    document.getElementById('s-rg-owner-copy').addEventListener('click', async function (e) {
+      try { await navigator.clipboard.writeText(ownerLink); e.target.textContent = 'Скопировано!'; setTimeout(function () { e.target.textContent = 'Копировать'; }, 2000); }
+      catch (err) { window.prompt('Скопируйте ссылку (Ctrl+C):', ownerLink); }
+    });
+    document.getElementById('s-rg-owner-reissue').addEventListener('click', async function () {
+      if (!confirm('Перевыпустить ссылку учредителя? Старая ссылка (и ссылки в уже отправленных сообщениях Telegram) перестанет работать сразу.')) return;
+      try { await Registry.api.post('/owner/reissue'); await loadSettings(); setError(null); }
+      catch (err) { setError(err); }
+    });
+    var chatStatus = function (text) { document.getElementById('s-rg-chat-status').textContent = text; };
+    document.getElementById('s-rg-chat-save').addEventListener('click', async function () {
+      try { await Registry.api.put('/settings', { telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim() }); chatStatus('Сохранено.'); }
+      catch (err) { chatStatus(err.message); }
+    });
+    document.getElementById('s-rg-chat-test').addEventListener('click', async function (e) {
+      var btn = e.target;
+      btn.disabled = true;
+      chatStatus('Отправляем…');
+      try {
+        await Registry.api.post('/telegram-test', { telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim() });
+        chatStatus('Тестовое сообщение отправлено — проверьте чат.');
+      } catch (err) {
+        chatStatus(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    Array.prototype.forEach.call(section.querySelectorAll('.s-rg-add'), function (form) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var kind = form.closest('[data-dict]').dataset.dict;
+        var input = form.querySelector('input');
+        try {
+          await Registry.api.post('/' + kind, { name: input.value });
+          input.value = '';
+          setError(null);
+          await renderDict(kind);
+        } catch (err) { setError(err); }
+      });
+    });
+    section.addEventListener('click', async function (e) {
+      var btn = e.target.closest('[data-op]');
+      if (!btn) return;
+      var item = btn.closest('.s-rg-item');
+      var kind = btn.closest('[data-dict]').dataset.dict;
+      var path = '/' + kind + '/' + encodeURIComponent(item.dataset.id);
+      try {
+        if (btn.dataset.op === 'rename') {
+          var current = item.querySelector('span').firstChild.textContent;
+          var name = window.prompt('Новое название (изменится и во всех заявках):', current);
+          if (name === null || name.trim() === current) return;
+          await Registry.api.put(path, { name: name });
+        } else if (btn.dataset.op === 'toggle') {
+          await Registry.api.put(path, { hidden: btn.dataset.hidden !== 'true' });
+        } else if (btn.dataset.op === 'delete') {
+          if (!confirm('Удалить значение?')) return;
+          await Registry.api.del(path);
+        }
+        setError(null);
+        await renderDict(kind);
+      } catch (err) { setError(err); }
+    });
+    refreshAll();
+  }
+
   function renderAccess() {
     var section = document.getElementById('s-access');
     if (!Auth.isAtLeast('admin')) {
@@ -504,6 +638,7 @@
     renderRent();
     renderTelegram();
     renderMailru();
+    renderRegistry();
     renderAccess();
   }
 
