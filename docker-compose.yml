@@ -15,6 +15,23 @@ services:
       timeout: 5s
       retries: 10
 
+  # Xray-core — локальный SOCKS5-прокси поверх VLESS+Reality (пользователь
+  # обнаружил: с этого сервера api.telegram.org недоступен напрямую на
+  # уровне TCP, подтверждено диагностикой — не баг кода). У пользователя уже
+  # есть VPN-подписка (VLESS/Reality, не обычный SOCKS5/HTTP) — такую нельзя
+  # отдать напрямую в HttpsProxyAgent/SocksProxyAgent (backend/telegram.js),
+  # нужен настоящий Xray-клиент, который её "развернёт". xray-config.json —
+  # НЕ в git (содержит UUID/ключи подписки, секрет), создаётся на сервере
+  # вручную один раз, см. инструкцию пользователя. Порт 10808 наружу не
+  # пробрасывается — только в докер-сети, calc достаёт его по имени
+  # сервиса (TELEGRAM_PROXY_URL=socks5://xray:10808 ниже).
+  xray:
+    image: teddysun/xray:latest
+    container_name: adat-xray
+    restart: unless-stopped
+    volumes:
+      - ./xray-config.json:/etc/xray/config.json:ro
+
   calc:
     build: .
     container_name: adat-calc
@@ -24,6 +41,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      xray:
+        condition: service_started
     volumes:
       - ./data:/app/data
       # Фото чеков ДДС (backend/uploads.js пишет их в backend/uploads/receipts
@@ -37,6 +56,12 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER:-calc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-calc}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      # Только fallback — реальное значение обычно уже сохранено в Настройках
+      # (config.telegram_proxy_url, см. backend/telegram.js::getCredentials)
+      # и имеет приоритет над этой переменной. Задана тут по умолчанию на
+      # сервис xray выше — просто чтобы работало "из коробки" сразу после
+      # docker compose up, без похода в Настройки.
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-socks5://xray:10808}
       # Публичный адрес для ссылок учредителя в Telegram-уведомлениях реестра
       # оплат (https://домен, без слэша в конце). Пусто — берётся из заголовков запроса.
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}

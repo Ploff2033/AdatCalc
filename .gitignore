@@ -10,3 +10,7 @@ node_modules/
 /materials-recipes.sql
 
 backend/assets/~$*
+
+# Xray-клиент (docker-compose.yml::xray) — содержит UUID/ключи VPN-подписки
+# пользователя, секрет, создаётся на сервере вручную, не в git.
+xray-config.json
