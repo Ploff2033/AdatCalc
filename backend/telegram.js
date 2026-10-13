@@ -83,8 +83,16 @@ function sendWithRetry(botToken, payload, attempt, resolve, reject) {
   sendOnce(botToken, payload, (err) => {
     if (!err) { if (resolve) resolve(); return; }
     if (attempt >= MAX_ATTEMPTS) {
-      console.error('Telegram: ошибка отправки после ' + attempt + ' попыток (' + describeError(err) + ')');
-      if (reject) reject(err);
+      var described = describeError(err);
+      console.error('Telegram: ошибка отправки после ' + attempt + ' попыток (' + described + ')');
+      // err.message бывает ПУСТЫМ (например, у AggregateError от таймаута
+      // сетевого соединения — code=ETIMEDOUT, Node не заполняет .message по
+      // умолчанию) — тогда "Не удалось отправить сообщение: " + err.message
+      // в router.js превращался в текст без самой причины, и единственным
+      // способом узнать её было лезть в логи сервера (реальный случай,
+      // нашёл пользователь). describeError() собирает code/name/message
+      // вместе — всегда непустой.
+      if (reject) reject(new Error(described));
       return;
     }
     setTimeout(() => sendWithRetry(botToken, payload, attempt + 1, resolve, reject), RETRY_DELAY_MS);
