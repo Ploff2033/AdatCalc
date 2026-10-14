@@ -76,7 +76,7 @@
       Api.get(ordersPath),
       Api.get('/plants'),
       Api.get('/waybill-entries'),
-      Api.get('/clients'),
+      Api.get(withPlantFilter('/clients')),
       // Поступления инертных — тот же read:'manager', что и waybill-entries
       // выше (403 у анонимного/работника тихо проглатывается
       // Promise.allSettled, как и у остальных manager-only ресурсов тут).
@@ -102,5 +102,5 @@
     notify();
   }
 
-  window.State = { data: data, loadAll: loadAll, onChange: onChange, currentPlant: currentPlant };
+  window.State = { data: data, loadAll: loadAll, onChange: onChange, currentPlant: currentPlant, withPlantFilter: withPlantFilter };
 })();

@@ -27,4 +27,76 @@ async function rawRequest(unitId, categoryId, extra) {
   return id;
 }
 
-module.exports = { unit, category, rawRequest };
+// ---- Клиенты и заказы (change client-list) ----
+// Префиксы tplant_/trec_/tmix_ — их удаляет resetClients() в helpers/db.js.
+
+async function plant(name) {
+  const id = 'tplant_' + (++n);
+  const token = 'ttoken_' + n + '_' + Date.now();
+  await db.pool.query('INSERT INTO plants (id, name, access_token) VALUES ($1, $2, $3)', [id, name, token]);
+  return { id, name, token };
+}
+
+async function recipe(plantId, name, salePrice) {
+  const id = 'trec_' + (++n);
+  await db.pool.query('INSERT INTO recipes (id, plant_id, name, sale_price) VALUES ($1, $2, $3, $4)', [id, plantId, name, salePrice]);
+  return { id, name, salePrice };
+}
+
+async function mixer(name, capacity) {
+  const id = 'tmix_' + (++n);
+  await db.pool.query(
+    'INSERT INTO mixers (id, name, capacity, balance, residual, mileage, fuel_rate) VALUES ($1, $2, $3, 0, 0, 1, 30)',
+    [id, name, capacity]
+  );
+  return { id, name, capacity };
+}
+
+// Клиент напрямую в БД (как "существующий до выкатки", если plantId не задан).
+async function client(name, plantId, type) {
+  const id = 'tcl_' + (++n);
+  await db.pool.query('INSERT INTO clients (id, name, type, plant_id) VALUES ($1, $2, $3, $4)', [id, name, type || 'individual', plantId || null]);
+  return { id, name };
+}
+
+// Минимальное валидное тело POST /api/orders (расчётные поля — нули, кроме
+// тех, что важны для памяти/рейсов). materials: [] — бронь остатков не нужна.
+function orderBody(p, c, r, m, extra) {
+  const zero = {};
+  for (const f of ['ureaPricePerLiter', 'ureaCostPerTrip', 'platonCostPerTrip', 'surchargePerTrip', 'roundTripKm',
+    'fuelCostPerTrip', 'amortCostPerTrip', 'deliveryCostTotal', 'deliveryRevenue', 'deliveryProfit', 'deliveryMarginPercent',
+    'materialsCost', 'payrollCost', 'deprCost', 'utilitiesCost', 'costPerM3', 'mixRevenue', 'mixCost', 'mixProfit',
+    'mixMarginPercent', 'totalRevenue', 'totalProfit', 'profitPerM3', 'totalMarginPercent']) zero[f] = 0;
+  return Object.assign(zero, {
+    createdAt: new Date().toISOString(),
+    plantId: p.id, plantName: p.name,
+    clientId: c.id, clientName: c.name, clientType: 'individual',
+    recipeId: r.id, recipeName: r.name,
+    mixerId: m ? m.id : null, mixerName: m ? m.name : 'Самовывоз',
+    selfPickup: !m,
+    address: m ? 'ул. Ленина, 5' : '',
+    saleVolume: 10, distanceKm: m ? 12 : 0, fuelPricePerLiter: 75,
+    neighborCity: false, tripCount: m ? 2 : 0, deliveryChargePerM3: m ? 500 : 0,
+    salePrice: r.salePrice, vatApplied: false, materials: []
+  }, extra);
+}
+
+// Материал с остатком на складе (для списания по рейсам путевого листа).
+async function material(plantId, name, onHand) {
+  const id = 'tmat_' + (++n);
+  await db.pool.query(
+    "INSERT INTO materials (id, plant_id, name, unit, price, stock_on_hand) VALUES ($1, $2, $3, 'т', 9000, $4)",
+    [id, plantId, name, onHand]
+  );
+  return { id, name };
+}
+
+// Водитель с открытым периодом работы (путевой лист требует период).
+async function driver(plantId, name) {
+  const id = 'temp_' + (++n);
+  await db.pool.query("INSERT INTO employees (id, plant_id, name, position, salary, is_driver) VALUES ($1, $2, $3, 'Водитель', 0, TRUE)", [id, plantId, name]);
+  await db.pool.query("INSERT INTO employee_work_periods (employee_id, start_date) VALUES ($1, '2020-01-01')", [id]);
+  return { id, name };
+}
+
+module.exports = { unit, category, rawRequest, plant, recipe, mixer, client, orderBody, material, driver };

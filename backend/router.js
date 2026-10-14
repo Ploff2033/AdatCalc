@@ -546,12 +546,54 @@ const routes = [
   ...crudRoutes('/api/materials', materials, { read: null, write: 'manager', scopeByToken: true }),
   ...crudRoutes('/api/recipes', recipes, { read: null, write: 'manager', scopeByToken: true }),
 
-  // Клиенты — модуль от 25.09.2026 (см. схему/документ). НЕ привязан к
-  // заводу (нет scopeByToken — list() и так не фильтрует по плантId),
-  // читать и заводить нового может кто угодно, включая анонимного
-  // работника (выбор клиента при оформлении заказа обязателен для всех),
-  // а переименовать/удалить существующего — только manager+.
-  ...crudRoutes('/api/clients', clients, { read: null, create: null, write: 'manager' }),
+  // Клиенты — модуль от 25.09.2026, с change client-list привязаны к заводу
+  // и несут память (цены/условия). Читать и заводить нового может кто угодно,
+  // включая анонимного работника (выбор клиента при оформлении заказа
+  // обязателен для всех); править карточку, цены и удалять — manager+.
+  //
+  // GET: работник видит только клиентов своего завода + "Без завода" — завод
+  // из проверенного токена (scopeByToken), а не из ?plantId=. manager+ без
+  // ?plantId= получает всех (экран «Клиенты»).
+  ...crudRoutes('/api/clients', clients, { read: null, write: 'manager', scopeByToken: true }).filter((r) => r.method === 'GET' || r.method === 'DELETE'),
+  {
+    method: 'POST',
+    pattern: /^\/api\/clients$/,
+    // Завод нового клиента: у работника по ссылке завода — из токена (тело
+    // игнорируется); у общей ссылки подмены — из тела (выбор в
+    // переключателе); у manager+ — из тела, может быть пустым. Анонимный
+    // запрос без токена (старый закэшированный фронтенд) создаёт клиента
+    // "Без завода" — первый заказ сам проставит ему завод.
+    handler: async (req, res, m, role, query) => {
+      const body = await readBody(req);
+      if (!role) {
+        if (query.token) {
+          const resolved = await plants.resolveToken(query.token, clientIp(req));
+          body.plantId = resolved.universal ? body.plantId : resolved.id;
+        } else {
+          body.plantId = null;
+        }
+      }
+      sendJson(res, 201, await clients.create(body));
+    }
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/clients\/([^/]+)$/,
+    role: 'manager',
+    handler: async (req, res, m) => sendJson(res, 200, await clients.update(decodeURIComponent(m[1]), await readBody(req)))
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/clients\/([^/]+)\/prices\/([^/]+)$/,
+    role: 'manager',
+    handler: async (req, res, m, role) => sendJson(res, 200, await clients.setPrice(decodeURIComponent(m[1]), decodeURIComponent(m[2]), await readBody(req), role))
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/clients\/([^/]+)\/prices\/([^/]+)$/,
+    role: 'manager',
+    handler: async (req, res, m) => sendJson(res, 200, await clients.deletePrice(decodeURIComponent(m[1]), decodeURIComponent(m[2])))
+  },
 
   // ДДС — модуль от 25.09.2026 (см. документ "AdatBeton Calc — ДДС и
   // Дашборд (MVP)"). Вносят те же работники, что создают заказы, по той же

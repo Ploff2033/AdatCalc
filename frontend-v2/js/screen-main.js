@@ -29,6 +29,7 @@
           '<div class="field" style="max-width:280px"><span style="font-size:12px;color:var(--muted);font-weight:500">Цена указана</span>' +
             '<div class="seg" role="group" aria-label="НДС"><button type="button" id="m-vat-off" class="on" aria-pressed="true">без НДС</button><button type="button" id="m-vat-on" aria-pressed="false">с НДС 22%</button></div>' +
           '</div>' +
+          '<p class="hint" id="m-client-price-hint" style="margin:0"></p>' +
           '<p class="hint" id="m-price-hint" style="margin:0"></p>' +
         '</section>' +
         '<section class="card stack g16" style="padding:20px" id="m-delivery-section">' +
@@ -36,10 +37,12 @@
             '<div class="card-h2"><span class="step-num">2</span><h2>Доставка</h2></div>' +
             '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer"><button type="button" class="tog" id="m-self-pickup" aria-pressed="false"><i></i></button>Самовывоз</label>' +
           '</div>' +
-          '<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:14px">' +
+          '<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:14px">' +
             '<div class="field" id="m-address-field"><label for="m-address">Адрес / объект</label><input id="m-address" class="inp"></div>' +
             '<div class="field" id="m-dist-field"><label for="m-dist">Плечо, км</label><input id="m-dist" class="inp num" inputmode="decimal"></div>' +
             '<div class="field"><label for="m-mixer">Миксер</label><select id="m-mixer" class="inp"></select></div>' +
+            '<div class="field"><label for="m-max-load">Макс. загрузка</label><div class="unit"><input id="m-max-load" class="inp num" inputmode="decimal"><span>м³</span></div>' +
+              '<span class="hint" id="m-max-load-hint" style="font-size:12px"></span></div>' +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">' +
             '<label style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="checkbox" id="m-nb-city"> Рейс в другой город <span id="m-nb-badge" class="hint"></span></label>' +
@@ -115,6 +118,8 @@
   var selectedRecipeId = '';
   var selectedMixerId = '';
   var selectedClientId = ''; // '' | реальный id | '__new__' (см. populateClientSelect)
+  // Ограничение загрузки миксера (м³, сложный подъезд) — null = по вместимости.
+  var maxLoadLimit = null;
   var vatGrossMode = false;
   var priceDirty = false;
   var priceNetStored = 0;
@@ -146,15 +151,15 @@
   }
 
   // Клиент — модуль от 25.09.2026 (запрошен Капланом), обязателен у любого
-  // заказа. НЕ привязан к заводу (State.data.clients — общий список для
-  // всех заводов, см. shared/state.js), плюс пункт "+ Новый клиент",
-  // раскрывающий два поля прямо в форме — та же логика, что в v1
-  // (frontend/js/tab-main.js), просто под v2-разметку.
+  // заказа, плюс пункт "+ Новый клиент", раскрывающий два поля прямо в форме.
+  // С change client-list привязан к заводу: в списке клиенты текущего завода
+  // и «Без завода» (ClientMemory), клиент другого завода из выбора выпадает.
   function populateClientSelect() {
     var select = document.getElementById('m-client');
     var prev = selectedClientId || select.value;
+    var plant = State.currentPlant();
     select.innerHTML = '<option value="">— выберите —</option>' +
-      (State.data.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); }).map(function (c) {
+      ClientMemory.clientsForPlant(State.data.clients, plant ? plant.id : null).map(function (c) {
         return '<option value="' + c.id + '">' + c.name + (c.type === 'legal' ? ' (юрлицо)' : '') + '</option>';
       }).join('') + '<option value="__new__">+ Новый клиент</option>';
     var valid = Array.prototype.some.call(select.options, function (o) { return o.value === prev; });
@@ -171,12 +176,40 @@
       var name = document.getElementById('m-client-new-name').value.trim();
       if (!name) return null;
       var type = document.getElementById('m-client-new-type').value;
-      var created = await Api.post('/clients', { name: name, type: type });
+      var plant = State.currentPlant();
+      var created = await Api.post(State.withPlantFilter('/clients'), { name: name, type: type, plantId: plant ? plant.id : null });
       return { clientId: created.id, clientName: created.name, clientType: created.type };
     }
     var client = (State.data.clients || []).find(function (c) { return c.id === select.value; });
     if (!client) return null;
     return { clientId: client.id, clientName: client.name, clientType: client.type };
+  }
+
+  function selectedClient() {
+    return (State.data.clients || []).find(function (c) { return c.id === selectedClientId; }) || null;
+  }
+
+  // Память клиента → поля формы, один раз на выбор клиента (не в recalc(),
+  // иначе перерисовка затирала бы ручную правку). Поля выше клиента и
+  // пустые значения памяти не трогаются.
+  function applyClientMemory() {
+    priceDirty = false;
+    if (selectedClientId === '__new__') { vatGrossMode = false; setVatButtons(); return; }
+    var terms = ClientMemory.termsToApply(selectedClient(), State.data.mixers);
+    if (!terms) return;
+    vatGrossMode = terms.vatGross;
+    setVatButtons();
+    if (!('selfPickup' in terms)) return;
+    var pickup = document.getElementById('m-self-pickup');
+    pickup.classList.toggle('on', terms.selfPickup);
+    pickup.setAttribute('aria-pressed', terms.selfPickup ? 'true' : 'false');
+    if (terms.selfPickup) return;
+    if ('address' in terms) document.getElementById('m-address').value = terms.address;
+    if ('distanceKm' in terms) NumericInput.setFormattedValue(document.getElementById('m-dist'), terms.distanceKm);
+    if ('deliveryChargePerM3' in terms) NumericInput.setFormattedValue(document.getElementById('m-delivery-charge'), terms.deliveryChargePerM3);
+    if ('mixerId' in terms) selectedMixerId = terms.mixerId;
+    document.getElementById('m-nb-city').checked = terms.neighborCity;
+    maxLoadLimit = terms.maxLoad;
   }
 
   function netFromField(input) {
@@ -267,7 +300,8 @@
     var nbCityInput = document.getElementById('m-nb-city');
 
     var selfPickup = document.getElementById('m-self-pickup').classList.contains('on');
-    [mixerSelect, distInput, addressInput, nbCityInput].forEach(function (el) { el.disabled = selfPickup; });
+    var maxLoadInput = document.getElementById('m-max-load');
+    [mixerSelect, distInput, addressInput, nbCityInput, maxLoadInput].forEach(function (el) { el.disabled = selfPickup; });
     document.getElementById('m-fuel-price').disabled = selfPickup;
     document.getElementById('m-urea-price').disabled = selfPickup;
     document.getElementById('m-delivery-section').style.opacity = selfPickup ? '.55' : '1';
@@ -334,9 +368,22 @@
     document.getElementById('m-mix-vol').textContent = Format.fmtNum(saleVolume, 1, 'м³');
     renderStockTable(recipe, saleVolume);
 
-    var salePrice = recipe.salePrice || 0;
+    var client = selectedClient();
     var priceInput = document.getElementById('m-price');
-    var priceNet = priceDirty ? priceNetStored : salePrice;
+    // Базовая цена — цена клиента по рецепту, иначе прайс рецепта.
+    var priceNet = priceDirty ? priceNetStored : ClientMemory.basePriceNet(client, recipe);
+    document.getElementById('m-client-price-hint').textContent = ClientMemory.priceHint(client, recipe, vatGrossMode, false);
+
+    if (document.activeElement !== maxLoadInput) {
+      var shownLoad = maxLoadLimit != null ? maxLoadLimit : (mixer && mixer.capacity) || '';
+      if (shownLoad === '') maxLoadInput.value = ''; else NumericInput.setFormattedValue(maxLoadInput, shownLoad);
+    }
+    var loadHint = ClientMemory.loadHint(mixer, maxLoadLimit, saleVolume);
+    var loadHintEl = document.getElementById('m-max-load-hint');
+    loadHintEl.hidden = selfPickup || !loadHint.text;
+    loadHintEl.textContent = loadHint.text;
+    loadHintEl.style.color = loadHint.warn ? '#8C2217' : (loadHint.limited ? '#8A3410' : '');
+    maxLoadInput.style.borderColor = loadHint.warn ? '#A62A1E' : (loadHint.limited ? '#B8481A' : '');
     displayVatField(priceInput, priceNet);
 
     var deliveryChargeInput = document.getElementById('m-delivery-charge');
@@ -346,11 +393,14 @@
       plant: plant, recipe: recipe, mixer: mixer, data: data, selfPickup: selfPickup, saleVolume: saleVolume,
       dist: dist, addressFilled: !addressMissing, priceNet: priceNet, vatGrossMode: vatGrossMode,
       nbCity: nbCityInput.checked, fuelPrice: fuelPrice, ureaPrice: ureaPrice,
-      deliveryChargePerM3: NumericInput.parseNumber(deliveryChargeInput.value) || 0
+      deliveryChargePerM3: NumericInput.parseNumber(deliveryChargeInput.value) || 0,
+      maxLoad: maxLoadLimit
     });
 
     if (calc.deliveryReady && !selfPickup) {
-      document.getElementById('m-trip-count').textContent = Format.fmtNum(calc.trips, 0);
+      document.getElementById('m-trip-count').textContent = calc.loadLimited
+        ? calc.trips + ' × ' + String(calc.effectiveLoad).replace('.', ',') + ' м³'
+        : Format.fmtNum(calc.trips, 0);
       document.getElementById('m-delivery-box').style.display = '';
     } else if (!selfPickup) {
       document.getElementById('m-trip-count').textContent = '—';
@@ -398,7 +448,9 @@
     document.getElementById('m-mix-profit').textContent = Format.fmt(calc.mixProfit, 0);
     document.getElementById('m-mix-margin').textContent = Format.fmtNum(calc.mixMarginPercent, 1, '%');
 
-    document.getElementById('m-delivery-trips-label').textContent = Format.fmtNum(calc.trips, 0, 'рейс(ов)');
+    document.getElementById('m-delivery-trips-label').textContent = calc.loadLimited
+      ? calc.trips + ' × ' + String(calc.effectiveLoad).replace('.', ',') + ' м³'
+      : Format.fmtNum(calc.trips, 0, 'рейс(ов)');
     document.getElementById('m-delivery-revenue').textContent = Format.fmt(calc.deliveryRevenue, 0);
     document.getElementById('m-delivery-cost').textContent = Format.fmt(calc.deliveryCostTotal, 0);
     document.getElementById('m-delivery-fuel').textContent = Format.fmt(calc.fuelCostPerTrip * calc.trips, 0);
@@ -443,6 +495,7 @@
     // Клиент тоже сбрасывается (в отличие от миксера) — иначе легко
     // машинально приписать следующий заказ прошлому клиенту.
     selectedClientId = '';
+    maxLoadLimit = null;
     document.getElementById('m-client').value = '';
     document.getElementById('m-client-new-name').value = '';
     document.getElementById('m-client-new-type').value = 'individual';
@@ -510,7 +563,14 @@
     document.getElementById('m-nb-city').addEventListener('change', recalc);
     document.getElementById('m-recipe').addEventListener('change', function () { selectedRecipeId = this.value; priceDirty = false; recalc(); });
     document.getElementById('m-mixer').addEventListener('change', function () { selectedMixerId = this.value; recalc(); });
-    document.getElementById('m-client').addEventListener('change', function () { selectedClientId = this.value; recalc(); });
+    document.getElementById('m-client').addEventListener('change', function () { selectedClientId = this.value; applyClientMemory(); recalc(); });
+    NumericInput.attach(document.getElementById('m-max-load'));
+    document.getElementById('m-max-load').addEventListener('input', function () {
+      var mixer = State.data.mixers.find(function (m) { return m.id === selectedMixerId; });
+      maxLoadLimit = ClientMemory.normalizeMaxLoad(NumericInput.parseNumber(this.value), mixer);
+      recalc();
+    });
+    document.getElementById('m-max-load').addEventListener('blur', recalc);
     document.getElementById('m-client-new-name').addEventListener('input', recalc);
     document.getElementById('m-place-order-btn').addEventListener('click', handlePlaceOrder);
     document.getElementById('m-reset-btn').addEventListener('click', function () { resetOrderForm(); recalc(); });

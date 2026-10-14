@@ -148,12 +148,13 @@ async function remove(id) {
     `SELECT
        (SELECT COUNT(*) FROM materials WHERE plant_id = $1) AS materials,
        (SELECT COUNT(*) FROM recipes WHERE plant_id = $1) AS recipes,
-       (SELECT COUNT(*) FROM employees WHERE plant_id = $1) AS employees`,
+       (SELECT COUNT(*) FROM employees WHERE plant_id = $1) AS employees,
+       (SELECT COUNT(*) FROM clients WHERE plant_id = $1) AS clients`,
     [id]
   );
   const b = blocking[0];
-  if (Number(b.materials) > 0 || Number(b.recipes) > 0 || Number(b.employees) > 0) {
-    throw new HttpError(409, 'На заводе есть материалы, рецепты или сотрудники — сначала перенесите или удалите их');
+  if (Number(b.materials) > 0 || Number(b.recipes) > 0 || Number(b.employees) > 0 || Number(b.clients) > 0) {
+    throw new HttpError(409, 'На заводе есть материалы, рецепты, сотрудники или клиенты — сначала перенесите или удалите их');
   }
 
   await db.pool.query('DELETE FROM plants WHERE id = $1', [id]);

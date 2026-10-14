@@ -405,9 +405,11 @@ ALTER TABLE materials ADD COLUMN IF NOT EXISTS stock_unlimited BOOLEAN NOT NULL 
 -- ==================== v2: модуль клиентов ====================
 -- Запрошено Капланом 25.09.2026 (см. документ "AdatBeton Calc v2 —
 -- архитектура модулей"): справочник клиентов для понимания распределения
--- отгруженных объёмов. НЕ привязан к заводу (в отличие от материалов/
--- рецептов/сотрудников) — один и тот же клиент может заказывать с разных
--- заводов, поэтому отдельной колонки plant_id здесь нет.
+-- отгруженных объёмов. Изначально НЕ был привязан к заводу ("один клиент
+-- может заказывать с разных заводов") — это решение заменено change
+-- client-list (14.10.2026): заводы в 100+ км друг от друга, бетон столько не
+-- живёт, общих клиентов нет. Привязка — clients.plant_id ниже, в разделе
+-- "память клиента".
 CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -783,3 +785,52 @@ ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_chat_id TEXT;
 -- или socks5://user:pass@host:port — схема URL определяет тип (см.
 -- telegram.js::proxyAgentFor). Пусто — прямое соединение, как раньше.
 ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_proxy_url TEXT;
+
+-- ==================== Память клиента (change client-list) ====================
+-- Клиент привязан к одному заводу. plant_id NULL = "Без завода": так после
+-- выкатки остаются все существующие клиенты (данные НЕ переносятся —
+-- назначение завода и память вносятся вручную или первым заказом). Колонка
+-- намеренно без NOT NULL. ON DELETE RESTRICT — завод с клиентами не
+-- удаляется (понятный 409 — в handlers/plants.js::remove).
+--
+-- Условия клиента — то, что подставляется в форму заказа и перезаписывается
+-- каждым оформленным заказом ("оператор — первая инстанция") или правкой в
+-- CRM. NULL у км/цены доставки/загрузки = "не задано" (не путать с 0).
+-- max_load_m3 — ОГРАНИЧЕНИЕ загрузки миксера (сложный подъезд), а не
+-- вместимость: NULL = по вместимости миксера.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS plant_id TEXT REFERENCES plants(id) ON DELETE RESTRICT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS vat_gross BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS site_address TEXT NOT NULL DEFAULT '';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS site_distance_km NUMERIC;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS site_neighbor_city BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS delivery_charge_per_m3 NUMERIC;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS self_pickup BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS mixer_id TEXT REFERENCES mixers(id) ON DELETE SET NULL;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS max_load_m3 NUMERIC;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS terms_updated_at TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS terms_source TEXT;
+CREATE INDEX IF NOT EXISTS idx_clients_plant ON clients(plant_id);
+-- Разовые покупатели (общий клиент вроде «Физлицо»): без завода и без памяти —
+-- виден на всех заводах, заказ не назначает ему завод и не пишет память
+-- (иначе следующему физлицу подставлялся бы чужой объект), цены в CRM не ставятся.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS walk_in BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Цена клиента по рецепту (без НДС): одна на пару клиент × рецепт, последняя
+-- запись побеждает. Рецепт — по id (переименование цену сохраняет), удаление
+-- рецепта или клиента удаляет строку. source_label — для показа в CRM
+-- ("Заказ · Завод 1" / "CRM · manager").
+CREATE TABLE IF NOT EXISTS client_prices (
+  client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  price_net NUMERIC NOT NULL CHECK (price_net >= 0),
+  updated_at TIMESTAMPTZ NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('order', 'crm')),
+  source_label TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (client_id, recipe_id)
+);
+CREATE INDEX IF NOT EXISTS idx_client_prices_recipe ON client_prices(recipe_id);
+
+-- Снимок загрузки миксера, по которой посчитаны рейсы заказа — только если
+-- она МЕНЬШЕ вместимости (ограничение подъезда), иначе NULL (и у всех старых
+-- заказов). По нему же решается строка "Рейсов: N × X м³" в Telegram.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS max_load_m3 NUMERIC;

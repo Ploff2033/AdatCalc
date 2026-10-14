@@ -134,9 +134,20 @@
     }, 0);
   }
 
-  function tripsForVolume(mixer, volume) {
-    if (!mixer || !(mixer.capacity > 0) || !(volume > 0)) return 1;
-    return Math.max(1, Math.ceil(volume / mixer.capacity));
+  // Загрузка одного рейса — вместимость миксера, если не задано ограничение
+  // (сложный подъезд, change client-list): тогда min(ограничение, вместимость)
+  // — больше вместимости миксер не повезёт, что бы ни ввели.
+  function loadPerTrip(mixer, maxLoad) {
+    var capacity = mixer && mixer.capacity > 0 ? mixer.capacity : 0;
+    if (maxLoad > 0 && capacity > 0) return Math.min(maxLoad, capacity);
+    return capacity;
+  }
+
+  // maxLoad — необязательный: без него поведение прежнее (полная загрузка).
+  function tripsForVolume(mixer, volume, maxLoad) {
+    var load = loadPerTrip(mixer, maxLoad);
+    if (!(load > 0) || !(volume > 0)) return 1;
+    return Math.max(1, Math.ceil(volume / load));
   }
 
   function marginPercent(profit, revenue) {
@@ -158,6 +169,7 @@
     aggregateDeliveryPerTrip: aggregateDeliveryPerTrip,
     materialsCostPerM3: materialsCostPerM3,
     amortPerKm: amortPerKm,
+    loadPerTrip: loadPerTrip,
     tripsForVolume: tripsForVolume,
     marginPercent: marginPercent
   };

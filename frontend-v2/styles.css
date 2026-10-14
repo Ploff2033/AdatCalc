@@ -88,6 +88,10 @@ select.inp { cursor: pointer; }
 .unit { position: relative; }
 .unit .inp { padding-right: 56px; }
 .unit span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); }
+/* Короткая единица («км», «м³») в узкой колонке — отступ под неё, а не под «₽/м³»,
+   иначе в трёхколоночной строке формы на телефоне почти всё поле уходит под отступ. */
+.unit.short .inp { padding-left: 10px; padding-right: 30px; }
+.unit.short span { right: 9px; }
 
 .seg { display: flex; border: 1px solid #CFCAC0; border-radius: 4px; overflow: hidden; background: #fff; }
 .seg button { flex: 1; height: 38px; border: 0; background: transparent; font: inherit; font-size: 13px; color: #3F413C; cursor: pointer; }
@@ -503,3 +507,14 @@ body.owner-mode .page { padding: 0; gap: 0; }
   body[data-route="registry"] .sidebar-brand .name, body[data-route="registry"] .sidebar-brand .role { display: none; }
   .drawer.rg-drawer { width: 100vw; }
 }
+
+/* ---- Клиенты: карточка-CRM (change client-list, макеты Clients*.dc.html) ---- */
+#cl-drawer { width: 480px; }
+.cl-lbl { font-size: 12px; color: var(--ink-soft); font-weight: 500; }
+.cl-swt { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 40px; padding: 0 12px; border: 1px solid #CFCAC0; border-radius: 4px; background: #fff; box-sizing: border-box; font-size: 13px; cursor: pointer; }
+.cl-prices { border: 1px solid var(--border); border-radius: 6px; background: #fff; overflow: hidden; }
+.cl-pr { display: grid; grid-template-columns: 96px minmax(0,1fr) minmax(0,1fr) 64px; gap: 0 10px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); }
+.cl-pr:last-child { border-bottom: 0; }
+.cl-pr-edit { display: grid; grid-template-columns: 96px minmax(0,1fr) minmax(0,1fr) 64px; gap: 8px; align-items: center; padding: 10px; background: var(--act-bg); }
+.cl-ib { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #45473F; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.cl-ib:hover { background: var(--surface-3); }

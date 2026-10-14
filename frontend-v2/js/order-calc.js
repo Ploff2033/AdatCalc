@@ -8,7 +8,9 @@
 
   // input: { plant, recipe, mixer, data:{materials,aggregateTrucks,plants,personnelSummary,config},
   //          selfPickup, saleVolume, dist, addressFilled, priceNet, vatGrossMode,
-  //          nbCity, fuelPrice, ureaPrice, deliveryChargePerM3 }
+  //          nbCity, fuelPrice, ureaPrice, deliveryChargePerM3, maxLoad }
+  // maxLoad — ограничение загрузки миксера (м³, сложный подъезд); пусто/0 —
+  // по вместимости. Влияет только на число рейсов (change client-list).
   function run(input) {
     var data = input.data;
     var plant = input.plant;
@@ -45,13 +47,16 @@
     var safetyMargin = priceNet - costPerM3;
 
     var deliveryReady = selfPickup || (!!mixer && dist > 0 && input.addressFilled);
+    var effectiveLoad = 0, loadLimited = false;
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0,
       neighborCity = !!input.nbCity, surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0,
       deliveryRevenue = 0, deliveryProfit = 0, deliveryMarginPercent = 0;
     var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
 
     if (deliveryReady && !selfPickup) {
-      trips = Calc.tripsForVolume(mixer, saleVolume);
+      effectiveLoad = Calc.loadPerTrip(mixer, input.maxLoad);
+      loadLimited = effectiveLoad > 0 && effectiveLoad < (mixer.capacity || 0);
+      trips = Calc.tripsForVolume(mixer, saleVolume, input.maxLoad);
       roundTrip = dist * 2;
       var amortPerKm = Calc.amortPerKm(mixer);
       fuelCostPerTrip = roundTrip * ((mixer.fuelRate || 0) / 100) * (input.fuelPrice || 0);
@@ -93,7 +98,7 @@
     var costPerM3Gross = costPerM3 * VAT_MULT;
 
     return {
-      deliveryReady: deliveryReady, trips: trips, roundTrip: roundTrip,
+      deliveryReady: deliveryReady, trips: trips, roundTrip: roundTrip, effectiveLoad: effectiveLoad, loadLimited: loadLimited,
       materialsCost: materialsCost, payroll: payroll, depr: depr, utilities: utilities, costPerM3: costPerM3, costPerM3Gross: costPerM3Gross,
       materialsBreakdown: materialsBreakdown, priceNet: priceNet,
       mixRevenue: mixRevenue, mixRevenueGross: mixRevenueGross, mixCost: mixCost, mixProfit: mixProfit, mixMarginPercent: mixMarginPercent,
@@ -123,7 +128,11 @@
       materialsCost: calc.materialsCost, payrollCost: calc.payroll, deprCost: calc.depr, utilitiesCost: calc.utilities, costPerM3: calc.costPerM3,
       salePrice: calc.priceNet, mixRevenue: calc.mixRevenue, mixCost: calc.mixCost, mixProfit: calc.mixProfit, mixMarginPercent: calc.mixMarginPercent,
       totalRevenue: calc.totalRevenueDisplayed, totalProfit: calc.totalProfit, profitPerM3: calc.profitPerM3, totalMarginPercent: calc.totalMarginPercent,
-      vatApplied: !!input.vatGrossMode, createdAt: new Date().toISOString()
+      vatApplied: !!input.vatGrossMode, createdAt: new Date().toISOString(),
+      // Для памяти клиента (change client-list); maxLoadM3 — снимок только
+      // ограниченной загрузки, иначе null (см. backend/handlers/orders.js).
+      recipeId: recipe.id, mixerId: selfPickup ? null : (mixer ? mixer.id : null), selfPickup: selfPickup,
+      maxLoadM3: !selfPickup && calc.loadLimited ? calc.effectiveLoad : null
     };
   }
 

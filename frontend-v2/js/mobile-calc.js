@@ -11,7 +11,7 @@
         '<span class="sub">Смесь</span>' +
         '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px">' +
           '<div class="field"><label for="mc-recipe">Рецепт</label><select id="mc-recipe" class="inp" style="height:48px"></select></div>' +
-          '<div class="field"><label for="mc-volume">Объём</label><div class="unit"><input id="mc-volume" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>м³</span></div></div>' +
+          '<div class="field"><label for="mc-volume">Объём</label><div class="unit short"><input id="mc-volume" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>м³</span></div></div>' +
         '</div>' +
         '<div class="field"><label for="mc-ship-date">Дата отгрузки</label><input id="mc-ship-date" type="date" class="inp" style="height:48px"></div>' +
         '<div class="field"><label for="mc-client">Клиент</label><select id="mc-client" class="inp" style="height:48px"></select></div>' +
@@ -24,7 +24,7 @@
             '<div class="unit"><input id="mc-price" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>₽</span></div>' +
             '<div class="seg" role="group" aria-label="НДС"><button type="button" id="mc-vat-on" style="height:46px">с НДС</button><button type="button" id="mc-vat-off" class="on" style="height:46px">без</button></div>' +
           '</div>' +
-          '<div class="spread"><span class="hint">По прайсу рецепта <span class="num" id="mc-recipe-price">—</span></span><button type="button" class="btn ghost sm" id="mc-reset-price" style="height:32px;padding:0 10px;font-size:12px">Вернуть прайс</button></div>' +
+          '<div class="spread"><span class="hint" id="mc-price-hint"></span><button type="button" class="btn ghost sm" id="mc-reset-price" style="height:32px;padding:0 10px;font-size:12px">Вернуть прайс</button></div>' +
         '</div>' +
       '</section>' +
       '<section class="card-flat stack g10" style="padding:12px">' +
@@ -32,10 +32,12 @@
         '<div class="field"><label for="mc-delivery-charge">Цена доставки для клиента</label><div class="unit"><input id="mc-delivery-charge" class="inp num" value="500" style="height:48px;font-size:16px" inputmode="decimal"><span>₽/м³</span></div>' +
           '<span class="hint" id="mc-delivery-hint" style="font-size:12px"></span>' +
         '</div>' +
-        '<div style="display:grid;grid-template-columns:1.3fr 1fr;gap:8px">' +
+        '<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:8px">' +
           '<div class="field"><label for="mc-mixer">Миксер</label><select id="mc-mixer" class="inp" style="height:48px"></select></div>' +
-          '<div class="field"><label for="mc-dist">В одну сторону</label><div class="unit"><input id="mc-dist" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>км</span></div></div>' +
+          '<div class="field"><label for="mc-dist">Км</label><div class="unit short"><input id="mc-dist" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>км</span></div></div>' +
+          '<div class="field"><label for="mc-max-load">Загрузка</label><div class="unit short"><input id="mc-max-load" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>м³</span></div></div>' +
         '</div>' +
+        '<span class="hint" id="mc-max-load-hint" style="font-size:12px;margin-top:-4px"></span>' +
         '<div class="field"><label for="mc-address">Адрес доставки</label><input id="mc-address" class="inp" style="height:48px"></div>' +
         '<label style="display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;border-radius:4px;background:var(--surface-3);font-size:14px"><input type="checkbox" id="mc-nb-city" style="width:20px;height:20px"><span style="flex:1">Рейс в соседний город</span><span class="num hint" id="mc-nb-hint"></span></label>' +
         '<div class="spread" style="padding-top:10px;border-top:1px dashed var(--border)"><span class="hint" id="mc-fuel-summary"></span><button type="button" class="btn ghost sm" id="mc-toggle-prices" style="height:32px;padding:0 10px;font-size:12px">Изменить</button></div>' +
@@ -85,6 +87,9 @@
 
   var selectedRecipeId = '', selectedMixerId = '';
   var selectedClientId = ''; // '' | реальный id | '__new__'
+  // Ограничение загрузки миксера (м³, сложный подъезд) — null = по вместимости.
+  // В поле показывается ограничение или вместимость выбранного миксера.
+  var maxLoadLimit = null;
   var vatGrossMode = false, priceDirty = false, priceNetStored = 0;
   var fuelPriceDirty = false, ureaPriceDirty = false, lastPricePlantId = null;
   var lastCalc = null;
@@ -111,13 +116,15 @@
   }
 
   // Клиент — модуль от 25.09.2026 (запрошен Капланом), обязателен у любого
-  // заказа, в т.ч. и с этого экрана. НЕ привязан к заводу (общий список,
-  // см. shared/state.js). Та же логика, что в screen-main.js/tab-main.js.
+  // заказа, в т.ч. и с этого экрана. С change client-list привязан к заводу:
+  // в списке клиенты текущего завода и «Без завода» (ClientMemory). Клиент
+  // другого завода (после переключения завода) из выбора выпадает.
   function populateClientSelect() {
     var select = document.getElementById('mc-client');
     var prev = selectedClientId || select.value;
+    var plant = State.currentPlant();
     select.innerHTML = '<option value="">— выберите —</option>' +
-      (State.data.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); }).map(function (c) {
+      ClientMemory.clientsForPlant(State.data.clients, plant ? plant.id : null).map(function (c) {
         return '<option value="' + c.id + '">' + c.name + (c.type === 'legal' ? ' (юрлицо)' : '') + '</option>';
       }).join('') + '<option value="__new__">+ Новый клиент</option>';
     var valid = Array.prototype.some.call(select.options, function (o) { return o.value === prev; });
@@ -139,12 +146,46 @@
       var name = document.getElementById('mc-client-new-name').value.trim();
       if (!name) return null;
       var type = document.getElementById('mc-client-new-type').value;
-      var created = await Api.post('/clients', { name: name, type: type });
+      var plant = State.currentPlant();
+      // withPlantFilter — работнику по ссылке сервер берёт завод из токена.
+      var created = await Api.post(State.withPlantFilter('/clients'), { name: name, type: type, plantId: plant ? plant.id : null });
       return { clientId: created.id, clientName: created.name, clientType: created.type };
     }
     var client = (State.data.clients || []).find(function (c) { return c.id === select.value; });
     if (!client) return null;
     return { clientId: client.id, clientName: client.name, clientType: client.type };
+  }
+
+  function selectedClient() {
+    return (State.data.clients || []).find(function (c) { return c.id === selectedClientId; }) || null;
+  }
+
+  function setVatMode(gross) {
+    vatGrossMode = gross;
+    document.getElementById('mc-vat-on').classList.toggle('on', gross);
+    document.getElementById('mc-vat-off').classList.toggle('on', !gross);
+  }
+
+  // Память клиента → поля формы. Один раз на выбор клиента (не в render(),
+  // иначе каждая перерисовка затирала бы ручную правку оператора). Поля выше
+  // клиента (рецепт, объём, дата) не трогаются; пустые значения памяти тоже.
+  function applyClientMemory() {
+    priceDirty = false;
+    if (selectedClientId === '__new__') { setVatMode(false); return; }
+    var terms = ClientMemory.termsToApply(selectedClient(), State.data.mixers);
+    if (!terms) return;
+    setVatMode(terms.vatGross);
+    if (!('selfPickup' in terms)) return;
+    var pickup = document.getElementById('mc-self-pickup');
+    pickup.classList.toggle('on', terms.selfPickup);
+    pickup.setAttribute('aria-pressed', terms.selfPickup ? 'true' : 'false');
+    if (terms.selfPickup) return; // разовый самовывоз в памяти — объект не подставляем
+    if ('address' in terms) document.getElementById('mc-address').value = terms.address;
+    if ('distanceKm' in terms) NumericInput.setFormattedValue(document.getElementById('mc-dist'), terms.distanceKm);
+    if ('deliveryChargePerM3' in terms) NumericInput.setFormattedValue(document.getElementById('mc-delivery-charge'), terms.deliveryChargePerM3);
+    if ('mixerId' in terms) selectedMixerId = terms.mixerId;
+    document.getElementById('mc-nb-city').checked = terms.neighborCity;
+    maxLoadLimit = terms.maxLoad;
   }
 
   function netFromField(input) {
@@ -167,7 +208,8 @@
     var placeBtn = document.getElementById('mc-place-order-btn');
     var errorEl = document.getElementById('mc-error');
 
-    [mixerSelect, distInput, addressInput].forEach(function (el) { el.disabled = selfPickup; });
+    var maxLoadInput = document.getElementById('mc-max-load');
+    [mixerSelect, distInput, addressInput, maxLoadInput].forEach(function (el) { el.disabled = selfPickup; });
     document.getElementById('mc-nb-city').disabled = selfPickup;
     document.getElementById('mc-delivery-charge').disabled = selfPickup;
 
@@ -192,12 +234,29 @@
 
     if (!recipe) { placeBtn.disabled = true; lastCalc = null; return; }
 
-    document.getElementById('mc-recipe-price').textContent = Format.fmt(vatGrossMode ? (recipe.salePrice || 0) * VAT_MULT : (recipe.salePrice || 0), 0);
+    var client = selectedClient();
+    // На телефоне дата без года — подсказка должна влезть в 360 px.
+    document.getElementById('mc-price-hint').textContent = ClientMemory.priceHint(client, recipe, vatGrossMode, true);
 
     var saleVolume = NumericInput.parseNumber(document.getElementById('mc-volume').value) || 0;
     var priceInput = document.getElementById('mc-price');
-    var priceNet = priceDirty ? priceNetStored : (recipe.salePrice || 0);
+    // Базовая цена — цена клиента по рецепту, иначе прайс; на неё же
+    // возвращает «Вернуть прайс».
+    var priceNet = priceDirty ? priceNetStored : ClientMemory.basePriceNet(client, recipe);
     displayVatField(priceInput, priceNet);
+
+    // Поле «Макс. загрузка»: ограничение или вместимость миксера; пока
+    // оператор в нём печатает — не перезаписываем.
+    if (document.activeElement !== maxLoadInput) {
+      var shownLoad = maxLoadLimit != null ? maxLoadLimit : (mixer && mixer.capacity) || '';
+      if (shownLoad === '') maxLoadInput.value = ''; else NumericInput.setFormattedValue(maxLoadInput, shownLoad);
+    }
+    var loadHint = ClientMemory.loadHint(mixer, maxLoadLimit, saleVolume);
+    var loadHintEl = document.getElementById('mc-max-load-hint');
+    loadHintEl.hidden = selfPickup || !loadHint.text;
+    loadHintEl.textContent = loadHint.text;
+    loadHintEl.style.color = loadHint.warn ? '#8C2217' : (loadHint.limited ? '#8A3410' : '');
+    maxLoadInput.style.borderColor = loadHint.warn ? '#A62A1E' : (loadHint.limited ? '#B8481A' : '');
 
     var distRaw = distInput.value;
     var dist = NumericInput.parseNumber(distRaw) || 0;
@@ -207,7 +266,8 @@
       plant: plant, recipe: recipe, mixer: mixer, data: data, selfPickup: selfPickup, saleVolume: saleVolume,
       dist: dist, addressFilled: addressFilled, priceNet: priceNet, vatGrossMode: vatGrossMode,
       nbCity: document.getElementById('mc-nb-city').checked, fuelPrice: fuelPrice, ureaPrice: ureaPrice,
-      deliveryChargePerM3: NumericInput.parseNumber(document.getElementById('mc-delivery-charge').value) || 0
+      deliveryChargePerM3: NumericInput.parseNumber(document.getElementById('mc-delivery-charge').value) || 0,
+      maxLoad: maxLoadLimit
     });
 
     document.getElementById('mc-mix-summary-label').textContent = 'Смесь · ' + Format.fmtNum(saleVolume, 1, 'м³');
@@ -234,7 +294,7 @@
     var deliveryDetails = document.getElementById('mc-delivery-details');
     deliveryDetails.hidden = selfPickup;
     deliveryDetails.style.borderColor = calc.deliveryProfit < 0 ? '#E3B8B1' : '';
-    document.getElementById('mc-delivery-summary-label').textContent = 'Доставка · ' + Format.fmtNum(calc.trips, 0, 'рейс(ов)') + ' · ' + Format.fmtNum(dist, 0, 'км');
+    document.getElementById('mc-delivery-summary-label').textContent = ClientMemory.deliverySummary(calc.trips, calc.effectiveLoad, calc.loadLimited, dist);
     var deliverySummaryEl = document.getElementById('mc-delivery-summary-val');
     deliverySummaryEl.textContent = (calc.deliveryProfit >= 0 ? '+' : '') + Format.fmt(calc.deliveryProfit, 0);
     deliverySummaryEl.style.color = calc.deliveryProfit >= 0 ? '#1F5239' : '#8C2217';
@@ -317,6 +377,7 @@
       document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
       // Клиент тоже сбрасывается (в отличие от миксера) — см. tab-main.js.
       selectedClientId = '';
+      maxLoadLimit = null;
       document.getElementById('mc-client').value = '';
       document.getElementById('mc-client-new-name').value = '';
       document.getElementById('mc-client-new-type').value = 'individual';
@@ -366,7 +427,14 @@
     document.getElementById('mc-nb-city').addEventListener('change', render);
     document.getElementById('mc-recipe').addEventListener('change', function () { selectedRecipeId = this.value; priceDirty = false; render(); });
     document.getElementById('mc-mixer').addEventListener('change', function () { selectedMixerId = this.value; render(); });
-    document.getElementById('mc-client').addEventListener('change', function () { selectedClientId = this.value; render(); });
+    document.getElementById('mc-client').addEventListener('change', function () { selectedClientId = this.value; applyClientMemory(); render(); });
+    NumericInput.attach(document.getElementById('mc-max-load'));
+    document.getElementById('mc-max-load').addEventListener('input', function () {
+      var mixer = State.data.mixers.find(function (m) { return m.id === selectedMixerId; });
+      maxLoadLimit = ClientMemory.normalizeMaxLoad(NumericInput.parseNumber(this.value), mixer);
+      render();
+    });
+    document.getElementById('mc-max-load').addEventListener('blur', render);
     document.getElementById('mc-client-new-name').addEventListener('input', render);
 
     document.getElementById('mc-toggle-prices').addEventListener('click', function () {

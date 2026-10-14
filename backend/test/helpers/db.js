@@ -32,8 +32,23 @@ async function resetRegistry() {
   await db.pool.query('UPDATE config SET telegram_registry_chat_id = NULL WHERE id = 1');
 }
 
+// Для тестов клиентов/заказов (change client-list): заказы тестовых заводов,
+// вся память и справочник клиентов, тестовые рецепты/миксеры/заводы (префикс
+// t* — их создаёт fixtures.js; рейсы путевых и движения остатков уходят
+// каскадом вместе с заказами/материалами). Сид-данные БД (plant_seed1 и т.п.) не трогаем.
+async function resetClients() {
+  await db.pool.query("DELETE FROM orders WHERE plant_id LIKE 'tplant_%'");
+  await db.pool.query('DELETE FROM client_prices');
+  await db.pool.query('DELETE FROM clients');
+  await db.pool.query("DELETE FROM recipes WHERE id LIKE 'trec_%'");
+  await db.pool.query("DELETE FROM materials WHERE id LIKE 'tmat_%'");
+  await db.pool.query("DELETE FROM employees WHERE id LIKE 'temp_%'");
+  await db.pool.query("DELETE FROM mixers WHERE id LIKE 'tmix_%'");
+  await db.pool.query("DELETE FROM plants WHERE id LIKE 'tplant_%'");
+}
+
 async function close() {
   await db.pool.end();
 }
 
-module.exports = { db, ready, requireDb, resetRegistry, close };
+module.exports = { db, ready, requireDb, resetRegistry, resetClients, close };

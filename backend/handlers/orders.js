@@ -3,6 +3,7 @@ const HttpError = require('../http-error');
 const { str, num } = require('../validate');
 const telegram = require('../telegram');
 const stock = require('./stock');
+const clients = require('./clients');
 
 // [column, jsField] — единый источник и для INSERT, и для чтения строки обратно.
 const ORDER_COLUMNS = [
@@ -50,7 +51,10 @@ const ORDER_COLUMNS = [
   ['profit_per_m3', 'profitPerM3'],
   ['total_margin_percent', 'totalMarginPercent'],
   ['vat_applied', 'vatApplied'],
-  ['ship_date', 'shipDate']
+  ['ship_date', 'shipDate'],
+  // Снимок ограниченной загрузки миксера (change client-list) — NULL, если
+  // рейсы посчитаны по полной вместимости.
+  ['max_load_m3', 'maxLoadM3']
 ];
 
 // Расход материалов по заказу (снимок: название/ед. на момент заказа, а не
@@ -124,8 +128,23 @@ function sanitize(body) {
     vatApplied: !!body.vatApplied,
     // Опциональна — старые клиенты (или заказ без выбранной даты отгрузки)
     // её не присылают, тогда в БД остаётся NULL.
-    shipDate: body.shipDate ? str(body.shipDate, 'shipDate') : null
+    shipDate: body.shipDate ? str(body.shipDate, 'shipDate') : null,
+    maxLoadM3: sanitizeMaxLoad(body.maxLoadM3),
+    // Только для памяти клиента (clients.applyOrder), в orders не пишутся.
+    // undefined у recipeId/mixerId — старое тело (закэшированный фронтенд):
+    // цена и миксер в память тогда не попадают. selfPickup без явного флага
+    // — по прежнему признаку самовывоза в заказе.
+    recipeId: body.recipeId ? String(body.recipeId) : undefined,
+    mixerId: body.mixerId === undefined ? undefined : (body.mixerId ? String(body.mixerId) : null),
+    selfPickup: body.selfPickup !== undefined ? !!body.selfPickup : body.mixerName === 'Самовывоз'
   };
+}
+
+function sanitizeMaxLoad(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = num(value, 'maxLoadM3');
+  if (!(n > 0)) throw new HttpError(400, 'Поле "maxLoadM3" должно быть больше нуля');
+  return n;
 }
 
 // Обнаружено между делом при проверке Фазы 2: 'address' сюда не попадал —
@@ -144,6 +163,7 @@ function rowToOrder(row, materialRows) {
     // 'YYYY-MM-DD' (см. types.setTypeParser в db.js) — просто пропускаем
     // как есть, Number(v) тут было бы неверно (Number(null)=0, а не "нет даты").
     else if (col === 'ship_date') out[field] = v || null;
+    else if (col === 'max_load_m3') out[field] = v == null ? null : Number(v);
     else if (col === 'neighbor_city' || col === 'vat_applied' || ORDER_TEXT_COLUMNS.has(col)) out[field] = v;
     else out[field] = Number(v);
   }
@@ -218,6 +238,8 @@ async function create(body) {
     // удалась (например гонка с одновременным удалением материала), заказ
     // тоже не создастся, а не повиснет наполовину оформленным.
     await stock.reserve(client, id, f.materials.map((m) => ({ materialId: m.materialId, qty: m.qty })));
+    // Память клиента — в той же транзакции: заказ не создан, память не меняется.
+    await clients.applyOrder(client, f);
     const { rows } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
     const result = rowToOrder(rows[0], f.materials.map((m) => ({ name: m.name, unit: m.unit, qty: m.qty, material_id: m.materialId })));
     await client.query('COMMIT');

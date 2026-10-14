@@ -178,6 +178,9 @@ function notifyOrderCreated(order) {
     'Марка: ' + escapeHtml(order.recipeName),
     'Миксер: ' + escapeHtml(order.mixerName),
     'Объём: ' + order.saleVolume + ' м³',
+    // Ограничение подъезда (change client-list): миксер едет неполным —
+    // это должны видеть оператор РБУ и водитель. Без ограничения строки нет.
+    ...(order.maxLoadM3 != null ? ['Рейсов: ' + order.tripCount + ' × ' + String(order.maxLoadM3).replace('.', ',') + ' м³ (ограничение подъезда)'] : []),
     'Расстояние: ' + order.distanceKm + ' км',
     'Выручка: ' + money(order.totalRevenue),
     'Прибыль: ' + money(order.totalProfit) + ' (' + Number(order.totalMarginPercent || 0).toFixed(1).replace('.', ',') + '%)'
