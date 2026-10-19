@@ -4,11 +4,15 @@
   // миксер → рейсы, с теми же тремя проверками, что и на десктопе
   // (см. waybill-calc.js — общая с screen-waybills.js логика, поэтому лимиты
   // не могут разойтись между версиями).
+  //
+  // Этот экран — только заказы на бетон (миксеры), поэтому без выбора
+  // прицепа: прицеп таскает инертовоз на поступлениях инертных (см.
+  // screen-waybills.js), миксер прицеп не возит (найдено пользователем как
+  // баг — раньше прицеп можно было пришить и к рейсу миксера).
   var selectedDate = new Date().toISOString().slice(0, 10);
   var selectedOrderId = '';
   var selectedDriverId = '';
   var selectedMixerId = '';
-  var selectedTrailerId = '';
   var tripsValue = 1;
 
   var HTML =
@@ -27,10 +31,6 @@
       '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
         '<span class="sub">Миксер</span>' +
         '<div id="mw-mixers" class="stack g8"></div>' +
-      '</section>' +
-      '<section class="card-flat stack g8" style="padding:12px;margin:0 -12px">' +
-        '<span class="sub">Прицеп (необязательно)</span>' +
-        '<div id="mw-trailers" class="stack g8"></div>' +
       '</section>' +
       '<section class="card-flat stack g12" style="padding:12px;margin:0 -12px">' +
         '<div class="spread">' +
@@ -154,18 +154,6 @@
     renderPickList('mw-mixers', mixers, selectedMixerId, function (id) { selectedMixerId = id; });
   }
 
-  // Прицеп — по просьбе пользователя, необязательный, без бюджета часов
-  // (в отличие от водителя/миксера выше) — просто список техники + "Без
-  // прицепа" первым пунктом, тот же renderPickList, но с нейтральными
-  // pct/цветом (прогресс-бар тут не несёт смысла).
-  function renderTrailers() {
-    var trailers = [{ id: '', name: 'Без прицепа', disabled: false, pct: 0, barColor: 'transparent', textColor: 'var(--ink-soft)', label: '' }]
-      .concat((State.data.trailers || []).map(function (t) {
-        return { id: t.id, name: t.name + (t.licensePlate ? ' (' + t.licensePlate + ')' : ''), disabled: false, pct: 0, barColor: 'transparent', textColor: 'var(--ink-soft)', label: '' };
-      }));
-    renderPickList('mw-trailers', trailers, selectedTrailerId, function (id) { selectedTrailerId = id; });
-  }
-
   function renderTripsAndValidation() {
     var order = currentOrder();
     var saveBtn = document.getElementById('mw-save-btn');
@@ -228,7 +216,6 @@
     renderOrderPicker();
     renderOrderMeta();
     renderDriversAndMixers();
-    renderTrailers();
     renderTripsAndValidation();
     renderDoneList();
   }
@@ -244,11 +231,9 @@
       await Api.post('/waybill-entries', {
         orderId: order.id, tripDate: selectedDate, driverId: driver.id, driverName: driver.name,
         driverLicenseNumber: driver.licenseNumber || '', mixerId: mixer.id, mixerName: mixer.name,
-        mixerPlate: mixer.licensePlate || '', distanceKm: order.distanceKm, tripCount: tripsValue,
-        trailerId: selectedTrailerId || null
+        mixerPlate: mixer.licensePlate || '', distanceKm: order.distanceKm, tripCount: tripsValue
       });
       tripsValue = 1;
-      selectedTrailerId = '';
       await State.loadAll();
       render();
     } catch (err) {

@@ -32,7 +32,15 @@ const CELLS = {
   organization: 'H6',
   vehicleModel: 'I12',
   vehiclePlate: 'L13',
+  // Гаражный номер основной техники — снято по шаблону так же, как
+  // остальные CELLS (сразу справа от лейбла "Гаражный номер", строка 13).
+  // Найдено пользователем как пропуск — поле в бланке есть, не печаталось.
+  garageNumber: 'Z13',
   trailerPlate: 'R22',
+  // Гаражный номер прицепа — строка 22, аналогично garageNumber выше, но
+  // смотри FORCE_STYLE ниже: родной стиль этой ячейки в шаблоне (как и у
+  // trailerPlate) — увеличенный шрифт не по размеру строки, переопределяем.
+  trailerGarageNumber: 'Z21',
   driverName: 'E14',
   driverLicense: 'E16',
   // Блок "Работа водителя и автомобиля": строка "выезд из гаража" (13/14 —
@@ -99,9 +107,12 @@ const BACK_POINT_COL = 'A';
 const BACK_TRIPNUM_COL = 'J';
 
 // "РЕЗУЛЬТАТЫ РАБОТЫ АВТОМОБИЛЯ" — расход ГСМ по норме/факту и общий пробег
-// за документ. "Факт" = "норма", потому что расход считается по норме, а не
-// по реальным заправкам (см. обсуждение с пользователем — план и факт
-// совпадают по построению, это осознанное решение, а не недосмотр).
+// за документ. "Факт" — норма ± случайные 10% на документ (doc.fuelFactLiters,
+// посчитано в router.js::applyFuelFactVariance — там же смысл масштабирования,
+// чтобы сумма факта по всей выгрузке не расходилась с суммой нормы). Раньше
+// факт печатался равным норме (осознанно, "план=факт по построению") — по
+// просьбе пользователя заменено на разброс, иначе каждый документ выглядел
+// одинаково, что не похоже на реальный расход.
 const CELLS_RESULTS = { fuelNorm: 'A33', fuelFact: 'C33', mileageTotal: 'AD33' };
 
 function xmlEscape(s) {
@@ -141,13 +152,23 @@ function formatDurationHM(totalMinutes) {
 // весь <c>...</c> целиком (ячейка может быть self-closing, пустой с телом
 // или уже содержать текст лейбла — как здесь у dateLine/periodLine), меняет
 // на inlineStr с нужным текстом, сохраняя исходный стиль (s="N").
-function setCell(xml, addr, value) {
+//
+// forceStyleIdx — по просьбе пользователя ("слишком большой шрифт у номера
+// техники"): в самом бланке у строки "Прицеп 1" (R22 — гос.номер, Z21 —
+// гаражный номер) стиль ячейки — жирный 11pt (явно с "шапки"/заголовка, не
+// того же дизайна, что остальные поля бланка), тогда как у основной техники
+// (L13/Z13, та же пара полей строкой выше) — корректный мелкий 7pt. Это
+// особенность самого шаблона, не нашего кода — переопределяем стиль на
+// заведомо подходящий (тот же, что у L13/Z13), а не "сохраняем родной стиль
+// ячейки" как обычно.
+function setCell(xml, addr, value, forceStyleIdx) {
   if (!value) return xml;
   var escaped = xmlEscape(value);
   var pattern = new RegExp('<c r="' + addr + '"([^>]*?)(?:/>|>[\\s\\S]*?</c>)');
   if (!pattern.test(xml)) return xml;
   return xml.replace(pattern, function (match, attrs) {
     var cleanAttrs = attrs.replace(/\st="[^"]*"/, '');
+    if (forceStyleIdx) cleanAttrs = cleanAttrs.replace(/\ss="\d+"/, '') + ' s="' + forceStyleIdx + '"';
     return '<c r="' + addr + '"' + cleanAttrs + ' t="inlineStr"><is><t xml:space="preserve">' + escaped + '</t></is></c>';
   });
 }
@@ -175,13 +196,17 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.organization, organization || (doc.routes[0] && doc.routes[0].plantName) || '');
   xml = setCell(xml, CELLS.vehicleModel, doc.mixerName || '');
   xml = setCell(xml, CELLS.vehiclePlate, doc.mixerPlate || '');
+  if (doc.mixerGarageNumber) xml = setCell(xml, CELLS.garageNumber, doc.mixerGarageNumber);
   // Прицеп — по просьбе пользователя, печатаем гос.номер в блоке "Прицеп 1"
   // бланка (строка 22, R22:U22 — сразу после лейбла "Государственный
-  // номерной знак" I22:Q22; снято вручную по сырому XML шаблона — ячейка
-  // R22, саму раскладку визуально не проверял, стоит сверить на реальной
-  // распечатке). Пусто — ничего не печатаем, строка "Прицеп 1" остаётся
-  // как в чистом бланке.
-  if (doc.trailerPlate) xml = setCell(xml, CELLS.trailerPlate, doc.trailerPlate);
+  // номерной знак" I22:Q22; снято вручную по сырому XML шаблона). R22/Z21 —
+  // forceStyleIdx=96/73 переиспользует проверенно-мелкий стиль L13/Z13
+  // (основная техника строкой выше), т.к. родной стиль "Прицеп 1" в самом
+  // шаблоне — укрупнённый 11pt, визуально налезал на соседнюю подпись
+  // "Гаражный номер" (см. комментарий у forceStyleIdx в setCell выше —
+  // найдено пользователем на реальной распечатке).
+  if (doc.trailerPlate) xml = setCell(xml, CELLS.trailerPlate, doc.trailerPlate, 96);
+  if (doc.trailerGarageNumber) xml = setCell(xml, CELLS.trailerGarageNumber, doc.trailerGarageNumber, 73);
   xml = setCell(xml, CELLS.driverName, doc.driverName || '');
   xml = setCell(xml, CELLS.driverLicense, doc.driverLicenseNumber || '');
   xml = setCell(xml, CELLS.depDay, String(d.getDate()));
@@ -279,9 +304,10 @@ function buildBackXml(sheet2Xml, doc) {
   // "факт" = "норма" намеренно, расход считается по норме, не по реальным
   // заправкам (план и факт совпадают по построению).
   var totalLiters = doc.totalFuelLiters || 0;
+  var factLiters = doc.fuelFactLiters != null ? doc.fuelFactLiters : totalLiters;
   var totalKm = routes.reduce(function (s, r) { return s + (r.distanceKm || 0) * 2 * (r.tripCount || 0); }, 0);
   xml = setCell(xml, CELLS_RESULTS.fuelNorm, formatNum(totalLiters, 1));
-  xml = setCell(xml, CELLS_RESULTS.fuelFact, formatNum(totalLiters, 1));
+  xml = setCell(xml, CELLS_RESULTS.fuelFact, formatNum(factLiters, 1));
   xml = setCell(xml, CELLS_RESULTS.mileageTotal, formatNum(totalKm, 0));
   return xml;
 }

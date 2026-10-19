@@ -44,12 +44,18 @@ const COLUMNS = [
   ['mixer_id', 'mixerId'],
   ['mixer_name', 'mixerName'],
   ['mixer_plate', 'mixerPlate'],
+  // Гаражный номер — печатается в путевом листе №4-С рядом с гос.номером
+  // (найдено пользователем: поле в бланке есть, но не заполнялось), снимок
+  // по тому же принципу, что mixer_name/mixer_plate — подставляется сервером
+  // из карточки техники в validateAndBuild, а не присылается фронтом.
+  ['mixer_garage_number', 'mixerGarageNumber'],
   // Прицеп — по просьбе пользователя, необязательный (большинство рейсов
   // без него), снимок на момент распределения, тот же принцип, что у
   // mixer_name/mixer_plate выше.
   ['trailer_id', 'trailerId'],
   ['trailer_name', 'trailerName'],
   ['trailer_plate', 'trailerPlate'],
+  ['trailer_garage_number', 'trailerGarageNumber'],
   ['distance_km', 'distanceKm'],
   ['trip_count', 'tripCount'],
   ['fuel_price_per_liter', 'fuelPricePerLiter'],
@@ -168,16 +174,22 @@ async function validateAndBuild(client, body, excludeId) {
   // Прицеп — подставляем имя/гос.номер из карточки техники, как и
   // mixerName/mixerPlate подставляются фронтом из выбранного элемента
   // State.data.mixers/aggregateTrucks (тут — своя небольшая сверка, раз
-  // прицепы необязательны и выбираются отдельным select'ом).
-  let trailerName = '', trailerPlate = '';
+  // прицепы необязательны и выбираются отдельным select'ом). Только для
+  // поступлений инертных — прицеп таскает инертовоз, миксер его не возит
+  // (найдено пользователем как баг: фронт раньше позволял указать прицеп и
+  // для рейса заказа на бетон) — проверяем здесь же, а не только скрытием
+  // поля на фронте, иначе прямой вызов API мог бы всё равно это записать.
+  let trailerName = '', trailerPlate = '', trailerGarageNumber = '';
   if (f.trailerId) {
-    const { rows: trailerRows } = await client.query('SELECT name, license_plate FROM trailers WHERE id = $1', [f.trailerId]);
+    if (f.orderId) throw new HttpError(400, 'Прицеп можно указать только для поступления инертных — миксер прицеп не возит');
+    const { rows: trailerRows } = await client.query('SELECT name, license_plate, garage_number FROM trailers WHERE id = $1', [f.trailerId]);
     if (!trailerRows.length) throw new HttpError(400, 'Прицеп не найден');
     trailerName = trailerRows[0].name;
     trailerPlate = trailerRows[0].license_plate || '';
+    trailerGarageNumber = trailerRows[0].garage_number || '';
   }
 
-  let plantId, plantName, address, fuelRate;
+  let plantId, plantName, address, fuelRate, mixerGarageNumber = '';
 
   if (f.orderId) {
     const { rows: orderRows } = await client.query('SELECT id, plant_id, plant_name, trip_count, address FROM orders WHERE id = $1', [f.orderId]);
@@ -197,8 +209,9 @@ async function validateAndBuild(client, body, excludeId) {
     plantId = order.plant_id;
     plantName = order.plant_name;
     address = order.address || '';
-    const { rows: mixerCardRows } = await client.query('SELECT fuel_rate FROM mixers WHERE id = $1', [f.mixerId]);
+    const { rows: mixerCardRows } = await client.query('SELECT fuel_rate, garage_number FROM mixers WHERE id = $1', [f.mixerId]);
     fuelRate = mixerCardRows.length ? Number(mixerCardRows[0].fuel_rate) : 0;
+    mixerGarageNumber = mixerCardRows.length ? mixerCardRows[0].garage_number || '' : '';
   } else {
     const { rows: receiptRows } = await client.query(
       'SELECT id, plant_id, plant_name, trip_count, cancelled_at, address FROM material_receipts WHERE id = $1',
@@ -224,8 +237,9 @@ async function validateAndBuild(client, body, excludeId) {
     // путевого листа, что и order.address ("куда везли") для заказов, см.
     // комментарий у material_receipts.address в schema.sql.
     address = receiptRow.address || '';
-    const { rows: truckCardRows } = await client.query('SELECT fuel_rate FROM aggregate_trucks WHERE id = $1', [f.mixerId]);
+    const { rows: truckCardRows } = await client.query('SELECT fuel_rate, garage_number FROM aggregate_trucks WHERE id = $1', [f.mixerId]);
     fuelRate = truckCardRows.length ? Number(truckCardRows[0].fuel_rate) : 0;
+    mixerGarageNumber = truckCardRows.length ? truckCardRows[0].garage_number || '' : '';
   }
 
   const thisTripHours = tripHours(f.distanceKm, cfg);
@@ -260,8 +274,10 @@ async function validateAndBuild(client, body, excludeId) {
     address,
     fuelPricePerLiter,
     fuelCostPerTrip,
+    mixerGarageNumber,
     trailerName,
-    trailerPlate
+    trailerPlate,
+    trailerGarageNumber
   });
 }
 

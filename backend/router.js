@@ -386,6 +386,10 @@ async function buildWaybill4sDocuments(entries) {
         driverLicenseNumber: group[0].driverLicenseNumber,
         mixerName: group[0].mixerName,
         mixerPlate: group[0].mixerPlate,
+        // Гаражный номер — печатается рядом с гос.номером (найдено
+        // пользователем: поле в бланке есть, не заполнялось). Берём с первой
+        // записи группы, тот же приём, что у mixerName/mixerPlate выше.
+        mixerGarageNumber: group[0].mixerGarageNumber || '',
         // Прицеп — по просьбе пользователя печатаем на бланке рядом с
         // номером машины (см. buildFrontXml в waybill-xlsx-4s.js). Берём с
         // первой записи группы — тот же приём, что у driverName/mixerName
@@ -393,6 +397,7 @@ async function buildWaybill4sDocuments(entries) {
         // практике тоже не меняется внутри дня).
         trailerName: group[0].trailerName || '',
         trailerPlate: group[0].trailerPlate || '',
+        trailerGarageNumber: group[0].trailerGarageNumber || '',
         fuelPricePerLiter: group[0].fuelPricePerLiter,
         odometerStart: chunkOdometerStart,
         odometerEnd,
@@ -479,8 +484,38 @@ async function buildWaybill4sDocuments(entries) {
     flushChunk();
   }
 
+  applyFuelFactVariance(documents);
   await assignWaybillDocNumbers(documents);
   return documents;
+}
+
+// "Результаты работы автомобиля" на обороте 4-С — графа "по факту" (см.
+// CELLS_RESULTS.fuelFact в waybill-xlsx-4s.js) раньше печаталась равной
+// "по норме" (осознанно, "план=факт по построению"). По просьбе
+// пользователя — разброс ±10% на каждый документ, чтобы расход выглядел
+// реальным, а не одинаковым каждый раз, но сумма "факт" по всем документам
+// этой выгрузки должна остаться равна сумме "норма" (иначе разойдётся с
+// остальным учётом топлива в системе, который считается по норме). Поэтому
+// не берём случайное значение напрямую, а потом РАВНОМЕРНО перемасштабируем
+// весь набор одним общим коэффициентом (normTotal/rawTotal) — сумма после
+// масштабирования точно равна норме, а разброс между документами остаётся
+// близким к исходным случайным ±10% (коэффициент масштабирования близок к
+// 1, если случайные отклонения в среднем компенсируют друг друга, что и
+// обеспечивает Math.random()).
+function applyFuelFactVariance(documents) {
+  var normTotal = 0, rawTotal = 0;
+  var raw = documents.map(function (doc) {
+    if (!(doc.totalFuelLiters > 0)) return 0;
+    normTotal += doc.totalFuelLiters;
+    var variance = (Math.random() * 2 - 1) * 0.1; // -10%..+10%
+    var value = doc.totalFuelLiters * (1 + variance);
+    rawTotal += value;
+    return value;
+  });
+  var factor = rawTotal > 0 ? normTotal / rawTotal : 1;
+  documents.forEach(function (doc, i) {
+    doc.fuelFactLiters = doc.totalFuelLiters > 0 ? raw[i] * factor : 0;
+  });
 }
 
 // Номера путевых листов — по просьбе пользователя ("у путевых листов

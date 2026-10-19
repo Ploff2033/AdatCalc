@@ -36,7 +36,7 @@
               '<div class="field" style="flex:1;min-width:140px" id="wb-date-to-field" hidden><label for="wb-date-to">по (включительно)</label><input id="wb-date-to" type="date" class="inp"></div>' +
               '<div class="field" style="flex:1.3;min-width:160px"><label for="wb-driver">Водитель</label><select id="wb-driver" class="inp"></select></div>' +
               '<div class="field" style="flex:1.3;min-width:160px"><label for="wb-mixer" id="wb-mixer-label">Миксер</label><select id="wb-mixer" class="inp"></select></div>' +
-              '<div class="field" style="flex:1;min-width:140px"><label for="wb-trailer">Прицеп (необязательно)</label><select id="wb-trailer" class="inp"></select></div>' +
+              '<div class="field" style="flex:1;min-width:140px" id="wb-trailer-field"><label for="wb-trailer">Прицеп (необязательно)</label><select id="wb-trailer" class="inp"></select></div>' +
               '<div class="field" style="flex:0.7;min-width:90px" id="wb-trips-field"><label for="wb-trips">Рейсов</label><input id="wb-trips" class="inp num" inputmode="numeric"></div>' +
               '<button type="button" class="btn ghost sm" id="wb-max-btn">MAX</button>' +
             '</div>' +
@@ -164,11 +164,18 @@
     if (Array.prototype.some.call(select.options, function (o) { return o.value === prev; })) select.value = prev;
   }
 
-  // Прицеп — по просьбе пользователя, необязательный, один общий список
-  // (не переключается по типу рейса, в отличие от wb-mixer — прицеп может
-  // таскаться и миксером, и инертовозом).
+  // Прицеп — по просьбе пользователя, необязательный, но только для
+  // поступлений инертных: его таскает инертовоз, миксер прицеп не возит
+  // (баг, найденный пользователем — раньше поле показывалось и для рейсов
+  // заказа на бетон). Поэтому поле целиком скрывается для источника-заказа,
+  // а при переключении с поступления на заказ выбор сбрасывается — иначе
+  // скрытое, но ненулевое значение всё равно ушло бы в body при сохранении.
   function populateTrailerSelect() {
+    var src = currentSource();
+    var isReceipt = src && src.kind === 'receipt';
+    document.getElementById('wb-trailer-field').hidden = !isReceipt;
     var select = document.getElementById('wb-trailer');
+    if (!isReceipt) { select.value = ''; return; }
     var prev = select.value;
     select.innerHTML = '<option value="">Без прицепа</option>' + (State.data.trailers || []).slice()
       .sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); })
@@ -199,6 +206,7 @@
     var dateInput = document.getElementById('wb-date');
     if (src && !dateInput.value) dateInput.value = new Date(src.createdAt).toISOString().slice(0, 10);
     populateVehicleSelect();
+    populateTrailerSelect();
     renderHint();
   }
 

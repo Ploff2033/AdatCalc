@@ -834,3 +834,24 @@ CREATE INDEX IF NOT EXISTS idx_client_prices_recipe ON client_prices(recipe_id);
 -- она МЕНЬШЕ вместимости (ограничение подъезда), иначе NULL (и у всех старых
 -- заказов). По нему же решается строка "Рейсов: N × X м³" в Telegram.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS max_load_m3 NUMERIC;
+
+-- Гаражные номера — снимок на момент распределения рейса, тот же принцип,
+-- что у mixer_name/mixer_plate/trailer_name/trailer_plate выше: печатаются
+-- в путевом листе №4-С (см. waybill-xlsx-4s.js), найдено пользователем как
+-- пропуск — поле "Гаражный номер" в бланке есть, но ничего туда не попадало.
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS mixer_garage_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS trailer_garage_number TEXT NOT NULL DEFAULT '';
+
+-- Разовый бэкфилл для записей, созданных ДО этих колонок — иначе у них
+-- гаражный номер остался бы пустым навсегда (снимок пишется только в
+-- момент создания/изменения записи, см. validateAndBuild в
+-- handlers/waybill-entries.js), хотя в карточке техники он есть. Условие
+-- "= ''" делает апдейт безопасным при повторном запуске (идемпотентно) —
+-- не трогает записи, где поле уже заполнено (как нормальным снимком, так и
+-- этим же бэкфиллом раньше).
+UPDATE waybill_entries w SET mixer_garage_number = m.garage_number
+  FROM mixers m WHERE w.mixer_id = m.id AND w.mixer_garage_number = '' AND m.garage_number <> '';
+UPDATE waybill_entries w SET mixer_garage_number = t.garage_number
+  FROM aggregate_trucks t WHERE w.mixer_id = t.id AND w.mixer_garage_number = '' AND t.garage_number <> '';
+UPDATE waybill_entries w SET trailer_garage_number = tr.garage_number
+  FROM trailers tr WHERE w.trailer_id = tr.id AND w.trailer_garage_number = '' AND tr.garage_number <> '';
