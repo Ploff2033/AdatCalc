@@ -37,7 +37,7 @@
               '<div class="field" id="fl-f-garage-field"><label for="fl-f-garage">Гаражный номер</label><input id="fl-f-garage" class="inp"></div>' +
             '</div>' +
             '<div class="grid-2">' +
-              '<div class="field" id="fl-f-cap-field"><label for="fl-f-cap">Объём барабана / кузова</label><div class="unit"><input id="fl-f-cap" class="inp num" inputmode="decimal" value="0"><span>м³/т</span></div></div>' +
+              '<div class="field" id="fl-f-cap-field"><label for="fl-f-cap" id="fl-f-cap-label">Объём барабана</label><div class="unit"><input id="fl-f-cap" class="inp num" inputmode="decimal" value="0"><span id="fl-f-cap-unit">м³</span></div></div>' +
               '<div class="field" id="fl-f-odo-field"><label for="fl-f-odo">Пробег одометра</label><div class="unit"><input id="fl-f-odo" class="inp num" inputmode="decimal" value="0"><span>км</span></div></div>' +
             '</div>' +
             '<div id="fl-f-amort-fields">' +
@@ -197,6 +197,13 @@
     document.getElementById('fl-f-fuel-fields').hidden = !hasEngine();
     document.getElementById('fl-preview-amort-row').hidden = !hasCapacity();
     document.getElementById('fl-preview-fuel-row').hidden = !hasEngine();
+    // Подпись/единица поля capacity — по просьбе пользователя: "Объём
+    // барабана" было жёстко зашито для всех типов сразу, хотя у прицепа (и
+    // у инертовоза) это не объём барабана миксера, а грузоподъёмность
+    // (тонны, не м³) — то же самое смысловое различие, что уже учтено в
+    // шапке таблицы (renderHead), просто не было учтено в самой форме.
+    document.getElementById('fl-f-cap-label').textContent = isMixer() ? 'Объём барабана' : 'Грузоподъёмность';
+    document.getElementById('fl-f-cap-unit').textContent = isMixer() ? 'м³' : 'т';
   }
 
   function openForCreate() {
@@ -207,7 +214,7 @@
     document.getElementById('fl-form-error').hidden = true;
     applyFieldVisibility();
     document.getElementById('fl-f-name').value = '';
-    PlateInput.setValue(document.getElementById('fl-f-plate'), '');
+    (isTrailer() ? TrailerPlateInput : PlateInput).setValue(document.getElementById('fl-f-plate'), '');
     document.getElementById('fl-f-garage').value = '';
     ['fl-f-cap', 'fl-f-odo', 'fl-f-balance', 'fl-f-residual', 'fl-f-mileage', 'fl-f-fuel', 'fl-f-urea', 'fl-f-platon'].forEach(function (id) { NumericInput.setFormattedValue(document.getElementById(id), 0); });
     updatePreview();
@@ -222,7 +229,7 @@
     document.getElementById('fl-form-error').hidden = true;
     applyFieldVisibility();
     document.getElementById('fl-f-name').value = t.name;
-    PlateInput.setValue(document.getElementById('fl-f-plate'), t.licensePlate || '');
+    (isTrailer() ? TrailerPlateInput : PlateInput).setValue(document.getElementById('fl-f-plate'), t.licensePlate || '');
     document.getElementById('fl-f-garage').value = t.garageNumber || '';
     if (hasCapacity()) {
       NumericInput.setFormattedValue(document.getElementById('fl-f-cap'), t.capacity);
@@ -332,7 +339,13 @@
       NumericInput.attach(document.getElementById(id));
       document.getElementById(id).addEventListener('input', updatePreview);
     });
-    PlateInput.attach(document.getElementById('fl-f-plate'));
+    // Switchable — прицеп (ХХ 9999 999) и миксер/инертовоз (Х 999 ХХ 999)
+    // используют разные маски номера (найдено пользователем — прицепу
+    // подставлялась автомобильная маска), один и тот же <input>
+    // переиспользуется под все типы, поэтому маска спрашивается заново на
+    // каждое нажатие клавиши через isTrailer(), а не фиксируется один раз
+    // при открытии формы.
+    PlateInputSwitchable.attach(document.getElementById('fl-f-plate'), function () { return isTrailer() ? TrailerPlateInput : PlateInput; });
     initialized = true;
   }
 
