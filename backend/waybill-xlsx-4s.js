@@ -11,7 +11,7 @@ const JSZip = require('jszip');
 // Время, номер документа, груз/тоннаж и последовательность выполнения
 // задания ЗАПОЛНЯЮТСЯ (с 01.10.2026, по прямой просьбе пользователя — см.
 // git log) — расчёт времени на основе средней скорости/времени разгрузки,
-// см. buildWaybill4sDocuments в router.js; погрузка на заводе считается
+// см. buildVehicleDocs в waybill-docs.js; погрузка на заводе считается
 // без простоя (см. комментарий там же). Подписи техосмотра/медосмотра
 // по-прежнему не заполняются — заполнять нечем (нет такого процесса в
 // системе).
@@ -83,7 +83,7 @@ const CELLS_FUEL = {
 // только 2 строки (37 — обычная, с отдельными графами; 38 — объединённая
 // широкая ячейка для клиента/адреса + отдельные графы кол-ва/км/тонн,
 // делит высоту со строкой подписи 39). Если маршрутов в документе больше
-// двух — редкий случай при лимите 3 поездки на документ (см. router.js) —
+// двух — редкий случай при лимите 3 поездки на документ (см. waybill-docs.js) —
 // остаток сворачиваем во вторую строку через "/", а не теряем молча.
 // arrival — "время прибытия" К КЛИЕНТУ (на разгрузку), не на завод.
 const TASK_ROW1 = { customer: 'B37', arrival: 'M37', pickup: 'R37', dropoff: 'AB37', cargo: 'AL37', trips: 'AS37', distanceKm: 'AW37', tons: 'BA37' };
@@ -92,8 +92,8 @@ const TASK_ROW2 = { trips: 'AS38', distanceKm: 'AW38', tons: 'BA38' };
 
 // Обратная сторона: "ПОСЛЕДОВАТЕЛЬНОСТЬ ВЫПОЛНЕНИЯ ЗАДАНИЯ" — под неё в
 // бланке ровно 6 строк (8–13и), то есть максимум 3 ездки (пара
-// погрузка/разгрузка на каждую) — см. buildWaybill4sDocuments в
-// router.js, которая режет документы по 3 поездки именно из-за этого лимита.
+// погрузка/разгрузка на каждую) — см. buildVehicleDocs в
+// waybill-docs.js, который режет документы по 3 поездки именно из-за этого лимита.
 // Каждая строка (и погрузка, и разгрузка) несёт СВОИ прибытие+убытие —
 // L/P/R = число/час/мин прибытия, T/V = час/мин убытия (день убытия тот же,
 // отдельной графы под него в бланке нет).
@@ -107,12 +107,9 @@ const BACK_POINT_COL = 'A';
 const BACK_TRIPNUM_COL = 'J';
 
 // "РЕЗУЛЬТАТЫ РАБОТЫ АВТОМОБИЛЯ" — расход ГСМ по норме/факту и общий пробег
-// за документ. "Факт" — норма ± случайные 10% на документ (doc.fuelFactLiters,
-// посчитано в router.js::applyFuelFactVariance — там же смысл масштабирования,
-// чтобы сумма факта по всей выгрузке не расходилась с суммой нормы). Раньше
-// факт печатался равным норме (осознанно, "план=факт по построению") — по
-// просьбе пользователя заменено на разброс, иначе каждый документ выглядел
-// одинаково, что не похоже на реальный расход.
+// за документ. Факт всегда равен норме (правка аудиторов: факт и план
+// сходятся); сумма факта = списанный по путевым ГСМ (см. сводку списания,
+// change waybill-fuel-chain).
 const CELLS_RESULTS = { fuelNorm: 'A33', fuelFact: 'C33', mileageTotal: 'AD33' };
 
 function xmlEscape(s) {
@@ -131,7 +128,7 @@ function pad2(n) {
   return n < 10 ? '0' + n : String(n);
 }
 
-// Минуты от полуночи (см. dayElapsedMinutes в router.js) -> {hour, minute}.
+// Минуты от полуночи (см. buildVehicleDocs в waybill-docs.js) -> {hour, minute}.
 // Модуль на случай, если набежавшее время перевалило за полночь (очень
 // длинный день/много рейсов) — печатаем час в пределах суток, а не "27:40".
 function minutesToHM(totalMinutes) {
@@ -173,10 +170,11 @@ function setCell(xml, addr, value, forceStyleIdx) {
   });
 }
 
-// doc — один документ (после разбиения по 3 поездки, см. router.js):
+// doc — один документ (после разбиения по 3 поездки, см. waybill-docs.js):
 // { id, docNumber, createdAt, driverName, driverLicenseNumber, mixerName,
 //   mixerPlate, odometerStart, odometerEnd, timeStartMinutes, timeEndMinutes,
-//   fuelPricePerLiter,
+//   fuelPricePerLiter, totalFuelLiters (норма), fuelFactLiters, fuelIssued,
+//   fuelBalanceAtDeparture, fuelBalanceAtReturn (null — лист без нормы),
 //   routes: [{ address, plantName, cargo, distanceKm, tripCount, tonsPerTrip,
 //              fuelCostPerTrip, firstDropoffArrivalMinutes }],
 //   legs: [{ plantName, address, distanceKm, pickupArrivalMinutes,
@@ -220,21 +218,17 @@ function buildFrontXml(sheetXml, doc, organization) {
   xml = setCell(xml, CELLS.retMinute, pad2(ret.minute));
   xml = setCell(xml, CELLS.retOdometer, formatNum(doc.odometerEnd, 0));
 
-  // Движение горючего — по просьбе пользователя: "выдано на 10% больше чем
-  // потрачено" (норма расхода уже посчитана в doc.totalFuelLiters). Б/В
-  // (fuelBalanceAtDeparture/fuelBalanceAtReturn) считаются и переносятся
-  // между документами ОДНОГО дня уже в router.js::buildWaybill4sDocuments
-  // (см. dayFuelBalance там) — тут только печатаем готовые числа, не
-  // генерируем заново, иначе каждый рендер документа давал бы новый
-  // случайный Б и рвал перенос остатка между соседними путевыми.
-  if (doc.totalFuelLiters > 0 && doc.fuelBalanceAtDeparture !== null) {
-    var issuedLiters = doc.totalFuelLiters * 1.1;
-    var balanceAtDeparture = doc.fuelBalanceAtDeparture;
-    var balanceAtReturn = doc.fuelBalanceAtReturn;
+  // Движение горючего — все цифры уже посчитаны в waybill-docs.js
+  // (applyFuelChain, change waybill-fuel-chain): выдано (целые литры),
+  // остаток при выезде/возвращении (переносится по технике сквозь
+  // водителей и дни). Тут только печатаем, ничего не пересчитываем — иначе
+  // лист разошёлся бы со сводкой списания ГСМ. Лист с нормой 0 блок не
+  // заполняет (fuelBalanceAtDeparture === null).
+  if (doc.totalFuelLiters > 0 && doc.fuelBalanceAtDeparture != null) {
     xml = setCell(xml, CELLS_FUEL.brand, FUEL_BRAND);
-    xml = setCell(xml, CELLS_FUEL.issued, formatNum(issuedLiters, 1));
-    xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(balanceAtDeparture, 1));
-    xml = setCell(xml, CELLS_FUEL.balanceAtReturn, formatNum(balanceAtReturn, 1));
+    xml = setCell(xml, CELLS_FUEL.issued, formatNum(doc.fuelIssued, 0));
+    xml = setCell(xml, CELLS_FUEL.balanceAtDeparture, formatNum(doc.fuelBalanceAtDeparture, 1));
+    xml = setCell(xml, CELLS_FUEL.balanceAtReturn, formatNum(doc.fuelBalanceAtReturn, 1));
     xml = setCell(xml, CELLS_FUEL.coefficient, '1,00');
   }
   if (doc.engineMinutes > 0) xml = setCell(xml, CELLS_FUEL.engineHours, formatDurationHM(doc.engineMinutes));
@@ -299,12 +293,9 @@ function buildBackXml(sheet2Xml, doc) {
   });
 
   var routes = doc.routes || [];
-  // totalFuelLiters считается один раз в router.js (переиспользуется и тут,
-  // и в "Движение горючего" на лицевой стороне, см. buildFrontXml) —
-  // "факт" = "норма" намеренно, расход считается по норме, не по реальным
-  // заправкам (план и факт совпадают по построению).
+  // Норма и факт — из waybill-docs.js (факт = норма, см. applyFuelChain).
   var totalLiters = doc.totalFuelLiters || 0;
-  var factLiters = doc.fuelFactLiters != null ? doc.fuelFactLiters : totalLiters;
+  var factLiters = doc.fuelFactLiters || 0;
   var totalKm = routes.reduce(function (s, r) { return s + (r.distanceKm || 0) * 2 * (r.tripCount || 0); }, 0);
   xml = setCell(xml, CELLS_RESULTS.fuelNorm, formatNum(totalLiters, 1));
   xml = setCell(xml, CELLS_RESULTS.fuelFact, formatNum(factLiters, 1));

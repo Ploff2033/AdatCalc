@@ -25,6 +25,7 @@ const auth = require('./handlers/auth');
 const db = require('./db');
 const { buildOrderWorkbook, buildWaybillsZip, waybillFileName } = require('./waybill-xlsx');
 const waybillXlsx4s = require('./waybill-xlsx-4s');
+const waybillDocs = require('./waybill-docs');
 const registryRoutes = require('./registry-routes');
 
 const ROLE_RANK = { manager: 1, admin: 2 };
@@ -180,342 +181,19 @@ function crudRoutes(base, mod, opts) {
   ];
 }
 
-const WAYBILL_4S_MAX_TRIPS = 3;
-
-// Путевые листы формы №4-С (аудиторы настаивают на ней вместо 4-П — см.
-// обсуждение с пользователем). Два правила разбиения на документы сразу:
-// 1. Кол-во документов зависит от комбинаций водитель+машина+день — как и
-//    раньше для 4-П, несколько записей на одного водителя/машину/день это
-//    один документ, а не несколько (см. историю обсуждения выше).
-// 2. НО в самом бланке 4-С под журнал поездок на обороте отведено только
-//    3 ездки (6 строк, см. waybill-xlsx-4s.js) — если за день у связки
-//    водитель+машина поездок больше, режем на несколько документов по
-//    WAYBILL_4S_MAX_TRIPS поездок в каждом (10 поездок = 4 документа:
-//    3+3+3+1, а не 3 — так и обсуждали с пользователем).
-//
-// Одометр — расчётный, не с реального прибора (см. mixers.odometer_baseline_km
-// в schema.sql: "план и факт совпадают всегда, потому что расход считаем по
-// норме" — решение пользователя). Чтобы вставка исторической записи задним
-// числом не портила уже посчитанные документы, одометр считается заново на
-// каждую выгрузку по ПОЛНОЙ истории записей машины (а не только по тем,
-// что выбраны сейчас), в хронологическом порядке: дата рейса, затем время
-// создания записи как тай-брейк (см. также обсуждение "план=факт" — время
-// суток в путевом не печатаем, но для порядка записей оно всё равно нужно).
-async function buildWaybill4sDocuments(entries) {
-  const mixerIds = Array.from(new Set(entries.map((e) => e.mixerId)));
-  if (!mixerIds.length) return [];
-
-  // mixer_id на записи рейса хранит id миксера ИЛИ инертовоза (см.
-  // комментарий у waybill_entries.receipt_id в schema.sql — та же колонка
-  // переиспользуется для обоих видов техники), поэтому базовый пробег ищем
-  // в обеих таблицах, а не только в mixers (как было раньше — из-за этого
-  // одометр на рейсах поступлений всегда считался от нуля, даже если бы
-  // поле на инертовозе было настроено).
-  const [{ rows: mixerRows }, { rows: truckRows }] = await Promise.all([
-    db.pool.query('SELECT id, odometer_baseline_km FROM mixers WHERE id = ANY($1)', [mixerIds]),
-    db.pool.query('SELECT id, odometer_baseline_km FROM aggregate_trucks WHERE id = ANY($1)', [mixerIds])
-  ]);
-  const baselineByMixer = new Map(
-    mixerRows.concat(truckRows).map((r) => [r.id, Number(r.odometer_baseline_km) || 0])
-  );
-
-  // Адрес завода — по просьбе пользователя ("в путевом пишется просто
-  // 'Джага', нужен нормальный адрес"). Таблица заводов маленькая — проще
-  // забрать всю, чем фильтровать по distinct plantId из entries.
-  //
-  // Печатаем ТОЛЬКО адрес, без приписки названия завода спереди — полный
-  // почтовый адрес самодостаточен (как и положено "пункту погрузки" в
-  // официальном бланке), а название ещё и часто совпадает с частью адреса
-  // (напр. у Джаги: "...село Джага, Шоссейная ул., 28") — со склейкой
-  // "Джага, ...село Джага..." название фактически печаталось дважды, это и
-  // заметил пользователь ("в адрес завода тянется ещё и его название").
-  // Без заданного адреса — как и раньше, одно название.
-  const { rows: plantRows } = await db.pool.query('SELECT id, address FROM plants');
-  const addressByPlant = new Map(plantRows.map((r) => [r.id, r.address || '']));
-  const plantLabel = (e) => addressByPlant.get(e.plantId) || e.plantName;
-
-  // Груз и тоннаж — по просьбе пользователя ("я везу песок, а у тебя
-  // прописано, что это Бетон"): раньше груз был жёстко зашит как 'Бетон'
-  // для ЛЮБОГО рейса, хотя рейсы поступлений возят конкретный инертный
-  // материал. Для рейсов поступлений — название материала и тоннаж
-  // (qty поступления / trip_count поступления × число рейсов В ЭТОМ
-  // документе — "если на 100 тонн 5 ездок, то 20 тонн ездка, если в
-  // путевом ездок две — 40 тонн"); для заказов на бетон — по-прежнему
-  // 'Бетон' без тоннажа (объём считается в м³, а не в тоннах, графа
-  // "перевезти тонн" тут не подходит по смыслу).
-  const receiptIds = Array.from(new Set(entries.map((e) => e.receiptId).filter(Boolean)));
-  const receiptInfoById = new Map();
-  if (receiptIds.length) {
-    const { rows: receiptRows } = await db.pool.query(
-      'SELECT id, material_name, qty, trip_count, unit FROM material_receipts WHERE id = ANY($1)',
-      [receiptIds]
-    );
-    receiptRows.forEach((r) => {
-      receiptInfoById.set(r.id, {
-        materialName: r.material_name,
-        qtyPerTrip: Number(r.trip_count) > 0 ? Number(r.qty) / Number(r.trip_count) : 0,
-        isTons: r.unit === 'т'
-      });
-    });
-  }
-  const cargoFor = (e) => {
-    const info = e.receiptId ? receiptInfoById.get(e.receiptId) : null;
-    return info ? info.materialName : 'Бетон';
-  };
-  const tonsPerTrip = (e) => {
-    const info = e.receiptId ? receiptInfoById.get(e.receiptId) : null;
-    return info && info.isTons ? info.qtyPerTrip : null;
-  };
-
-  // Время — по просьбе пользователя ("можешь проставлять выезд с парковки
-  // (условно в 9) и возвращение на парковку (в 18.00), исходя из средней
-  // скорости и времени погрузок/разгрузок"). dayElapsedMinutes — курсор
-  // "сейчас" в минутах от полуночи, стартует с config.shiftStartMinutes на
-  // КАЖДЫЙ день (группу driverId|mixerId|tripDate) и копится дальше по
-  // рейсам И по документам ВНУТРИ этого дня (как и одометр — продолжается
-  // через flushChunk, не сбрасывается на каждый новый документ). Погрузка
-  // на заводе уже считается пренебрежимо малой во всём остальном коде (см.
-  // tripHours в handlers/waybill-entries.js) — тем же приёмом время стоянки
-  // под погрузкой = 0, вся пауза (unloadMinutes) — на разгрузке у клиента.
-  const cfg = await waybillEntries.getLimitsConfig();
-  const oneWayMinutes = (distanceKm) => (cfg.avgSpeedKmh > 0 ? (distanceKm / cfg.avgSpeedKmh) * 60 : 0);
-
-  const { rows: historyRows } = await db.pool.query(
-    'SELECT id, mixer_id, distance_km, trip_count, trip_date, created_at FROM waybill_entries WHERE mixer_id = ANY($1) ORDER BY mixer_id, trip_date, created_at, id',
-    [mixerIds]
-  );
-
-  // Одометр на НАЧАЛО каждой записи истории (не только выбранных сейчас на
-  // выгрузку) — нужно для корректного расчёта смещения даже если сама
-  // запись, предшествующая по времени, в эту выгрузку не попала.
-  const odometerStartByEntryId = new Map();
-  let currentMixer = null;
-  let running = 0;
-  for (const row of historyRows) {
-    if (row.mixer_id !== currentMixer) {
-      currentMixer = row.mixer_id;
-      running = baselineByMixer.get(row.mixer_id) || 0;
-    }
-    odometerStartByEntryId.set(row.id, running);
-    running += Number(row.distance_km) * 2 * Number(row.trip_count);
-  }
-
-  const groups = new Map();
-  for (const e of entries) {
-    const key = e.driverId + '|' + e.mixerId + '|' + e.tripDate;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(e);
-  }
-
-  const documents = [];
-  for (const [key, group] of groups) {
-    // Порядок должен совпадать с тем, что использовался при расчёте
-    // одометра (по времени создания записи) — иначе куски документа не
-    // совпадут с реальной последовательностью одометра этой машины.
-    group.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-    const [y, m, d] = group[0].tripDate.split('-').map(Number);
-    const createdAt = new Date(y, m - 1, d, 12).toISOString();
-
-    let partIndex = 0;
-    let chunkRoutes = null;
-    let chunkLegs = null;
-    let chunkTrips = 0;
-    let chunkOdometerStart = 0;
-    let chunkTimeStart = 0;
-    // Копится по ВСЕМ документам этого дня подряд (не сбрасывается на
-    // каждый flushChunk) — ровно так же, как одометр: следующий документ
-    // того же дня продолжает время с того момента, на котором закончился
-    // предыдущий, а не начинает заново с 9:00.
-    let dayElapsedMinutes = cfg.shiftStartMinutes;
-    // Остаток топлива в баке — тем же приёмом переносится между документами
-    // ОДНОГО дня (группа уже ключуется driverId|mixerId|tripDate, см. groups
-    // выше, то есть один день — один водитель — одна техника). null — ещё
-    // не было ни одного документа с ненулевым расходом в этом дне: тогда
-    // "остаток при выезде" берём случайным (см. flushChunk), иначе — это
-    // реальный перенос "остаток при возвращении" предыдущего документа
-    // (по просьбе пользователя — рейсы подряд в одну дату одной техникой
-    // должны быть внутренне согласованы, а не каждый со своим случайным
-    // стартовым остатком).
-    let dayFuelBalance = null;
-
-    const flushChunk = () => {
-      if (!chunkTrips) return;
-      partIndex += 1;
-      const routesArr = Array.from(chunkRoutes.values());
-      const odometerEnd = chunkOdometerStart + chunkLegs.reduce((s, l) => s + l.distanceKm * 2, 0);
-      // Расход топлива по норме за документ — та же сумма, что уже
-      // печаталась в "Результаты работы автомобиля" на обороте (см.
-      // buildBackXml), нужна теперь ещё и для "Движение горючего" на
-      // лицевой стороне (см. buildFrontXml) — считаем один раз тут.
-      const totalFuelLiters = group[0].fuelPricePerLiter > 0
-        ? routesArr.reduce((s, r) => s + (r.tripCount || 0) * (r.fuelCostPerTrip || 0), 0) / group[0].fuelPricePerLiter
-        : 0;
-      // "Время работы двигателя" — по просьбе пользователя: время в пути +
-      // половина времени простоя под погрузкой/разгрузкой (вся пауза
-      // unloadMinutes — на разгрузке, см. комментарий выше у
-      // dayElapsedMinutes; "спецоборудования" пользователь не оговаривал —
-      // не заполняем, нет для него формулы и данных).
-      const totalDrivingMinutes = chunkLegs.reduce((s, l) => s + 2 * oneWayMinutes(l.distanceKm), 0);
-      const engineMinutes = totalDrivingMinutes + (chunkLegs.length * (cfg.unloadMinutes || 0)) / 2;
-      // Движение горючего — см. комментарий у dayFuelBalance выше и у
-      // "Движение горючего" в waybill-xlsx-4s.js::buildFrontXml (там же
-      // печатается "выдано" = totalFuelLiters × 1.1 и исходное равенство
-      // остаток_при_выезде + выдано = остаток_при_возвращении + расход).
-      // Документ с нулевым расходом (totalFuelLiters === 0, например пустой
-      // перегон) не трогает dayFuelBalance — следующий документ дня всё
-      // равно продолжит от последнего РЕАЛЬНОГО остатка, а не от null.
-      let fuelBalanceAtDeparture = null;
-      let fuelBalanceAtReturn = null;
-      if (totalFuelLiters > 0) {
-        fuelBalanceAtDeparture = dayFuelBalance !== null
-          ? dayFuelBalance
-          : totalFuelLiters * (0.05 + Math.random() * 0.05); // первый документ дня — случайные 5-10% от нормы
-        fuelBalanceAtReturn = fuelBalanceAtDeparture + totalFuelLiters * 1.1 - totalFuelLiters;
-        dayFuelBalance = fuelBalanceAtReturn;
-      }
-      documents.push({
-        id: key.replace(/\|/g, '-') + '-p' + partIndex,
-        createdAt,
-        // Название завода БЕЗ подмены на полный адрес (в отличие от
-        // routesArr[].plantName, см. plantLabel выше) — нужно отдельно,
-        // для имени файла при скачивании (см. waybillFileName в
-        // waybill-xlsx-4s.js): "Джага", а не вся строка адреса.
-        plantName: group[0].plantName,
-        driverName: group[0].driverName,
-        driverLicenseNumber: group[0].driverLicenseNumber,
-        mixerName: group[0].mixerName,
-        mixerPlate: group[0].mixerPlate,
-        // Гаражный номер — печатается рядом с гос.номером (найдено
-        // пользователем: поле в бланке есть, не заполнялось). Берём с первой
-        // записи группы, тот же приём, что у mixerName/mixerPlate выше.
-        mixerGarageNumber: group[0].mixerGarageNumber || '',
-        // Прицеп — по просьбе пользователя печатаем на бланке рядом с
-        // номером машины (см. buildFrontXml в waybill-xlsx-4s.js). Берём с
-        // первой записи группы — тот же приём, что у driverName/mixerName
-        // выше (один документ = один водитель+машина+день, прицеп на
-        // практике тоже не меняется внутри дня).
-        trailerName: group[0].trailerName || '',
-        trailerPlate: group[0].trailerPlate || '',
-        trailerGarageNumber: group[0].trailerGarageNumber || '',
-        fuelPricePerLiter: group[0].fuelPricePerLiter,
-        odometerStart: chunkOdometerStart,
-        odometerEnd,
-        timeStartMinutes: chunkTimeStart,
-        timeEndMinutes: dayElapsedMinutes,
-        totalFuelLiters,
-        fuelBalanceAtDeparture,
-        fuelBalanceAtReturn,
-        engineMinutes,
-        routes: routesArr,
-        legs: chunkLegs
-      });
-      chunkRoutes = null;
-      chunkLegs = null;
-      chunkTrips = 0;
-    };
-
-    for (const e of group) {
-      // На случай рассинхрона (запись есть в выборке, но почему-то не
-      // нашлась в истории — не должно случаться) — считаем от 0, лучше
-      // заниженный одометр, чем упавшая выгрузка.
-      const entryStart = odometerStartByEntryId.has(e.id) ? odometerStartByEntryId.get(e.id) : 0;
-      const legOneWayMinutes = oneWayMinutes(e.distanceKm);
-      const tons = tonsPerTrip(e);
-      let remaining = e.tripCount;
-      let consumed = 0;
-      while (remaining > 0) {
-        if (chunkTrips === 0) {
-          chunkRoutes = new Map();
-          chunkLegs = [];
-          chunkOdometerStart = entryStart + consumed * e.distanceKm * 2;
-          chunkTimeStart = dayElapsedMinutes;
-        }
-        const take = Math.min(remaining, WAYBILL_4S_MAX_TRIPS - chunkTrips);
-
-        const routeKey = e.distanceKm + '|' + e.address;
-        if (!chunkRoutes.has(routeKey)) {
-          chunkRoutes.set(routeKey, {
-            distanceKm: e.distanceKm,
-            address: e.address,
-            // plantName тут — то, что реально печатается в пункте погрузки
-            // (см. buildFrontXml/buildBackXml) — "название, адрес" если у
-            // завода задан адрес, иначе по-старому одно название.
-            plantName: plantLabel(e),
-            cargo: cargoFor(e),
-            tripCount: 0,
-            tonsPerTrip: tons,
-            fuelCostPerTrip: e.fuelCostPerTrip,
-            // "Время прибытия" в задании водителю — момент прибытия на
-            // разгрузку (к клиенту) ПЕРВОГО рейса этого маршрута, дальше не
-            // переписывается (см. buildFrontXml).
-            firstDropoffArrivalMinutes: null
-          });
-        }
-        const route = chunkRoutes.get(routeKey);
-        route.tripCount += take;
-        for (let i = 0; i < take; i++) {
-          // Погрузка на заводе — без простоя (pickupDeparture = pickupArrival,
-          // см. комментарий у dayElapsedMinutes выше); вся пауза (unloadMinutes)
-          // — на разгрузке у клиента.
-          const pickupArrival = dayElapsedMinutes;
-          const pickupDeparture = pickupArrival;
-          const dropoffArrival = pickupDeparture + legOneWayMinutes;
-          const dropoffDeparture = dropoffArrival + (cfg.unloadMinutes || 0);
-          if (route.firstDropoffArrivalMinutes == null) route.firstDropoffArrivalMinutes = dropoffArrival;
-          chunkLegs.push({
-            plantName: plantLabel(e),
-            address: e.address,
-            distanceKm: e.distanceKm,
-            pickupArrivalMinutes: pickupArrival,
-            pickupDepartureMinutes: pickupDeparture,
-            dropoffArrivalMinutes: dropoffArrival,
-            dropoffDepartureMinutes: dropoffDeparture
-          });
-          dayElapsedMinutes = dropoffDeparture + legOneWayMinutes; // обратно на завод — готов к следующему рейсу
-        }
-        chunkTrips += take;
-        consumed += take;
-        remaining -= take;
-
-        if (chunkTrips >= WAYBILL_4S_MAX_TRIPS) flushChunk();
-      }
-    }
-    flushChunk();
-  }
-
-  applyFuelFactVariance(documents);
+// Путевые листы формы №4-С (аудиторы настаивают на ней вместо 4-П) —
+// расчёт документов по полной истории техники: см. waybill-docs.js (change
+// waybill-fuel-chain). Выгрузка печатает каждый лист, в который входит хотя
+// бы одна выбранная запись, целиком — состав и цифры листа не зависят от
+// отмеченных галочек (иначе сводка списания ГСМ разошлась бы с печатью).
+async function buildWaybill4sDocuments(selectedEntries) {
+  const selected = new Set(selectedEntries.map((e) => e.id));
+  const vehicleIds = selectedEntries.map((e) => e.mixerId);
+  const untilDate = selectedEntries.reduce((max, e) => (e.tripDate > max ? e.tripDate : max), '');
+  const all = await waybillDocs.loadVehicleDocs(vehicleIds, untilDate);
+  const documents = all.filter((d) => d.entryIds.some((id) => selected.has(id)));
   await assignWaybillDocNumbers(documents);
   return documents;
-}
-
-// "Результаты работы автомобиля" на обороте 4-С — графа "по факту" (см.
-// CELLS_RESULTS.fuelFact в waybill-xlsx-4s.js) раньше печаталась равной
-// "по норме" (осознанно, "план=факт по построению"). По просьбе
-// пользователя — разброс ±10% на каждый документ, чтобы расход выглядел
-// реальным, а не одинаковым каждый раз, но сумма "факт" по всем документам
-// этой выгрузки должна остаться равна сумме "норма" (иначе разойдётся с
-// остальным учётом топлива в системе, который считается по норме). Поэтому
-// не берём случайное значение напрямую, а потом РАВНОМЕРНО перемасштабируем
-// весь набор одним общим коэффициентом (normTotal/rawTotal) — сумма после
-// масштабирования точно равна норме, а разброс между документами остаётся
-// близким к исходным случайным ±10% (коэффициент масштабирования близок к
-// 1, если случайные отклонения в среднем компенсируют друг друга, что и
-// обеспечивает Math.random()).
-function applyFuelFactVariance(documents) {
-  var normTotal = 0, rawTotal = 0;
-  var raw = documents.map(function (doc) {
-    if (!(doc.totalFuelLiters > 0)) return 0;
-    normTotal += doc.totalFuelLiters;
-    var variance = (Math.random() * 2 - 1) * 0.1; // -10%..+10%
-    var value = doc.totalFuelLiters * (1 + variance);
-    rawTotal += value;
-    return value;
-  });
-  var factor = rawTotal > 0 ? normTotal / rawTotal : 1;
-  documents.forEach(function (doc, i) {
-    doc.fuelFactLiters = doc.totalFuelLiters > 0 ? raw[i] * factor : 0;
-  });
 }
 
 // Номера путевых листов — по просьбе пользователя ("у путевых листов
@@ -847,6 +525,15 @@ const routes = [
       res.end();
     }
   },
+  // Сводка списанного по путевым ГСМ (change waybill-fuel-chain) — те же
+  // права, что у путевых листов. Пишет в БД только коэффициенты ещё не
+  // посчитанных листов (идемпотентно), номера листов не выдаёт.
+  {
+    method: 'GET',
+    pattern: /^\/api\/waybill-entries\/fuel-summary$/,
+    role: 'manager',
+    handler: async (req, res, m, role, query) => sendJson(res, 200, await waybillDocs.fuelSummary(query))
+  },
   {
     method: 'POST',
     pattern: /^\/api\/waybill-entries\/waybills\.xlsx$/,
@@ -1012,4 +699,4 @@ async function handleRequest(req, res) {
   await serveStatic(req, res, pathname);
 }
 
-module.exports = { handleRequest };
+module.exports = { handleRequest, buildWaybill4sDocuments };

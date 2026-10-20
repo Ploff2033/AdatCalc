@@ -47,8 +47,19 @@ async function resetClients() {
   await db.pool.query("DELETE FROM plants WHERE id LIKE 'tplant_%'");
 }
 
+// Для тестов путевых листов (change waybill-fuel-chain): коэффициенты и
+// номера листов тестовой техники (ключ листа начинается с id водителя
+// temp_*), инертовозы ttruck_*, затем всё, что чистит resetClients (рейсы
+// уходят каскадом вместе с тестовыми заказами).
+async function resetWaybills() {
+  await db.pool.query("DELETE FROM waybill_doc_fuel WHERE doc_key LIKE 'temp_%'");
+  await db.pool.query("DELETE FROM waybill_doc_numbers WHERE doc_key LIKE 'temp_%'");
+  await resetClients();
+  await db.pool.query("DELETE FROM aggregate_trucks WHERE id LIKE 'ttruck_%'");
+}
+
 async function close() {
   await db.pool.end();
 }
 
-module.exports = { db, ready, requireDb, resetRegistry, resetClients, close };
+module.exports = { db, ready, requireDb, resetRegistry, resetClients, resetWaybills, close };

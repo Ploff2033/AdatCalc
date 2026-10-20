@@ -11,6 +11,7 @@
   // поступления сразу (значение вида "order:<id>"/"receipt:<id>"), техника
   // ("wb-mixer") переключается между миксерами и инертовозами в зависимости
   // от выбранного источника — см. currentSource()/populateVehicleSelect().
+  var FUEL_COLS = 'minmax(0,1fr) 60px 100px 110px 90px 90px 90px';
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap">Распределение рейсов</span><h1>Путевые листы</h1></div>' +
@@ -59,6 +60,26 @@
           '<p class="empty-state" id="wb-entries-empty" hidden>Записей ещё нет.</p>' +
           '<p class="hint" id="wb-entries-summary" style="margin:8px 18px"></p>' +
         '</section>' +
+        // Сводка списания ГСМ (change waybill-fuel-chain) — сколько топлива
+        // списано по путевым листам за период, по каждой технике. Цифры
+        // считает сервер тем же расчётом, что и печать 4-С, поэтому они
+        // совпадают с бумагой. Свёрнута по умолчанию, грузится при открытии.
+        '<details class="card" id="wb-fuel">' +
+          '<summary style="padding:16px 18px;cursor:pointer;font-size:17px;font-weight:600">Списание ГСМ</summary>' +
+          '<div class="stack g12" style="padding:0 18px 16px">' +
+            '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">' +
+              '<div class="field" style="min-width:140px"><label for="wb-fuel-from">с</label><input id="wb-fuel-from" type="date" class="inp"></div>' +
+              '<div class="field" style="min-width:140px"><label for="wb-fuel-to">по</label><input id="wb-fuel-to" type="date" class="inp"></div>' +
+              '<div class="field" style="min-width:160px"><label for="wb-fuel-plant">Завод</label><select id="wb-fuel-plant" class="inp"></select></div>' +
+              '<div class="field" style="min-width:180px"><label for="wb-fuel-vehicle">Техника</label><select id="wb-fuel-vehicle" class="inp"></select></div>' +
+              '<button type="button" class="btn ghost sm" id="wb-fuel-xlsx" disabled>Скачать xlsx</button>' +
+            '</div>' +
+            '<p class="banner" id="wb-fuel-error" hidden></p>' +
+          '</div>' +
+          '<div class="row head" style="grid-template-columns:' + FUEL_COLS + '"><div>Техника</div><div class="r">листов</div><div class="r">норма, л</div><div class="r">списано, л</div><div class="r">выдано, л</div><div class="r">начало, л</div><div class="r">конец, л</div></div>' +
+          '<div id="wb-fuel-rows"></div>' +
+          '<p class="empty-state" id="wb-fuel-empty" hidden>Рейсов за период нет.</p>' +
+        '</details>' +
       '</div>' +
     '</div>';
 
@@ -504,7 +525,111 @@
     try { await Waybill.downloadEntries(ids); } catch (err) { alert(err.message); }
   }
 
+  // ---- Списание ГСМ ----
+  var fuelSummary = null;
+
+  function fuelFilterQuery() {
+    var q = 'from=' + encodeURIComponent(document.getElementById('wb-fuel-from').value) +
+      '&to=' + encodeURIComponent(document.getElementById('wb-fuel-to').value);
+    var plantId = document.getElementById('wb-fuel-plant').value;
+    var vehicleId = document.getElementById('wb-fuel-vehicle').value;
+    if (plantId) q += '&plantId=' + encodeURIComponent(plantId);
+    if (vehicleId) q += '&vehicleId=' + encodeURIComponent(vehicleId);
+    return q;
+  }
+
+  function populateFuelFilters() {
+    var plantSel = document.getElementById('wb-fuel-plant');
+    var prevPlant = plantSel.value;
+    plantSel.innerHTML = '<option value="">Все</option>' + (State.data.plants || []).map(function (p) {
+      return '<option value="' + p.id + '">' + p.name + '</option>';
+    }).join('');
+    if (Array.prototype.some.call(plantSel.options, function (o) { return o.value === prevPlant; })) plantSel.value = prevPlant;
+
+    var vehSel = document.getElementById('wb-fuel-vehicle');
+    var prevVeh = vehSel.value;
+    var vehicles = (State.data.mixers || []).concat(State.data.aggregateTrucks || [])
+      .slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+    vehSel.innerHTML = '<option value="">Вся</option>' + vehicles.map(function (v) {
+      return '<option value="' + v.id + '">' + v.name + '</option>';
+    }).join('');
+    if (Array.prototype.some.call(vehSel.options, function (o) { return o.value === prevVeh; })) vehSel.value = prevVeh;
+  }
+
+  function fmtLiters(v, decimals) { return v == null ? '—' : Format.fmtNum(v, decimals); }
+
+  function renderFuelSummary() {
+    var container = document.getElementById('wb-fuel-rows');
+    var table = fuelSummary ? WaybillCalc.fuelSummaryTable(fuelSummary) : { rows: [], total: null };
+    document.getElementById('wb-fuel-empty').hidden = !fuelSummary || table.rows.length > 0;
+    document.getElementById('wb-fuel-xlsx').disabled = !table.rows.length;
+    var line = function (cells, mismatch, isTotal) {
+      return '<div class="row" style="grid-template-columns:' + FUEL_COLS + (isTotal ? ';font-weight:600;background:var(--mute-bg)' : '') + '">' +
+        '<div style="font-weight:500">' + cells[0] + (mismatch ? ' <span class="chip bad">ошибка расчёта</span>' : '') + '</div>' +
+        '<div class="r num">' + cells[1] + '</div>' +
+        '<div class="r num">' + fmtLiters(cells[2], 1) + '</div>' +
+        '<div class="r num" style="font-weight:600">' + fmtLiters(cells[3], 1) + '</div>' +
+        '<div class="r num">' + fmtLiters(cells[4], 0) + '</div>' +
+        '<div class="r num">' + fmtLiters(cells[5], 1) + '</div>' +
+        '<div class="r num">' + fmtLiters(cells[6], 1) + '</div>' +
+      '</div>';
+    };
+    container.innerHTML = table.rows.map(function (r) { return line(r.cells, r.mismatch, false); }).join('') +
+      (table.rows.length ? line(table.total, false, true) : '');
+  }
+
+  async function loadFuelSummary() {
+    var errEl = document.getElementById('wb-fuel-error');
+    errEl.hidden = true;
+    try {
+      fuelSummary = await Api.get('/waybill-entries/fuel-summary?' + fuelFilterQuery());
+    } catch (err) {
+      fuelSummary = null;
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    }
+    renderFuelSummary();
+  }
+
+  function selectedOptionText(id) {
+    var sel = document.getElementById(id);
+    return sel.value ? sel.options[sel.selectedIndex].text : '';
+  }
+
+  function downloadFuelXlsx() {
+    if (!fuelSummary) return;
+    var S = XlsxWriter.STYLE;
+    var table = WaybillCalc.fuelSummaryTable(fuelSummary);
+    var filters = ['Период: ' + fmtShortDate(fuelSummary.from) + ' – ' + fmtShortDate(fuelSummary.to)];
+    if (selectedOptionText('wb-fuel-plant')) filters.push('Завод: ' + selectedOptionText('wb-fuel-plant'));
+    if (selectedOptionText('wb-fuel-vehicle')) filters.push('Техника: ' + selectedOptionText('wb-fuel-vehicle'));
+    var toCells = function (cells, mismatch) {
+      return cells.map(function (v, i) {
+        if (i === 0) return { v: v + (mismatch ? ' (ошибка расчёта)' : ''), style: S.TEXT };
+        return v == null ? { v: '', style: S.TEXT } : { v: v, num: true, style: S.NUM };
+      });
+    };
+    var blob = XlsxWriter.build({
+      sheetName: 'Списание ГСМ',
+      rows: [[{ v: 'Списание ГСМ по путевым листам. ' + filters.join(', ') }], []]
+        .concat([table.head.map(function (h) { return { v: h, style: S.HEAD_PLAIN }; })])
+        .concat(table.rows.map(function (r) { return toCells(r.cells, r.mismatch); }))
+        .concat([toCells(table.total)]),
+      colWidths: [28, 10, 14, 18, 14, 18, 18]
+    });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'Списание ГСМ ' + fmtShortDate(fuelSummary.from) + '–' + fmtShortDate(fuelSummary.to) + '.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
   function render() {
+    populateFuelFilters();
+    if (document.getElementById('wb-fuel').open) loadFuelSummary();
     renderSourceFilterSeg();
     populateSourceSelect();
     populateDriverSelect();
@@ -534,6 +659,15 @@
       renderEntries();
     });
     document.getElementById('wb-download-btn').addEventListener('click', handleDownload);
+
+    var month = WaybillCalc.monthRange(isoDate(new Date()));
+    document.getElementById('wb-fuel-from').value = month.from;
+    document.getElementById('wb-fuel-to').value = month.to;
+    document.getElementById('wb-fuel').addEventListener('toggle', function () { if (this.open) loadFuelSummary(); });
+    ['wb-fuel-from', 'wb-fuel-to', 'wb-fuel-plant', 'wb-fuel-vehicle'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', loadFuelSummary);
+    });
+    document.getElementById('wb-fuel-xlsx').addEventListener('click', downloadFuelXlsx);
   }
 
   // renderedMode: см. комментарий в screen-main.js.

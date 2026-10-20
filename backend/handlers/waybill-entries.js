@@ -60,9 +60,13 @@ const COLUMNS = [
   ['trip_count', 'tripCount'],
   ['fuel_price_per_liter', 'fuelPricePerLiter'],
   ['fuel_cost_per_trip', 'fuelCostPerTrip'],
+  // Снимок ставки расхода техники (л/100км) — от неё считается норма
+  // топлива в путевом листе 4-С (change waybill-fuel-chain), подставляется
+  // сервером из карточки техники в validateAndBuild.
+  ['fuel_rate', 'fuelRate'],
   ['address', 'address']
 ];
-const NUMERIC_COLUMNS = new Set(['distance_km', 'trip_count', 'fuel_price_per_liter', 'fuel_cost_per_trip']);
+const NUMERIC_COLUMNS = new Set(['distance_km', 'trip_count', 'fuel_price_per_liter', 'fuel_cost_per_trip', 'fuel_rate']);
 
 function rowToEntry(row) {
   const out = { id: row.id, createdAt: new Date(row.created_at).toISOString() };
@@ -93,7 +97,7 @@ async function getLimitsConfig() {
     unloadMinutes: Number(row.unload_minutes),
     // Не участвует в проверке дневного лимита (та считает только суммарные
     // часы) — нужен только для печати времени в путевом листе №4-С, см.
-    // buildWaybill4sDocuments в router.js.
+    // buildVehicleDocs в waybill-docs.js.
     shiftStartMinutes: Number(row.shift_start_minutes)
   };
 }
@@ -274,6 +278,7 @@ async function validateAndBuild(client, body, excludeId) {
     address,
     fuelPricePerLiter,
     fuelCostPerTrip,
+    fuelRate,
     mixerGarageNumber,
     trailerName,
     trailerPlate,
@@ -362,4 +367,4 @@ async function remove(id) {
   }
 }
 
-module.exports = { list, create, update, remove, getByIds, tripHours, getLimitsConfig };
+module.exports = { list, create, update, remove, getByIds, tripHours, getLimitsConfig, rowToEntry };

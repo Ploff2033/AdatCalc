@@ -104,7 +104,35 @@
     return fromOrders.concat(fromReceipts).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
   }
 
+  // ---- Сводка списания ГСМ (change waybill-fuel-chain, спека
+  // waybills/fuel-summary) — цифры считает сервер
+  // (GET /api/waybill-entries/fuel-summary), тут только период по
+  // умолчанию и раскладка в строки для экрана и xlsx (одна функция на оба,
+  // чтобы файл не разошёлся с экраном). ----
+
+  // Текущий календарный месяц для даты 'YYYY-MM-DD' — период сводки по умолчанию.
+  function monthRange(isoDate) {
+    var y = Number(isoDate.slice(0, 4));
+    var m = Number(isoDate.slice(5, 7));
+    var last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    var mm = String(m).padStart(2, '0');
+    return { from: y + '-' + mm + '-01', to: y + '-' + mm + '-' + String(last).padStart(2, '0') };
+  }
+
+  var FUEL_SUMMARY_HEAD = ['Техника', 'Листов', 'Норма, л', 'Списано (факт), л', 'Выдано, л', 'Остаток на начало, л', 'Остаток на конец, л'];
+
+  // summary — ответ сервера. Числа остаются числами (форматирует экран /
+  // xlsx); null у остатков — у техники в периоде только листы без нормы.
+  function fuelSummaryTable(summary) {
+    var rows = (summary.rows || []).map(function (r) {
+      return { mismatch: !!r.mismatch, cells: [r.name, r.docs, r.normLiters, r.factLiters, r.issuedLiters, r.startLiters, r.endLiters] };
+    });
+    var t = summary.total || {};
+    return { head: FUEL_SUMMARY_HEAD, rows: rows, total: ['Итого', t.docs || 0, t.normLiters || 0, t.factLiters || 0, t.issuedLiters || 0, null, null] };
+  }
+
   window.WaybillCalc = {
+    monthRange: monthRange, fuelSummaryTable: fuelSummaryTable,
     cfgLimits: cfgLimits, tripHours: tripHours, entriesForOrder: entriesForOrder, allocatedForOrder: allocatedForOrder,
     remainingForOrder: remainingForOrder, deliveryOrders: deliveryOrders, unallocatedOrders: unallocatedOrders,
     driverUsedHours: driverUsedHours, mixerUsedHours: mixerUsedHours, maxTrips: maxTrips,

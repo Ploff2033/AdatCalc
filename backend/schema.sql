@@ -272,8 +272,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 -- на карточке машины и остаётся неизменным, а фактический "текущий одометр"
 -- на любую дату всегда считается заново как
 -- odometer_baseline_km + сумма (расстояние туда-обратно × кол-во рейсов)
--- по ВСЕМ путевым записям этой машины с датой/временем создания раньше —
--- см. buildWaybill4sDocuments() в router.js. Такой расчёт (а не хранимый
+-- по ВСЕМ более ранним путевым записям этой машины в порядке рейсов
+-- (дата → смены водителей → время создания записи) — см. buildVehicleDocs
+-- в waybill-docs.js. Такой расчёт (а не хранимый
 -- накопитель) не ломается при внесении исторических записей задним числом.
 ALTER TABLE mixers ADD COLUMN IF NOT EXISTS odometer_baseline_km NUMERIC NOT NULL DEFAULT 0;
 
@@ -594,18 +595,20 @@ ALTER TABLE plants ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
 -- Инертовозам — тот же набор полей, что и миксерам ("для инертовозов нужны
 -- все те же поля, что и для миксеров, а то одометр на них нельзя
 -- настроить"). mixers.odometer_baseline_km уже участвует в расчёте одометра
--- путевого листа (см. buildWaybill4sDocuments в router.js) — до этой правки
+-- путевого листа (сейчас — buildVehicleDocs в waybill-docs.js) — до этой правки
 -- тот расчёт читал базовый пробег ТОЛЬКО из mixers, так что для рейсов
 -- поступлений (mixer_id там хранит id инертовоза, см. комментарий у
 -- waybill_entries.receipt_id) он всегда считался нулевым, даже если бы поле
--- на инертовозе где-то и было — его читать было неоткуда. Теперь
--- buildWaybill4sDocuments тоже обновлён, см. router.js.
+-- на инертовозе где-то и было — его читать было неоткуда. Теперь базовый
+-- пробег читается из обеих таблиц, см. loadVehicleDocs в waybill-docs.js.
 ALTER TABLE aggregate_trucks ADD COLUMN IF NOT EXISTS odometer_baseline_km NUMERIC NOT NULL DEFAULT 0;
 
 -- Начало смены (минут от полуночи, 540 = 9:00) — "выезд с парковки условно
 -- в 9". Используется только для печати путевого листа №4-С (время выезда/
 -- возвращения в гараж + последовательность выполнения задания на обороте,
--- см. buildWaybill4sDocuments в router.js) — НЕ участвует в проверке
+-- см. buildVehicleDocs в waybill-docs.js; это выезд ПЕРВОГО водителя дня,
+-- следующий водитель той же машины принимает её в момент возвращения
+-- предыдущего, change waybill-fuel-chain) — НЕ участвует в проверке
 -- дневного лимита часов водителя/машины (та считает только суммарные часы,
 -- не привязываясь к часам суток, см. handlers/waybill-entries.js).
 ALTER TABLE config ADD COLUMN IF NOT EXISTS shift_start_minutes NUMERIC NOT NULL DEFAULT 540;
@@ -614,7 +617,7 @@ ALTER TABLE config ADD COLUMN IF NOT EXISTS shift_start_minutes NUMERIC NOT NULL
 -- должны быть номера"). Сами документы №4-С не хранятся как отдельная
 -- сущность — собираются на лету при каждой выгрузке из waybill_entries
 -- (группировка водитель+машина+дата, разбивка по 3 поездки, см.
--- buildWaybill4sDocuments в router.js), поэтому номер выдаётся и
+-- buildVehicleDocs в waybill-docs.js), поэтому номер выдаётся и
 -- запоминается по стабильному ключу документа (doc_key = та же строка,
 -- что уже служит его id — "водитель-машина-дата-pN") — один раз при первой
 -- выгрузке, дальше переживает повторную печать тех же рейсов. SERIAL — не
@@ -855,3 +858,37 @@ UPDATE waybill_entries w SET mixer_garage_number = t.garage_number
   FROM aggregate_trucks t WHERE w.mixer_id = t.id AND w.mixer_garage_number = '' AND t.garage_number <> '';
 UPDATE waybill_entries w SET trailer_garage_number = tr.garage_number
   FROM trailers tr WHERE w.trailer_id = tr.id AND w.trailer_garage_number = '' AND tr.garage_number <> '';
+
+-- Снимок ставки расхода техники (л/100км) на момент распределения рейса —
+-- change waybill-fuel-chain. Норма топлива в путевом листе 4-С считается от
+-- неё, а не обратным делением fuel_cost_per_trip на цену топлива завода
+-- (при цене 0 норма раньше выходила 0). NULL — ещё не заполнено, код
+-- трактует как 0.
+ALTER TABLE waybill_entries ADD COLUMN IF NOT EXISTS fuel_rate NUMERIC;
+-- Бэкфилл: где цена топлива была > 0 — точное восстановление ставки на
+-- момент распределения (fuel_cost_per_trip = 2·км · ставка/100 · цена),
+-- иначе — текущая ставка из карточки миксера/инертовоза. Идемпотентно.
+UPDATE waybill_entries SET fuel_rate = fuel_cost_per_trip / (2 * distance_km * fuel_price_per_liter) * 100
+  WHERE fuel_rate IS NULL AND fuel_price_per_liter > 0 AND distance_km > 0;
+UPDATE waybill_entries w SET fuel_rate = m.fuel_rate
+  FROM mixers m WHERE w.mixer_id = m.id AND w.fuel_rate IS NULL;
+UPDATE waybill_entries w SET fuel_rate = t.fuel_rate
+  FROM aggregate_trucks t WHERE w.mixer_id = t.id AND w.fuel_rate IS NULL;
+
+-- Случайные коэффициенты топлива путевого листа 4-С (change
+-- waybill-fuel-chain): выбираются один раз при первом расчёте листа и
+-- больше не меняются, литры пересчитываются по полной истории техники.
+-- doc_key — тот же ключ "водитель-техника-дата-pN", что у
+-- waybill_doc_numbers, но таблица отдельная: номера выдаются только при
+-- печати, а коэффициенты — и при расчёте сводки списания ГСМ.
+-- target_p — целевой остаток после дозаправки в долях нормы (0.05…0.15),
+-- start_s — стартовый остаток самого первого листа техники (0.05…0.10, у
+-- остальных не нужен). Факт расхода не случаен — всегда равен норме.
+CREATE TABLE IF NOT EXISTS waybill_doc_fuel (
+  doc_key TEXT PRIMARY KEY,
+  target_p NUMERIC NOT NULL,
+  start_s NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Ранняя версия таблицы (до деплоя) хранила ещё отклонение факта — убрано.
+ALTER TABLE waybill_doc_fuel DROP COLUMN IF EXISTS fact_k;

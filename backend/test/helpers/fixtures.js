@@ -43,11 +43,14 @@ async function recipe(plantId, name, salePrice) {
   return { id, name, salePrice };
 }
 
-async function mixer(name, capacity) {
+// opts (необязательно): fuelRate (л/100км, по умолчанию 30), baselineKm —
+// базовый пробег для одометра путевых листов.
+async function mixer(name, capacity, opts) {
+  const o = opts || {};
   const id = 'tmix_' + (++n);
   await db.pool.query(
-    'INSERT INTO mixers (id, name, capacity, balance, residual, mileage, fuel_rate) VALUES ($1, $2, $3, 0, 0, 1, 30)',
-    [id, name, capacity]
+    'INSERT INTO mixers (id, name, capacity, balance, residual, mileage, fuel_rate, odometer_baseline_km) VALUES ($1, $2, $3, 0, 0, 1, $4, $5)',
+    [id, name, capacity, o.fuelRate != null ? o.fuelRate : 30, o.baselineKm || 0]
   );
   return { id, name, capacity };
 }
@@ -99,4 +102,24 @@ async function driver(plantId, name) {
   return { id, name };
 }
 
-module.exports = { unit, category, rawRequest, plant, recipe, mixer, client, orderBody, material, driver };
+// Запись рейса путевого листа напрямую в БД — минуя проверки лимитов
+// handlers/waybill-entries.js, чтобы тест задавал ровно нужную историю
+// (дата, порядок создания, ставка). orderId — любой существующий заказ
+// (источник рейса обязателен по схеме). o: { date, km, trips, fuelRate,
+// createdAt, price, plantId, plantName }.
+async function waybillEntry(orderId, drv, veh, o) {
+  const id = 'twbe_' + (++n);
+  const km = o.km != null ? o.km : 50;
+  const rate = o.fuelRate != null ? o.fuelRate : 40;
+  const price = o.price != null ? o.price : 75;
+  await db.pool.query(
+    `INSERT INTO waybill_entries (id, order_id, plant_id, plant_name, trip_date, driver_id, driver_name, mixer_id, mixer_name,
+       distance_km, trip_count, fuel_price_per_liter, fuel_cost_per_trip, fuel_rate, address, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'ул. Ленина, 5', $15)`,
+    [id, orderId, o.plantId || 'tplant_x', o.plantName || 'Тест', o.date, drv.id, drv.name, veh.id, veh.name,
+      km, o.trips || 1, price, 2 * km * (rate / 100) * price, rate, o.createdAt || new Date().toISOString()]
+  );
+  return id;
+}
+
+module.exports = { unit, category, rawRequest, plant, recipe, mixer, client, orderBody, material, driver, waybillEntry };
