@@ -4,6 +4,7 @@ const { str, num } = require('../validate');
 const telegram = require('../telegram');
 const stock = require('./stock');
 const clients = require('./clients');
+const { diffOrder, profitLine, actorLabel } = require('../order-edit-diff');
 
 // [column, jsField] — единый источник и для INSERT, и для чтения строки обратно.
 const ORDER_COLUMNS = [
@@ -54,7 +55,11 @@ const ORDER_COLUMNS = [
   ['ship_date', 'shipDate'],
   // Снимок ограниченной загрузки миксера (change client-list) — NULL, если
   // рейсы посчитаны по полной вместимости.
-  ['max_load_m3', 'maxLoadM3']
+  ['max_load_m3', 'maxLoadM3'],
+  // Снимки ссылок на рецепт/миксер (change order-edit) — форма исправления
+  // находит по ним рецепт и миксер; у старых заказов NULL, ищем по названию.
+  ['recipe_id', 'recipeId'],
+  ['mixer_id', 'mixerId']
 ];
 
 // Расход материалов по заказу (снимок: название/ед. на момент заказа, а не
@@ -74,7 +79,9 @@ function sanitizeMaterials(materials) {
 
 // Заказ — снимок расчёта с Главной на момент оформления: цены материалов,
 // рецепт и т.п. могут измениться позже, но сам заказ должен остаться таким,
-// каким его посчитали и отдали клиенту. Поэтому редактирования нет, только удаление.
+// каким его посчитали и отдали клиенту. Исправить ошибку ввода можно через
+// update() ниже (change order-edit) — тот же снимок, посчитанный заново,
+// с журналом правок.
 function sanitize(body) {
   return {
     createdAt: str(body.createdAt, 'createdAt'),
@@ -152,7 +159,7 @@ function sanitizeMaxLoad(value) {
 // (NaN — falsy, поэтому `order.address ? ... : ''` во фронтенде просто
 // молча скрывал адрес, а не показывал "NaN"). Заказы БЕЗ адреса — те же
 // самые '' → Number('')=0, тоже falsy — оттого баг был не видно на глаз.
-const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'client_id', 'client_name', 'client_type', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address']);
+const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'client_id', 'client_name', 'client_type', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address', 'recipe_id', 'mixer_id']);
 
 function rowToOrder(row, materialRows) {
   const out = { id: row.id };
@@ -170,8 +177,42 @@ function rowToOrder(row, materialRows) {
   // cancelled_at не входит в ORDER_COLUMNS (не участвует в INSERT при
   // создании заказа — проставляется только позже, через cancel()).
   out.cancelledAt = row.cancelled_at ? new Date(row.cancelled_at).toISOString() : null;
+  // inserted_at/version — тоже вне ORDER_COLUMNS: проставляет БД (DEFAULT),
+  // из тела запроса не читаются никогда (change order-edit).
+  out.insertedAt = new Date(row.inserted_at).toISOString();
+  out.version = Number(row.version);
   out.materials = materialRows.map((m) => ({ name: m.name, unit: m.unit, qty: Number(m.qty), materialId: m.material_id }));
   return out;
+}
+
+// Журнал правок и признак путевых листов (change order-edit) — одним
+// запросом на весь список, а не по запросу на заказ: форме исправления
+// нужно знать, какие поля блокировать, списку — что показать под «испр.».
+async function attachEditInfo(client, list) {
+  if (!list.length) return list;
+  const ids = list.map((o) => o.id);
+  const { rows: editRows } = await client.query(
+    'SELECT * FROM order_edits WHERE order_id = ANY($1) ORDER BY edited_at DESC, id DESC',
+    [ids]
+  );
+  const { rows: wbRows } = await client.query('SELECT DISTINCT order_id FROM waybill_entries WHERE order_id = ANY($1)', [ids]);
+  const withWaybills = new Set(wbRows.map((r) => r.order_id));
+  const byOrder = {};
+  for (const r of editRows) {
+    (byOrder[r.order_id] = byOrder[r.order_id] || []).push({
+      id: r.id,
+      editedAt: new Date(r.edited_at).toISOString(),
+      actorRole: r.actor_role,
+      actor: actorLabel(r.actor_role, r.actor_plant_name),
+      changes: r.changes,
+      profit: profitLine(Number(r.profit_before), Number(r.profit_after))
+    });
+  }
+  for (const o of list) {
+    o.edits = byOrder[o.id] || [];
+    o.hasWaybills = withWaybills.has(o.id);
+  }
+  return list;
 }
 
 async function fetchMaterials(client, orderId) {
@@ -213,7 +254,7 @@ async function list(query, role) {
     const { rows } = await client.query(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, params);
     const result = [];
     for (const row of rows) result.push(rowToOrder(row, await fetchMaterials(client, row.id)));
-    return result;
+    return attachEditInfo(client, result);
   } finally {
     client.release();
   }
@@ -302,36 +343,175 @@ async function cancel(id) {
   }
 }
 
-// Дата и завод — единственные поля уже оформленного заказа, которые можно
-// поменять (остальное — неизменяемый снимок расчёта, см. sanitize() выше).
-// Нужно на случай, если заказ завели не на тот завод: раньше его приходилось
-// удалять и заводить заново на верном заводе, из-за чего терялась исходная
-// дата/время — теперь и то, и другое можно поправить прямо в заказе.
-async function updateDate(id, createdAtRaw, plantIdRaw) {
-  const createdAt = str(createdAtRaw, 'createdAt');
+const SELF_PICKUP = 'Самовывоз';
+const WORKER_WINDOW_HOURS = 24;
+
+const differs = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) > 0.005;
+
+// Поля, которые нельзя менять, пока по заказу есть путевые листы: от них
+// зависят материалы и число рейсов, а по рейсам уже списана доля брони
+// (waybill-entries.js: рейсы записи / orders.trip_count). Адрес, км и
+// цены — можно: путевой лист хранит свой снимок адреса и км.
+function lockedFieldsChanged(row, f) {
+  const recipeChanged = row.recipe_id && f.recipeId ? row.recipe_id !== f.recipeId : row.recipe_name !== f.recipeName;
+  const mixerChanged = row.mixer_id && f.mixerId ? row.mixer_id !== f.mixerId : row.mixer_name !== f.mixerName;
+  const rowLoad = row.max_load_m3 == null ? null : Number(row.max_load_m3);
+  const loadChanged = (rowLoad == null) !== (f.maxLoadM3 == null) || (rowLoad != null && differs(rowLoad, f.maxLoadM3));
+  return recipeChanged || mixerChanged || loadChanged ||
+    differs(row.sale_volume, f.saleVolume) || differs(row.trip_count, f.tripCount) ||
+    (row.mixer_name === SELF_PICKUP) !== (f.mixerName === SELF_PICKUP);
+}
+
+// actor: { role: 'worker' | 'manager' | 'admin', plantId } — plantId только
+// у работника по ссылке своего завода; у общей ссылки null (любой завод).
+function assertWorkerMayEdit(row, f, actor) {
+  if (actor.role !== 'worker') return;
+  if (!row.within_window) throw new HttpError(403, 'Исправить заказ можно в течение суток — обратитесь к менеджеру');
+  if (actor.plantId && actor.plantId !== row.plant_id) throw new HttpError(403, 'Заказ другого завода');
+  if (f.plantId !== row.plant_id) throw new HttpError(403, 'Перенести заказ на другой завод может только менеджер');
+}
+
+// Журнал правки + текст для чата — общий для update() и updateDate().
+// Вызывается внутри транзакции, возвращает то, что отправить после COMMIT.
+async function recordEdit(client, before, after, actor, plantName) {
+  const changes = diffOrder(before, after);
+  if (!changes.length) return null;
+  const actorPlantName = actor.role === 'worker' ? (plantName || after.plantName) : '';
+  await client.query(
+    `INSERT INTO order_edits (id, order_id, actor_role, actor_plant_name, changes, profit_before, profit_after)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [db.genId('oed'), after.id, actor.role, actorPlantName, JSON.stringify(changes), before.totalProfit, after.totalProfit]
+  );
+  return { order: after, changes, profit: profitLine(before.totalProfit, after.totalProfit), actor: actorLabel(actor.role, actorPlantName) };
+}
+
+// Исправление оформленного заказа (change order-edit). Тело — тот же payload,
+// что при оформлении (frontend-v2/js/order-calc.js::toOrderPayload, расчёт
+// уже сделан формой), плюс version — версия заказа, открытая в форме.
+async function update(id, body, actor) {
+  const f = sanitize(body);
+  const version = num(body && body.version, 'version');
   const client = await db.pool.connect();
+  let notice = null;
+  let result;
   try {
-    let plantName;
-    if (plantIdRaw != null) {
-      const plantId = str(plantIdRaw, 'plantId');
-      const { rows: plantRows } = await client.query('SELECT name FROM plants WHERE id = $1', [plantId]);
-      if (!plantRows.length) throw new HttpError(400, 'Завод не найден');
-      plantName = plantRows[0].name;
-      const { rowCount } = await client.query(
-        'UPDATE orders SET created_at = $1, plant_id = $2, plant_name = $3 WHERE id = $4',
-        [createdAt, plantId, plantName, id]
-      );
-      if (!rowCount) throw new HttpError(404, 'Заказ не найден');
-    } else {
-      const { rowCount } = await client.query('UPDATE orders SET created_at = $1 WHERE id = $2', [createdAt, id]);
-      if (!rowCount) throw new HttpError(404, 'Заказ не найден');
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT *, inserted_at >= now() - interval '${WORKER_WINDOW_HOURS} hours' AS within_window FROM orders WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    if (!rows.length) throw new HttpError(404, 'Заказ не найден');
+    const row = rows[0];
+    if (row.cancelled_at) throw new HttpError(409, 'Заказ отменён');
+    if (Number(row.version) !== version) throw new HttpError(409, 'Заказ уже исправили — откройте заново');
+    assertWorkerMayEdit(row, f, actor);
+
+    const { rows: plantRows } = await client.query('SELECT name FROM plants WHERE id = $1', [f.plantId]);
+    if (!plantRows.length) throw new HttpError(400, 'Завод не найден');
+    f.plantName = plantRows[0].name;
+    const { rows: clientRows } = await client.query('SELECT id FROM clients WHERE id = $1', [f.clientId]);
+    if (!clientRows.length) throw new HttpError(400, 'Неизвестный клиент');
+
+    const { rows: wbRows } = await client.query('SELECT 1 FROM waybill_entries WHERE order_id = $1 LIMIT 1', [id]);
+    const hasWaybills = wbRows.length > 0;
+    if (hasWaybills && lockedFieldsChanged(row, f)) throw new HttpError(409, 'По заказу есть путевые листы — сначала удалите их');
+
+    const beforeMaterials = await fetchMaterials(client, id);
+    const before = rowToOrder(row, beforeMaterials);
+    const draft = rowToOrder(Object.assign({}, row, Object.fromEntries(ORDER_COLUMNS.map(([col, field]) => [col, f[field] === undefined ? null : f[field]]))), beforeMaterials);
+    if (!diffOrder(before, draft).length) {
+      await client.query('ROLLBACK');
+      return before;
     }
+
+    const sets = ORDER_COLUMNS.map(([col], i) => `${col} = $${i + 2}`).join(', ');
+    await client.query(
+      `UPDATE orders SET ${sets}, version = version + 1 WHERE id = $1`,
+      [id, ...ORDER_COLUMNS.map(([, field]) => (f[field] === undefined ? null : f[field]))]
+    );
+
+    // Бронь: без путевых — снимаем остаток прежней и ставим новую по
+    // пересчитанному составу. С путевыми состав и бронь не трогаем вовсе:
+    // release() снял бы только несписанный остаток, а reserve() поставил бы
+    // полную бронь — уже списанная доля задвоилась бы. Объём и рецепт в этом
+    // случае и так заблокированы.
+    let materials = beforeMaterials;
+    if (!hasWaybills) {
+      await stock.release(client, id, 'Исправление заказа');
+      await client.query('DELETE FROM order_materials WHERE order_id = $1', [id]);
+      for (const m of f.materials) {
+        await client.query('INSERT INTO order_materials (order_id, name, unit, qty, material_id) VALUES ($1,$2,$3,$4,$5)', [id, m.name, m.unit, m.qty, m.materialId]);
+      }
+      await stock.reserve(client, id, f.materials.map((m) => ({ materialId: m.materialId, qty: m.qty })));
+      materials = f.materials.map((m) => ({ name: m.name, unit: m.unit, qty: m.qty, material_id: m.materialId }));
+    }
+
+    // Память клиента — только если это последний неотменённый заказ клиента
+    // (уже с новыми client_id/created_at): правка старого заказа не должна
+    // откатить условия, обновлённые более свежим. Память прежнего клиента
+    // при смене клиента не трогаем — восстановить её не из чего.
+    const { rows: lastRows } = await client.query(
+      'SELECT id FROM orders WHERE client_id = $1 AND cancelled_at IS NULL ORDER BY created_at DESC, inserted_at DESC LIMIT 1',
+      [f.clientId]
+    );
+    if (lastRows.length && lastRows[0].id === id) await clients.applyOrder(client, f);
+
     const { rows: full } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
-    if (!full.length) throw new HttpError(404, 'Заказ не найден');
-    return rowToOrder(full[0], await fetchMaterials(client, id));
+    result = rowToOrder(full[0], materials);
+    notice = await recordEdit(client, before, result, actor, actor.role === 'worker' ? before.plantName : '');
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
   } finally {
     client.release();
   }
+  if (notice) telegram.notifyOrderEdited(notice);
+  return result;
+}
+
+// Смена даты и/или завода — прежний маршрут, им пользуется интерфейс v1
+// (в v2 дата и завод правятся в форме исправления, update() выше). Ответ
+// для v1 тот же, но правка тоже идёт в журнал и в чат заказов (change
+// order-edit) — иначе через v1 можно было бы обойти контроль. Только
+// менеджер и выше (см. router.js), поэтому actor — роль из сессии.
+async function updateDate(id, createdAtRaw, plantIdRaw, role) {
+  const createdAt = str(createdAtRaw, 'createdAt');
+  const actor = { role: role === 'admin' ? 'admin' : 'manager', plantId: null };
+  const client = await db.pool.connect();
+  let notice = null;
+  let result;
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows.length) throw new HttpError(404, 'Заказ не найден');
+    const materials = await fetchMaterials(client, id);
+    const before = rowToOrder(rows[0], materials);
+    let plantId = rows[0].plant_id;
+    let plantName = rows[0].plant_name;
+    if (plantIdRaw != null) {
+      plantId = str(plantIdRaw, 'plantId');
+      const { rows: plantRows } = await client.query('SELECT name FROM plants WHERE id = $1', [plantId]);
+      if (!plantRows.length) throw new HttpError(400, 'Завод не найден');
+      plantName = plantRows[0].name;
+    }
+    await client.query('UPDATE orders SET created_at = $1, plant_id = $2, plant_name = $3 WHERE id = $4', [createdAt, plantId, plantName, id]);
+    const { rows: full } = await client.query('SELECT * FROM orders WHERE id = $1', [id]);
+    result = rowToOrder(full[0], materials);
+    notice = await recordEdit(client, before, result, actor, '');
+    if (notice) {
+      await client.query('UPDATE orders SET version = version + 1 WHERE id = $1', [id]);
+      result.version += 1;
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  if (notice) telegram.notifyOrderEdited(notice);
+  return result;
 }
 
 // Для печати путевых листов — сколько угодно заказов по их id одним запросом.
@@ -342,10 +522,10 @@ async function getByIds(ids) {
     const { rows } = await client.query('SELECT * FROM orders WHERE id = ANY($1) ORDER BY created_at', [ids]);
     const result = [];
     for (const row of rows) result.push(rowToOrder(row, await fetchMaterials(client, row.id)));
-    return result;
+    return attachEditInfo(client, result);
   } finally {
     client.release();
   }
 }
 
-module.exports = { list, create, remove, cancel, updateDate, getByIds, ORDER_COLUMNS };
+module.exports = { list, create, update, remove, cancel, updateDate, getByIds, ORDER_COLUMNS };

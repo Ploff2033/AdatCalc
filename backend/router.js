@@ -411,7 +411,30 @@ const routes = [
   // Полное удаление (del) — только admin (см. v2/redesign: отменить заказ
   // может менеджер через POST .../cancel ниже, а насовсем стереть историю —
   // только админ); create/read остаются открытыми как раньше.
-  ...crudRoutes('/api/orders', orders, { read: null, write: null, del: 'admin', scopeByToken: true }),
+  // PUT из crudRoutes отфильтрован — исправление заказа объявлено ниже
+  // отдельно: ему нужны роль и токен завода работника (change order-edit).
+  ...crudRoutes('/api/orders', orders, { read: null, write: null, del: 'admin', scopeByToken: true }).filter((r) => r.method !== 'PUT'),
+
+  // Исправление оформленного заказа. Открыто и работнику по ссылке, но
+  // завод работника берётся только из проверенного ?token= (как у GET
+  // /api/cash-entries), а окно в сутки и запрет переноса на другой завод
+  // проверяет handlers/orders.js::update. Менеджер и admin — без окна.
+  {
+    method: 'PUT',
+    pattern: /^\/api\/orders\/([^/]+)$/,
+    handler: async (req, res, m, role, query) => {
+      const body = await readBody(req);
+      let actor;
+      if (role) {
+        actor = { role: role === 'admin' ? 'admin' : 'manager', plantId: null };
+      } else {
+        if (!query.token) throw new HttpError(401, 'Нужна ссылка завода');
+        const resolved = await plants.resolveToken(query.token, clientIp(req));
+        actor = { role: 'worker', plantId: resolved.universal ? null : resolved.id };
+      }
+      sendJson(res, 200, await orders.update(decodeURIComponent(m[1]), body, actor));
+    }
+  },
 
   // Отмена заказа — остаётся в истории (cancelled_at), в отличие от полного
   // удаления выше. Менеджеру и выше; сама проверка "нет путевых листов" —
@@ -423,18 +446,17 @@ const routes = [
     handler: async (req, res, m) => sendJson(res, 200, await orders.cancel(decodeURIComponent(m[1])))
   },
 
-  // Смена даты и/или завода заказа — единственное разрешённое редактирование
-  // уже оформленного заказа (см. комментарий в handlers/orders.js). Только
-  // менеджер и выше — в отличие от создания/удаления заказов это не рутинное
-  // действие работника, а исправление задним числом, и открывать его всем
-  // по анонимной ссылке на завод не стоит.
+  // Смена даты и/или завода заказа — прежний маршрут интерфейса v1 (в v2
+  // дата и завод правятся в форме исправления, PUT /api/orders/:id выше).
+  // Только менеджер и выше; правка пишется в журнал и уходит в чат заказов,
+  // как и исправление (change order-edit).
   {
     method: 'PUT',
     pattern: /^\/api\/orders\/([^/]+)\/date$/,
     role: 'manager',
-    handler: async (req, res, m) => {
+    handler: async (req, res, m, role) => {
       const body = await readBody(req);
-      sendJson(res, 200, await orders.updateDate(decodeURIComponent(m[1]), body.createdAt, body.plantId));
+      sendJson(res, 200, await orders.updateDate(decodeURIComponent(m[1]), body.createdAt, body.plantId, role));
     }
   },
 

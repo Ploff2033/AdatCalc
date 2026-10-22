@@ -6,11 +6,21 @@
   var VAT_MULT = 1.22;
   var HTML =
     '<div class="page-head">' +
-      '<div class="page-title-group"><span class="cap">Новый расчёт</span><h1>Расчёт и оформление заказа</h1></div>' +
+      '<div class="page-title-group"><span class="cap" id="m-page-cap">Новый расчёт</span><h1>Расчёт и оформление заказа</h1></div>' +
       '<div class="page-head-actions"><button class="btn ghost sm" id="m-reset-btn">Сбросить</button></div>' +
     '</div>' +
     '<div style="display:grid;grid-template-columns:minmax(0,1fr) 480px;gap:24px;align-items:start;flex:1;min-height:0" class="m-grid">' +
       '<div class="stack g16">' +
+        // Режим исправления заказа (change order-edit): плашка, дата заказа,
+        // завод (выбор — только менеджеру и admin), подсказка о блокировке.
+        '<section class="card stack g12" id="m-edit-banner" style="padding:16px 20px;border-color:#B8481A;background:var(--act-bg)" hidden>' +
+          '<div class="spread" style="gap:12px"><b id="m-edit-title"></b><button type="button" class="btn ghost sm" id="m-edit-cancel">Отмена</button></div>' +
+          '<div class="grid-2">' +
+            '<div class="field"><label for="m-edit-created">Дата заказа</label><input id="m-edit-created" type="datetime-local" class="inp"></div>' +
+            '<div class="field"><label for="m-edit-plant">Завод</label><select id="m-edit-plant" class="inp"></select><span class="hint" id="m-edit-plant-name"></span></div>' +
+          '</div>' +
+          '<p class="hint" id="m-edit-locked" style="margin:0;color:#8A3410" hidden></p>' +
+        '</section>' +
         '<section class="card stack g16" style="padding:20px">' +
           '<div class="card-h2"><span class="step-num">1</span><h2>Смесь</h2></div>' +
           '<div class="grid-3">' +
@@ -108,6 +118,7 @@
         '</div>' +
         '<div style="margin-top:auto;padding:16px 22px 20px;border-top:1px solid var(--border-soft);background:var(--surface-2)" class="stack g12">' +
           '<div class="banner" id="m-validation-banner" hidden></div>' +
+          '<div class="stack g4" id="m-edit-diff" style="font-size:13px" hidden></div>' +
           '<button class="btn pri" id="m-place-order-btn" style="width:100%;height:48px;font-size:15px">Оформить заказ</button>' +
           '<p class="hint" id="m-order-placed-hint" style="text-align:center;margin:0" hidden>Заказ оформлен.</p>' +
           '<p class="hint" style="text-align:center;margin:0">После оформления цены заказа фиксируются.</p>' +
@@ -128,6 +139,9 @@
   var lastPricePlantId = null;
   var submitAttempted = false;
   var lastCalc = null;
+  // Исходная дата заказа в поле datetime-local: не трогали поле — в заказ
+  // уходит исходный createdAt с секундами, а не округлённый до минуты.
+  var editCreatedInitial = '';
 
   function mixerLabel(mixer) {
     return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
@@ -289,6 +303,11 @@
   }
 
   function recalc() {
+    recalcCore();
+    renderEditUi();
+  }
+
+  function recalcCore() {
     var data = State.data;
     var plant = State.currentPlant();
     var recipeSelect = document.getElementById('m-recipe');
@@ -476,6 +495,157 @@
     lastCalc.shipDate = document.getElementById('m-ship-date').value || null;
   }
 
+  // ---- Исправление заказа (change order-edit) ----
+
+  // Поля формы — из заказа, а не из памяти клиента; цены топлива и
+  // мочевины — как ручные, чтобы recalc() не подставил текущие.
+  function applyEditFill(order) {
+    var st = OrderEdit.formState(order, State.data);
+    selectedRecipeId = st.recipeId;
+    selectedMixerId = st.mixerId;
+    selectedClientId = st.clientId;
+    NumericInput.setFormattedValue(document.getElementById('m-volume'), st.saleVolume);
+    document.getElementById('m-ship-date').value = st.shipDate;
+    vatGrossMode = st.vatGross;
+    setVatButtons();
+    priceDirty = true;
+    priceNetStored = st.priceNet;
+    var pickup = document.getElementById('m-self-pickup');
+    pickup.classList.toggle('on', st.selfPickup);
+    pickup.setAttribute('aria-pressed', st.selfPickup ? 'true' : 'false');
+    document.getElementById('m-address').value = st.address;
+    if (st.distanceKm === '') document.getElementById('m-dist').value = '';
+    else NumericInput.setFormattedValue(document.getElementById('m-dist'), st.distanceKm);
+    document.getElementById('m-nb-city').checked = st.neighborCity;
+    NumericInput.setFormattedValue(document.getElementById('m-delivery-charge'), st.deliveryChargePerM3);
+    maxLoadLimit = st.maxLoad;
+    var plant = State.currentPlant();
+    lastPricePlantId = plant ? plant.id : null;
+    fuelPriceDirty = true;
+    ureaPriceDirty = true;
+    NumericInput.setFormattedValue(document.getElementById('m-fuel-price'), st.fuelPrice);
+    NumericInput.setFormattedValue(document.getElementById('m-urea-price'), st.ureaPrice);
+    editCreatedInitial = st.createdAtLocal;
+    document.getElementById('m-edit-created').value = st.createdAtLocal;
+    submitAttempted = false;
+  }
+
+  function editClientPayload() {
+    var client = (State.data.clients || []).find(function (c) { return c.id === selectedClientId; });
+    if (client) return { clientId: client.id, clientName: client.name, clientType: client.type };
+    return { clientId: selectedClientId || null };
+  }
+
+  function editCreatedAt(order) {
+    var value = document.getElementById('m-edit-created').value;
+    if (!value || value === editCreatedInitial) return order.createdAt;
+    return new Date(value).toISOString();
+  }
+
+  // Payload исправления — тот же, что при оформлении, плюс версия заказа.
+  function editPayload(order) {
+    if (!lastCalc) return null;
+    return Object.assign({}, lastCalc, editClientPayload(), { createdAt: editCreatedAt(order), version: order.version });
+  }
+
+  function money(n) { return Format.fmt(n, 0); }
+
+  function renderEditUi() {
+    var order = OrderEdit.current();
+    var banner = document.getElementById('m-edit-banner');
+    var btn = document.getElementById('m-place-order-btn');
+    var diffEl = document.getElementById('m-edit-diff');
+    banner.hidden = !order;
+    diffEl.hidden = !order;
+    document.getElementById('m-page-cap').textContent = order ? 'Исправление заказа' : 'Новый расчёт';
+    if (!order) {
+      btn.textContent = 'Оформить заказ';
+      ['m-recipe', 'm-volume', 'm-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      return;
+    }
+
+    document.getElementById('m-edit-title').textContent = OrderEdit.bannerTitle(order);
+    var plantSelect = document.getElementById('m-edit-plant');
+    var plantName = document.getElementById('m-edit-plant-name');
+    var plant = State.currentPlant();
+    var canMove = Auth.isAtLeast('manager');
+    plantSelect.hidden = !canMove;
+    plantName.hidden = canMove;
+    plantName.textContent = plant ? plant.name : order.plantName;
+    if (canMove && document.activeElement !== plantSelect) {
+      plantSelect.innerHTML = (State.data.plants || []).map(function (p) { return '<option value="' + p.id + '">' + p.name + '</option>'; }).join('');
+      plantSelect.value = plant ? plant.id : order.plantId;
+    }
+
+    var locked = OrderEdit.lockedFields(order);
+    var lockedHint = document.getElementById('m-edit-locked');
+    lockedHint.hidden = !locked.length;
+    lockedHint.textContent = OrderEdit.LOCKED_HINT + ': рецепт, объём, самовывоз, миксер и макс. загрузка не меняются.';
+    if (locked.length) {
+      ['m-recipe', 'm-volume', 'm-self-pickup', 'm-mixer', 'm-max-load'].forEach(function (id) { document.getElementById(id).disabled = true; });
+    } else {
+      ['m-recipe', 'm-volume', 'm-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+    }
+
+    var payload = editPayload(order);
+    btn.textContent = 'Сохранить исправление';
+    btn.disabled = !payload || !OrderEdit.isDirty(order, payload);
+    diffEl.innerHTML = '<span class="cap">Было → стало</span>' + OrderEdit.beforeAfter(order, payload).map(function (r) {
+      var changed = r.after != null && Math.abs(r.after - r.before) > 0.5;
+      return '<div class="spread"><span>' + r.label + '</span><span class="num"' + (changed ? ' style="font-weight:600"' : '') + '>' +
+        money(r.before) + ' → ' + (r.after == null ? '—' : money(r.after)) + '</span></div>';
+    }).join('');
+  }
+
+  function exitEdit() {
+    OrderEdit.finish();
+    resetOrderForm();
+    recalc();
+  }
+
+  async function handleSaveEdit() {
+    var order = OrderEdit.current();
+    var payload = editPayload(order);
+    if (!payload) { submitAttempted = true; recalc(); return; }
+    var btn = document.getElementById('m-place-order-btn');
+    var hint = document.getElementById('m-order-placed-hint');
+    btn.disabled = true;
+    try {
+      var clientPayload = await resolveClientForSubmit();
+      if (!clientPayload) { submitAttempted = true; recalc(); return; }
+      Object.assign(payload, clientPayload);
+      await Api.put(State.withPlantFilter('/orders/' + encodeURIComponent(order.id)), payload);
+      OrderEdit.finish();
+      await State.loadAll();
+      resetOrderForm();
+      recalc();
+      hint.textContent = 'Исправление сохранено.';
+      hint.hidden = false;
+      setTimeout(function () { hint.hidden = true; }, 4000);
+    } catch (err) {
+      alert('Не удалось сохранить исправление: ' + err.message);
+      if (OrderEdit.isTerminalError(err)) {
+        OrderEdit.finish();
+        await State.loadAll();
+        resetOrderForm();
+      }
+      recalc();
+    }
+  }
+
+  // Смена завода в исправлении (менеджер, admin) — как переключатель в
+  // сайдбаре: справочники формы перегружаются под новый завод, рецепт
+  // ищется там по названию, себестоимость считается по новому заводу.
+  async function handleEditPlantChange() {
+    var recipe = State.data.recipes.find(function (r) { return r.id === selectedRecipeId; });
+    Plant.setCurrent(this.value);
+    await State.loadAll();
+    if (window.Shell) Shell.render();
+    var same = recipe && State.data.recipes.find(function (r) { return r.name === recipe.name; });
+    selectedRecipeId = same ? same.id : '';
+    recalc();
+  }
+
   function resetOrderForm() {
     ['m-dist', 'm-address', 'm-volume', 'm-delivery-charge'].forEach(function (id) { document.getElementById(id).value = ''; });
     document.getElementById('m-ship-date').value = new Date().toISOString().slice(0, 10);
@@ -500,9 +670,12 @@
     document.getElementById('m-client-new-name').value = '';
     document.getElementById('m-client-new-type').value = 'individual';
     document.getElementById('m-client-new-fields').hidden = true;
+    editCreatedInitial = '';
+    document.getElementById('m-edit-created').value = '';
   }
 
   async function handlePlaceOrder() {
+    if (OrderEdit.current()) { await handleSaveEdit(); return; }
     if (!lastCalc) { submitAttempted = true; recalc(); return; }
     var btn = document.getElementById('m-place-order-btn');
     var hint = document.getElementById('m-order-placed-hint');
@@ -515,6 +688,7 @@
       await State.loadAll();
       resetOrderForm();
       recalc();
+      hint.textContent = 'Заказ оформлен.';
       hint.hidden = false;
       setTimeout(function () { hint.hidden = true; }, 4000);
     } catch (err) {
@@ -526,6 +700,7 @@
 
   function init() {
     document.getElementById('page-main').innerHTML = HTML;
+    OrderEdit.releaseFill('desktop');
 
     document.getElementById('m-vat-off').addEventListener('click', function () { vatGrossMode = false; setVatButtons(); recalc(); });
     document.getElementById('m-vat-on').addEventListener('click', function () { vatGrossMode = true; setVatButtons(); recalc(); });
@@ -573,7 +748,10 @@
     document.getElementById('m-max-load').addEventListener('blur', recalc);
     document.getElementById('m-client-new-name').addEventListener('input', recalc);
     document.getElementById('m-place-order-btn').addEventListener('click', handlePlaceOrder);
-    document.getElementById('m-reset-btn').addEventListener('click', function () { resetOrderForm(); recalc(); });
+    document.getElementById('m-reset-btn').addEventListener('click', function () { OrderEdit.finish(); resetOrderForm(); recalc(); });
+    document.getElementById('m-edit-cancel').addEventListener('click', exitEdit);
+    document.getElementById('m-edit-created').addEventListener('change', recalc);
+    document.getElementById('m-edit-plant').addEventListener('change', handleEditPlantChange);
   }
 
   // На узких экранах — отдельный мобильный макет (mobile-calc.js), не
@@ -591,6 +769,8 @@
       return;
     }
     if (renderedMode !== 'desktop') { init(); renderedMode = 'desktop'; }
+    var editing = OrderEdit.current();
+    if (editing && OrderEdit.takeFill('desktop')) applyEditFill(editing);
     recalc();
   }
 

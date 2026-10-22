@@ -1,3 +1,4 @@
+const { moscowDate } = require('./order-edit-diff');
 const https = require('https');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SocksProxyAgent } = require('socks-proxy-agent');
@@ -188,6 +189,22 @@ function notifyOrderCreated(order) {
   send(lines.join('\n')).catch(() => {});
 }
 
+// Исправление заказа (change order-edit) — в тот же чат заказов: это
+// основной инструмент контроля правок, в том числе работников по ссылке.
+// notice — из handlers/orders.js::recordEdit: строки изменений уже готовы.
+// Fire-and-forget после COMMIT: сбой отправки исправление не отменяет.
+function notifyOrderEdited(notice) {
+  const o = notice.order;
+  const lines = [
+    '✏️ <b>Заказ исправлен · ' + escapeHtml(o.plantName) + ' · ' + escapeHtml(o.clientName) + '</b>',
+    'Заказ от ' + escapeHtml(moscowDate(o.createdAt)),
+    ...notice.changes.map((c) => escapeHtml(c.text)),
+    escapeHtml(notice.profit),
+    'Исправил: ' + escapeHtml(notice.actor)
+  ];
+  send(lines.join('\n')).catch(() => {});
+}
+
 // Дефицит/приближение к порогу материала — шлётся из handlers/stock.js на
 // пересечении порога сверху вниз (не на каждое движение уже дефицитного
 // материала). available может быть и отрицательным (реальный дефицит, не
@@ -212,4 +229,4 @@ function sendTest() {
   return send('✅ Тестовое сообщение из AdatBeton Calc. Если вы это видите — бот настроен верно.');
 }
 
-module.exports = { notifyOrderCreated, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, escapeHtml, transport };
+module.exports = { notifyOrderCreated, notifyOrderEdited, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, escapeHtml, transport };

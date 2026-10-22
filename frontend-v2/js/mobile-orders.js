@@ -3,7 +3,6 @@
   // таблицы, отфильтровано по текущему заводу (мобильный вид — это менеджер
   // или ЛПР на конкретной площадке, а не сводка по всем заводам сразу).
   var filter = '7d'; // '7d' | 'waiting' | 'today'
-  var editingOrderId = null;
   var HTML =
     '<div class="mobile-page" style="padding:8px 12px;gap:8px">' +
       '<div class="seg" role="group" aria-label="Фильтр">' +
@@ -11,65 +10,12 @@
         '<button type="button" data-f="waiting" style="height:44px">Ждут рейсов</button>' +
         '<button type="button" data-f="today" style="height:44px">Сегодня</button>' +
       '</div>' +
-      '<section class="card-flat stack g12" id="mo-date-panel" style="padding:12px;margin:0 -12px" hidden>' +
-        '<div class="spread"><span style="font-weight:600">Изменить дату/завод</span><button type="button" class="btn ghost icon" id="mo-date-close" aria-label="Закрыть">✕</button></div>' +
-        '<form id="mo-date-form" class="stack g12">' +
-          '<div class="field"><label for="mo-date-input">Дата и время</label><input id="mo-date-input" type="datetime-local" class="inp" style="height:48px" required></div>' +
-          '<div class="field"><label for="mo-date-plant">Завод</label><select id="mo-date-plant" class="inp" style="height:48px"></select></div>' +
-          '<p class="banner" id="mo-date-error" hidden></p>' +
-          '<button class="btn pri" type="submit" style="height:48px">Сохранить</button>' +
-        '</form>' +
-      '</section>' +
       '<div id="mo-list" class="stack g8" style="margin:0 -12px"></div>' +
       '<p class="empty-state" id="mo-empty" hidden>Заказов нет.</p>' +
     '</div>';
 
-  function toDatetimeLocalValue(iso) {
-    var d = new Date(iso);
-    var pad = function (n) { return String(n).padStart(2, '0'); };
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  }
-
-  // Реальный кейс: не успели занести заказ сегодня, заводят на вчера — тот
-  // же PUT /api/orders/:id/date, что и на десктопе (screen-orders.js) и в v1.
-  function openEditDate(order) {
-    editingOrderId = order.id;
-    document.getElementById('mo-date-input').value = toDatetimeLocalValue(order.createdAt);
-    var plantSelect = document.getElementById('mo-date-plant');
-    plantSelect.innerHTML = (State.data.plants || []).map(function (p) {
-      return '<option value="' + p.id + '">' + p.name + '</option>';
-    }).join('');
-    var hasCurrentPlant = (State.data.plants || []).some(function (p) { return p.id === order.plantId; });
-    if (!hasCurrentPlant) {
-      plantSelect.insertAdjacentHTML('afterbegin', '<option value="' + order.plantId + '">' + order.plantName + '</option>');
-    }
-    plantSelect.value = order.plantId;
-    document.getElementById('mo-date-error').hidden = true;
-    document.getElementById('mo-date-panel').hidden = false;
-    document.getElementById('mo-date-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function closeEditDate() {
-    document.getElementById('mo-date-panel').hidden = true;
-    editingOrderId = null;
-  }
-
-  async function handleEditDateSubmit(e) {
-    e.preventDefault();
-    var errorEl = document.getElementById('mo-date-error');
-    errorEl.hidden = true;
-    var inputValue = document.getElementById('mo-date-input').value;
-    var plantId = document.getElementById('mo-date-plant').value;
-    if (!inputValue || !plantId || !editingOrderId) return;
-    try {
-      await Api.put('/orders/' + editingOrderId + '/date', { createdAt: new Date(inputValue).toISOString(), plantId: plantId });
-      closeEditDate();
-      await State.loadAll();
-      render();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.hidden = false;
-    }
+  function escapeHtml(v) {
+    return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   function startOfDay(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -167,7 +113,9 @@
       var remaining = o.tripCount ? WaybillCalc.remainingForOrder(State.data.waybillEntries || [], o) : 0;
       var allocated = o.tripCount ? WaybillCalc.allocatedForOrder(State.data.waybillEntries || [], o.id) : 0;
       var canCancel = !o.cancelledAt && allocated === 0;
-      var canEditDate = Auth.isAtLeast('manager');
+      // Исправление заказа (change order-edit) — вместо прежней кнопки «Дата».
+      var edit = OrderEdit.canEdit(o, { role: Auth.getRole(), recipes: State.data.recipes });
+      var lines = OrderEdit.editLines(o);
       var canGoToWaybills = isAdmin && remaining > 0;
       var belowThreshold = !o.cancelledAt && threshold > 0 && o.totalMarginPercent < threshold;
       var time = new Date(o.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -180,7 +128,12 @@
       var rentColor = (o.totalMarginPercent || 0) >= 0 ? '#1C1D1B' : '#8C2217';
       var badge = isAdmin ? st : (o.vatApplied ? { cls: 'act', label: 'с НДС' } : { cls: 'mute', label: 'без НДС' });
       return '<article class="card-flat stack g8" style="padding:12px 14px;' + (belowThreshold ? 'background:var(--act-bg);' : '') + (o.cancelledAt ? 'opacity:.6;' : '') + '" data-order-id="' + o.id + '">' +
-        '<div class="spread" style="align-items:center;gap:8px"><span style="font-weight:600">' + o.recipeName + ' <span class="num hint" style="font-weight:400">' + time + '</span></span><span class="chip ' + badge.cls + '">' + badge.label + '</span></div>' +
+        '<div class="spread" style="align-items:center;gap:8px"><span style="font-weight:600">' + o.recipeName + ' <span class="num hint" style="font-weight:400">' + time + '</span></span>' +
+          '<span style="display:flex;gap:6px;align-items:center">' +
+            (lines.length ? '<button type="button" class="chip warn mo-edits-chip" style="border:0;min-height:32px;cursor:pointer" aria-expanded="false">испр.</button>' : '') +
+            '<span class="chip ' + badge.cls + '">' + badge.label + '</span></span></div>' +
+        (lines.length ? '<div class="stack g4 mo-edits" hidden style="font-size:12px;padding:8px 10px;background:var(--surface-3);border-radius:4px">' +
+          lines.map(function (l) { return '<div style="overflow-wrap:anywhere">' + escapeHtml(l) + '</div>'; }).join('') + '</div>' : '') +
         '<span class="hint">' + meta.join(' · ') + '</span>' +
         '<div style="display:grid;grid-template-columns:1.5fr 1fr auto;gap:8px;padding-top:8px;border-top:1px solid var(--border-soft)">' +
           '<div class="stack"><span class="cap" style="font-size:10px">К оплате</span><span class="num" style="font-size:15px;font-weight:600;white-space:nowrap">' + Format.fmt(o.totalRevenue, 0) + '</span></div>' +
@@ -188,11 +141,12 @@
           '<div class="stack" style="align-items:flex-end"><span class="cap" style="font-size:10px">Рент.</span><span class="num" style="font-size:14px;font-weight:600;color:' + rentColor + '">' + Format.fmtNum(o.totalMarginPercent, 1, '%') + '</span></div>' +
         '</div>' +
         (isAdmin && o.tripCount && !o.cancelledAt ? '<div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><span style="width:' + st.pct + '%;background:var(--ink)"></span></div><span class="num hint">' + allocated + ' из ' + o.tripCount + ' рейс(ов)</span></div>' : '') +
-        ((canGoToWaybills || canCancel || canEditDate) ? '<div style="display:grid;grid-template-columns:repeat(' + [canGoToWaybills, canCancel, canEditDate].filter(Boolean).length + ',1fr);gap:8px">' +
+        ((canGoToWaybills || canCancel || edit.show) ? '<div style="display:grid;grid-template-columns:repeat(' + [canGoToWaybills, canCancel, edit.show].filter(Boolean).length + ',1fr);gap:8px">' +
           (canGoToWaybills ? '<a href="#/waybills" class="btn sm" style="height:44px">Распределить рейсы</a>' : '') +
-          (canEditDate ? '<button type="button" class="btn ghost sm o-date-btn" style="height:44px">Дата</button>' : '') +
+          (edit.show ? '<button type="button" class="btn ghost sm o-edit-btn" style="height:44px"' + (edit.enabled ? '' : ' disabled') + '>Исправить</button>' : '') +
           (canCancel ? '<button type="button" class="btn ghost sm o-cancel-btn" style="height:44px;color:#8C2217;border-color:#E3B8B1">Отменить</button>' : '') +
         '</div>' : '') +
+        (edit.show && !edit.enabled ? '<span class="hint" style="font-size:12px">' + edit.reason + '</span>' : '') +
       '</article>';
       }).join('');
     }).join('');
@@ -203,11 +157,18 @@
         handleCancel(orderId);
       });
     });
-    Array.prototype.forEach.call(container.querySelectorAll('.o-date-btn'), function (btn) {
+    Array.prototype.forEach.call(container.querySelectorAll('.o-edit-btn'), function (btn) {
       btn.addEventListener('click', function () {
         var orderId = btn.closest('[data-order-id]').dataset.orderId;
         var order = orders.find(function (o) { return o.id === orderId; });
-        if (order) openEditDate(order);
+        if (order) OrderEdit.open(order);
+      });
+    });
+    Array.prototype.forEach.call(container.querySelectorAll('.mo-edits-chip'), function (chip) {
+      chip.addEventListener('click', function () {
+        var box = chip.closest('[data-order-id]').querySelector('.mo-edits');
+        box.hidden = !box.hidden;
+        chip.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
       });
     });
   }
@@ -221,8 +182,6 @@
         render();
       });
     });
-    document.getElementById('mo-date-close').addEventListener('click', closeEditDate);
-    document.getElementById('mo-date-form').addEventListener('submit', handleEditDateSubmit);
   }
 
   window.MobileOrdersScreen = { init: init, render: render };

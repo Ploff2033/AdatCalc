@@ -84,6 +84,12 @@ function orderBody(p, c, r, m, extra) {
   }, extra);
 }
 
+// Оформленный заказ через handlers/orders.js::create (бронь, память клиента
+// и Telegram — как в жизни). extra — поля поверх orderBody.
+async function order(p, c, r, m, extra) {
+  return require('../../handlers/orders').create(orderBody(p, c, r, m, extra));
+}
+
 // Материал с остатком на складе (для списания по рейсам путевого листа).
 async function material(plantId, name, onHand) {
   const id = 'tmat_' + (++n);
@@ -122,4 +128,4 @@ async function waybillEntry(orderId, drv, veh, o) {
   return id;
 }
 
-module.exports = { unit, category, rawRequest, plant, recipe, mixer, client, orderBody, material, driver, waybillEntry };
+module.exports = { unit, category, rawRequest, plant, recipe, mixer, client, orderBody, order, material, driver, waybillEntry };

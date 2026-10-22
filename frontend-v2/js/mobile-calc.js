@@ -7,6 +7,13 @@
   var VAT_MULT = 1.22;
   var HTML =
     '<div class="mobile-page mobile-page-flat">' +
+      // Режим исправления заказа (change order-edit) — см. screen-main.js.
+      '<section class="card-flat stack g10" id="mc-edit-banner" style="padding:12px;background:var(--act-bg)" hidden>' +
+        '<div class="spread" style="gap:8px;align-items:flex-start"><b id="mc-edit-title" style="overflow-wrap:anywhere"></b><button type="button" class="btn ghost sm" id="mc-edit-cancel" style="height:44px">Отмена</button></div>' +
+        '<div class="field"><label for="mc-edit-created">Дата заказа</label><input id="mc-edit-created" type="datetime-local" class="inp" style="height:48px"></div>' +
+        '<div class="field"><label for="mc-edit-plant">Завод</label><select id="mc-edit-plant" class="inp" style="height:48px"></select><span class="hint" id="mc-edit-plant-name"></span></div>' +
+        '<p class="hint" id="mc-edit-locked" style="margin:0;color:#8A3410" hidden></p>' +
+      '</section>' +
       '<section class="card-flat stack g10" style="padding:12px">' +
         '<span class="sub">Смесь</span>' +
         '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px">' +
@@ -75,6 +82,7 @@
     '</div>' +
     '<div class="mobile-sticky mobile-sticky-flat">' +
       '<p class="banner" id="mc-error" hidden style="margin:0"></p>' +
+      '<div class="stack" id="mc-edit-diff" style="gap:2px;font-size:12px" hidden></div>' +
       '<div class="mobile-kpi-grid">' +
         '<div class="mobile-kpi dark"><span class="l">К оплате</span><span class="num v" id="mc-pay"></span><span class="num" id="mc-pay-vat" style="font-size:11px;color:var(--sidebar-muted)"></span></div>' +
         '<div class="mobile-kpi"><span class="l">Чистая прибыль</span><span class="num v" id="mc-net-profit"></span><span class="num" id="mc-net-margin" style="font-size:11px"></span></div>' +
@@ -93,6 +101,7 @@
   var vatGrossMode = false, priceDirty = false, priceNetStored = 0;
   var fuelPriceDirty = false, ureaPriceDirty = false, lastPricePlantId = null;
   var lastCalc = null;
+  var editCreatedInitial = '';
 
   function mixerLabel(mixer) {
     return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
@@ -198,6 +207,13 @@
   }
 
   function render() {
+    var editing = OrderEdit.current();
+    if (editing && OrderEdit.takeFill('mobile')) applyEditFill(editing);
+    renderCore();
+    renderEditUi();
+  }
+
+  function renderCore() {
     var data = State.data;
     var plant = State.currentPlant();
     var recipeSelect = document.getElementById('mc-recipe');
@@ -344,7 +360,164 @@
     lastCalc.shipDate = document.getElementById('mc-ship-date').value || null;
   }
 
+  // ---- Исправление заказа (change order-edit), та же логика, что в
+  // screen-main.js: поля из заказа, цены топлива/AdBlue — как ручные.
+  function applyEditFill(order) {
+    var st = OrderEdit.formState(order, State.data);
+    selectedRecipeId = st.recipeId;
+    selectedMixerId = st.mixerId;
+    selectedClientId = st.clientId;
+    NumericInput.setFormattedValue(document.getElementById('mc-volume'), st.saleVolume);
+    document.getElementById('mc-ship-date').value = st.shipDate;
+    setVatMode(st.vatGross);
+    priceDirty = true;
+    priceNetStored = st.priceNet;
+    var pickup = document.getElementById('mc-self-pickup');
+    pickup.classList.toggle('on', st.selfPickup);
+    pickup.setAttribute('aria-pressed', st.selfPickup ? 'true' : 'false');
+    document.getElementById('mc-address').value = st.address;
+    if (st.distanceKm === '') document.getElementById('mc-dist').value = '';
+    else NumericInput.setFormattedValue(document.getElementById('mc-dist'), st.distanceKm);
+    document.getElementById('mc-nb-city').checked = st.neighborCity;
+    NumericInput.setFormattedValue(document.getElementById('mc-delivery-charge'), st.deliveryChargePerM3);
+    maxLoadLimit = st.maxLoad;
+    var plant = State.currentPlant();
+    lastPricePlantId = plant ? plant.id : null;
+    fuelPriceDirty = true;
+    ureaPriceDirty = true;
+    NumericInput.setFormattedValue(document.getElementById('mc-fuel-price'), st.fuelPrice);
+    NumericInput.setFormattedValue(document.getElementById('mc-urea-price'), st.ureaPrice);
+    editCreatedInitial = st.createdAtLocal;
+    document.getElementById('mc-edit-created').value = st.createdAtLocal;
+  }
+
+  function editPayload(order) {
+    if (!lastCalc) return null;
+    var client = (State.data.clients || []).find(function (c) { return c.id === selectedClientId; });
+    var clientPart = client ? { clientId: client.id, clientName: client.name, clientType: client.type } : { clientId: selectedClientId || null };
+    var created = document.getElementById('mc-edit-created').value;
+    var createdAt = !created || created === editCreatedInitial ? order.createdAt : new Date(created).toISOString();
+    return Object.assign({}, lastCalc, clientPart, { createdAt: createdAt, version: order.version });
+  }
+
+  var LOCKABLE = ['mc-recipe', 'mc-volume', 'mc-self-pickup', 'mc-mixer', 'mc-max-load'];
+
+  function renderEditUi() {
+    var order = OrderEdit.current();
+    var btn = document.getElementById('mc-place-order-btn');
+    var diffEl = document.getElementById('mc-edit-diff');
+    document.getElementById('mc-edit-banner').hidden = !order;
+    diffEl.hidden = !order;
+    if (!order) {
+      btn.textContent = 'Оформить заказ';
+      ['mc-recipe', 'mc-volume', 'mc-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      return;
+    }
+    document.getElementById('mc-edit-title').textContent = OrderEdit.bannerTitle(order);
+    var plant = State.currentPlant();
+    var canMove = Auth.isAtLeast('manager');
+    var plantSelect = document.getElementById('mc-edit-plant');
+    var plantName = document.getElementById('mc-edit-plant-name');
+    plantSelect.hidden = !canMove;
+    plantName.hidden = canMove;
+    plantName.textContent = plant ? plant.name : order.plantName;
+    if (canMove && document.activeElement !== plantSelect) {
+      plantSelect.innerHTML = (State.data.plants || []).map(function (p) { return '<option value="' + p.id + '">' + p.name + '</option>'; }).join('');
+      plantSelect.value = plant ? plant.id : order.plantId;
+    }
+    var locked = OrderEdit.lockedFields(order).length > 0;
+    var lockedHint = document.getElementById('mc-edit-locked');
+    lockedHint.hidden = !locked;
+    lockedHint.textContent = OrderEdit.LOCKED_HINT + ': рецепт, объём, самовывоз, миксер и загрузка не меняются.';
+    if (locked) LOCKABLE.forEach(function (id) { document.getElementById(id).disabled = true; });
+    else ['mc-recipe', 'mc-volume', 'mc-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+
+    var payload = editPayload(order);
+    btn.textContent = 'Сохранить исправление';
+    btn.disabled = !payload || !OrderEdit.isDirty(order, payload);
+    diffEl.innerHTML = OrderEdit.beforeAfter(order, payload).map(function (r) {
+      return '<div class="spread"><span>' + r.label + '</span><span class="num">' + Format.fmt(r.before, 0) + ' → ' + (r.after == null ? '—' : Format.fmt(r.after, 0)) + '</span></div>';
+    }).join('');
+  }
+
+  // afterEdit — выход из исправления: цены топлива/AdBlue заказа были
+  // выставлены как ручные, возвращаем текущие. После обычного оформления
+  // ручная цена остаётся, как и раньше.
+  function resetForm(afterEdit) {
+    selectedRecipeId = '';
+    priceDirty = false;
+    if (afterEdit) { fuelPriceDirty = false; ureaPriceDirty = false; }
+    document.getElementById('mc-volume').value = '';
+    document.getElementById('mc-dist').value = '';
+    document.getElementById('mc-address').value = '';
+    document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
+    // Клиент тоже сбрасывается (в отличие от миксера) — см. tab-main.js.
+    selectedClientId = '';
+    maxLoadLimit = null;
+    document.getElementById('mc-client').value = '';
+    document.getElementById('mc-client-new-name').value = '';
+    document.getElementById('mc-client-new-type').value = 'individual';
+    document.getElementById('mc-client-new-fields').hidden = true;
+    editCreatedInitial = '';
+    document.getElementById('mc-edit-created').value = '';
+  }
+
+  function exitEdit() {
+    OrderEdit.finish();
+    resetForm(true);
+    render();
+  }
+
+  async function handleSaveEdit() {
+    var errorEl = document.getElementById('mc-error');
+    var order = OrderEdit.current();
+    var payload = editPayload(order);
+    if (!payload) {
+      errorEl.textContent = 'Заполните обязательные поля: рецепт, миксер, расстояние и адрес.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (clientSelectionMissing()) {
+      errorEl.textContent = 'Выберите клиента или укажите название нового.';
+      errorEl.hidden = false;
+      return;
+    }
+    var btn = document.getElementById('mc-place-order-btn');
+    btn.disabled = true;
+    try {
+      Object.assign(payload, await resolveClientForSubmit());
+      await Api.put(State.withPlantFilter('/orders/' + encodeURIComponent(order.id)), payload);
+      OrderEdit.finish();
+      await State.loadAll();
+      resetForm(true);
+      render();
+    } catch (err) {
+      errorEl.textContent = 'Не удалось сохранить исправление: ' + err.message;
+      errorEl.hidden = false;
+      if (OrderEdit.isTerminalError(err)) {
+        OrderEdit.finish();
+        await State.loadAll();
+        resetForm(true);
+        render();
+        errorEl.hidden = false;
+      } else {
+        render();
+      }
+    }
+  }
+
+  async function handleEditPlantChange() {
+    var recipe = State.data.recipes.find(function (r) { return r.id === selectedRecipeId; });
+    Plant.setCurrent(this.value);
+    await State.loadAll();
+    if (window.Shell) Shell.render();
+    var same = recipe && State.data.recipes.find(function (r) { return r.name === recipe.name; });
+    selectedRecipeId = same ? same.id : '';
+    render();
+  }
+
   async function handlePlaceOrder() {
+    if (OrderEdit.current()) { await handleSaveEdit(); return; }
     var errorEl = document.getElementById('mc-error');
     if (!lastCalc) {
       errorEl.textContent = 'Заполните обязательные поля: рецепт, миксер, расстояние и адрес.';
@@ -369,19 +542,7 @@
       }
       await Api.post('/orders', Object.assign({}, lastCalc, clientPayload, { createdAt: new Date().toISOString() }));
       await State.loadAll();
-      selectedRecipeId = '';
-      priceDirty = false;
-      document.getElementById('mc-volume').value = '';
-      document.getElementById('mc-dist').value = '';
-      document.getElementById('mc-address').value = '';
-      document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
-      // Клиент тоже сбрасывается (в отличие от миксера) — см. tab-main.js.
-      selectedClientId = '';
-      maxLoadLimit = null;
-      document.getElementById('mc-client').value = '';
-      document.getElementById('mc-client-new-name').value = '';
-      document.getElementById('mc-client-new-type').value = 'individual';
-      document.getElementById('mc-client-new-fields').hidden = true;
+      resetForm();
       render();
     } catch (err) {
       errorEl.textContent = 'Не удалось оформить заказ: ' + err.message;
@@ -393,6 +554,7 @@
 
   function init() {
     document.getElementById('page-main').innerHTML = HTML;
+    OrderEdit.releaseFill('mobile');
     document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
     document.getElementById('mc-ship-date').addEventListener('change', render);
 
@@ -446,6 +608,9 @@
     document.getElementById('mc-urea-price').addEventListener('input', function () { ureaPriceDirty = true; render(); });
 
     document.getElementById('mc-place-order-btn').addEventListener('click', handlePlaceOrder);
+    document.getElementById('mc-edit-cancel').addEventListener('click', exitEdit);
+    document.getElementById('mc-edit-created').addEventListener('change', render);
+    document.getElementById('mc-edit-plant').addEventListener('change', handleEditPlantChange);
   }
 
   window.MobileCalcScreen = { init: init, render: render };

@@ -16,18 +16,6 @@
       '<span class="hint" id="o-rent-hint"></span>' +
     '</div>' +
     '<div class="grid-4" id="o-kpi"></div>' +
-    '<section class="card stack g12" id="o-date-panel" style="padding:16px 20px" hidden>' +
-      '<div class="spread"><h2 style="font-size:16px;font-weight:600">Изменить дату/завод заказа</h2><button type="button" class="btn ghost icon" id="o-date-close" aria-label="Закрыть">✕</button></div>' +
-      '<form id="o-date-form" class="stack g12">' +
-        '<div class="grid-2">' +
-          '<div class="field"><label for="o-date-input">Дата и время</label><input id="o-date-input" type="datetime-local" class="inp" required></div>' +
-          '<div class="field"><label for="o-date-plant">Завод</label><select id="o-date-plant" class="inp"></select></div>' +
-        '</div>' +
-        '<p class="hint" style="margin:0">Реальный кейс: заказ не успели занести сегодня, заводят задним числом на вчера — либо просто перепутали завод при оформлении.</p>' +
-        '<p class="banner" id="o-date-error" hidden></p>' +
-        '<button class="btn pri" type="submit" style="align-self:flex-start">Сохранить</button>' +
-      '</form>' +
-    '</section>' +
     '<section class="card" style="overflow:hidden;display:flex;flex-direction:column">' +
       '<div class="row head" style="grid-template-columns:' + ROW_COLS + '"><div>Время</div><div>Смесь и маршрут</div><div class="r">К оплате</div><div class="r">Прибыль</div><div class="r">Рент.</div><div></div></div>' +
       '<div id="o-list"></div>' +
@@ -55,11 +43,12 @@
   function openSharedMenu(btn, order, perms) {
     var menu = ensureSharedMenu();
     menu.innerHTML =
-      (perms.canEditDate ? '<button type="button" class="btn ghost sm" id="o-shared-edit-date" style="justify-content:flex-start">Изменить дату/завод</button>' : '') +
+      (perms.edit.show ? '<button type="button" class="btn ghost sm" id="o-shared-edit" style="justify-content:flex-start"' + (perms.edit.enabled ? '' : ' disabled title="' + perms.edit.reason + '"') + '>Исправить</button>' +
+        (perms.edit.enabled ? '' : '<span class="hint" style="font-size:12px;padding:0 8px;max-width:220px">' + perms.edit.reason + '</span>') : '') +
       (perms.canCancel ? '<button type="button" class="btn ghost sm" id="o-shared-cancel" style="justify-content:flex-start">Отменить заказ</button>' : '') +
       (perms.canDelete ? '<button type="button" class="btn ghost sm" id="o-shared-delete" style="justify-content:flex-start;color:#8C2217">Удалить насовсем</button>' : '');
-    var editDateBtn = document.getElementById('o-shared-edit-date');
-    if (editDateBtn) editDateBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); openEditDate(order); });
+    var editBtn = document.getElementById('o-shared-edit');
+    if (editBtn && perms.edit.enabled) editBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); OrderEdit.open(order); });
     var cancelBtn = document.getElementById('o-shared-cancel');
     if (cancelBtn) cancelBtn.addEventListener('click', function (e) { e.stopPropagation(); closeAllMenus(); handleCancel(order); });
     var deleteBtn = document.getElementById('o-shared-delete');
@@ -77,58 +66,6 @@
     var menu = document.getElementById('o-shared-menu');
     if (menu) menu.hidden = true;
     openMenuId = null;
-  }
-
-  var editingOrderId = null;
-
-  function toDatetimeLocalValue(iso) {
-    var d = new Date(iso);
-    var pad = function (n) { return String(n).padStart(2, '0'); };
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  }
-
-  // Дата/завод — единственные поля уже оформленного заказа, которые можно
-  // поменять (PUT /api/orders/:id/date, тот же эндпоинт, что и в v1 —
-  // frontend/js/tab-orders.js). Реальный кейс: не успели занести сегодня,
-  // заводят на вчера, либо перепутали завод при оформлении.
-  function openEditDate(order) {
-    editingOrderId = order.id;
-    document.getElementById('o-date-input').value = toDatetimeLocalValue(order.createdAt);
-    var plantSelect = document.getElementById('o-date-plant');
-    plantSelect.innerHTML = (State.data.plants || []).map(function (p) {
-      return '<option value="' + p.id + '">' + p.name + '</option>';
-    }).join('');
-    var hasCurrentPlant = (State.data.plants || []).some(function (p) { return p.id === order.plantId; });
-    if (!hasCurrentPlant) {
-      plantSelect.insertAdjacentHTML('afterbegin', '<option value="' + order.plantId + '">' + order.plantName + '</option>');
-    }
-    plantSelect.value = order.plantId;
-    document.getElementById('o-date-error').hidden = true;
-    document.getElementById('o-date-panel').hidden = false;
-    document.getElementById('o-date-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function closeEditDate() {
-    document.getElementById('o-date-panel').hidden = true;
-    editingOrderId = null;
-  }
-
-  async function handleEditDateSubmit(e) {
-    e.preventDefault();
-    var errorEl = document.getElementById('o-date-error');
-    errorEl.hidden = true;
-    var inputValue = document.getElementById('o-date-input').value;
-    var plantId = document.getElementById('o-date-plant').value;
-    if (!inputValue || !plantId || !editingOrderId) return;
-    try {
-      await Api.put('/orders/' + editingOrderId + '/date', { createdAt: new Date(inputValue).toISOString(), plantId: plantId });
-      closeEditDate();
-      await State.loadAll();
-      render();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.hidden = false;
-    }
   }
 
   function allocatedTrips(orderId) {
@@ -203,13 +140,17 @@
     var allocated = order.tripCount > 0 ? allocatedTrips(order.id) : 0;
     var canCancel = !order.cancelledAt && allocated === 0;
     var canDelete = Auth.isAtLeast('admin');
-    var canEditDate = Auth.isAtLeast('manager'); // тот же PUT /api/orders/:id/date, что и в v1 — тоже manager+
+    // Исправление заказа (change order-edit) — вместо прежнего окна «дата/
+    // завод»: работнику в течение суток, менеджеру и admin всегда.
+    var edit = OrderEdit.canEdit(order, { role: Auth.getRole(), recipes: State.data.recipes });
+    var editLines = OrderEdit.editLines(order);
     row.innerHTML =
       '<div class="num" style="font-size:13px;color:var(--ink-soft)">' + timeLabel(order.createdAt) + '</div>' +
       '<div class="stack" style="gap:2px;min-width:0">' +
         '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600">' + order.recipeName + '</span>' +
           (order.vatApplied ? '<span class="chip act" style="height:20px;font-size:11px">с НДС</span>' : '') +
           (order.cancelledAt ? '<span class="chip mute" style="height:20px;font-size:11px">Отменён</span>' : '') +
+          (editLines.length ? '<button type="button" class="chip warn o-edits-chip" style="height:20px;font-size:11px;border:0;cursor:pointer" aria-expanded="false" title="Журнал исправлений">испр.</button>' : '') +
         '</div>' +
         '<span class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + order.plantName + ' · ' + (order.clientName || 'Без клиента') + ' · ' + Format.fmtNum(order.saleVolume, 1, 'м³') + (order.address ? ' · ' + order.address : '') + '</span>' +
       '</div>' +
@@ -217,17 +158,32 @@
       '<div class="r num" style="font-weight:500;color:' + sign + '">' + Format.fmt(order.totalProfit, 0) + '</div>' +
       '<div class="r num" style="font-weight:600;color:' + sign + '">' + Format.fmtNum(order.totalMarginPercent, 1, '%') + '</div>' +
       '<div style="display:flex;justify-content:flex-end">' +
-        ((canCancel || canDelete || canEditDate) ? '<button type="button" class="btn ghost icon o-menu-btn" aria-label="Действия" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' : '') +
+        ((canCancel || canDelete || edit.show) ? '<button type="button" class="btn ghost icon o-menu-btn" aria-label="Действия" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>' : '') +
       '</div>';
 
-    if (canCancel || canDelete || canEditDate) {
+    if (canCancel || canDelete || edit.show) {
       var menuBtn = row.querySelector('.o-menu-btn');
       menuBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         var menu = document.getElementById('o-shared-menu');
         var willOpen = !menu || menu.hidden || menu.dataset.orderId !== order.id;
         closeAllMenus();
-        if (willOpen) openSharedMenu(menuBtn, order, { canEditDate: canEditDate, canCancel: canCancel, canDelete: canDelete });
+        if (willOpen) openSharedMenu(menuBtn, order, { edit: edit, canCancel: canCancel, canDelete: canDelete });
+      });
+    }
+
+    // Журнал исправлений — по нажатию на «испр.», новые сверху.
+    var journal = document.createElement('div');
+    journal.hidden = true;
+    journal.className = 'stack g4';
+    journal.style.cssText = 'grid-column:1/-1;padding:10px 20px;background:var(--surface-2);border-bottom:1px solid var(--border-soft);font-size:13px';
+    journal.innerHTML = '<b>Исправления</b>' + editLines.map(function (l) { return '<div style="overflow-wrap:anywhere">' + escapeHtml(l) + '</div>'; }).join('');
+    var chip = row.querySelector('.o-edits-chip');
+    if (chip) {
+      chip.addEventListener('click', function (e) {
+        e.stopPropagation();
+        journal.hidden = !journal.hidden;
+        chip.setAttribute('aria-expanded', journal.hidden ? 'false' : 'true');
       });
     }
 
@@ -304,9 +260,14 @@
     var wrap = document.createElement('div');
     wrap.style.display = 'contents';
     wrap.appendChild(row);
+    wrap.appendChild(journal);
     wrap.appendChild(details);
     row.addEventListener('click', function () { details.hidden = !details.hidden; });
     return wrap;
+  }
+
+  function escapeHtml(v) {
+    return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function renderPlantFilter() {
@@ -416,8 +377,6 @@
     document.getElementById('page-orders').innerHTML = HTML;
     document.getElementById('o-export-btn').addEventListener('click', exportToExcel);
     document.getElementById('o-plant-filter').addEventListener('change', function () { plantFilterValue = this.value; render(); });
-    document.getElementById('o-date-close').addEventListener('click', closeEditDate);
-    document.getElementById('o-date-form').addEventListener('submit', handleEditDateSubmit);
     document.addEventListener('click', function () { if (openMenuId) closeAllMenus(); });
   }
 

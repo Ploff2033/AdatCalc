@@ -892,3 +892,38 @@ CREATE TABLE IF NOT EXISTS waybill_doc_fuel (
 );
 -- Ранняя версия таблицы (до деплоя) хранила ещё отклонение факта — убрано.
 ALTER TABLE waybill_doc_fuel DROP COLUMN IF EXISTS fact_k;
+
+-- Исправление оформленных заказов (change order-edit). Заказ — не проводка:
+-- правится на месте, след правки — журнал order_edits и сообщение в чат.
+-- inserted_at — момент добавления заказа, не редактируется никогда: от него
+-- считается суточное окно исправления для работника (created_at уже
+-- правится менеджером, окно сдвигалось бы вместе с ним — тот же приём, что
+-- cash_entries.inserted_at). Старые заказы получают inserted_at = created_at.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ;
+UPDATE orders SET inserted_at = created_at WHERE inserted_at IS NULL;
+ALTER TABLE orders ALTER COLUMN inserted_at SET DEFAULT now();
+ALTER TABLE orders ALTER COLUMN inserted_at SET NOT NULL;
+-- Снимки ссылок на рецепт/миксер — без FK, как recipe_name/mixer_name:
+-- рецепт или миксер может быть удалён, заказ остаётся. NULL у заказов до
+-- этого change — форма исправления ищет их по названию.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS recipe_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS mixer_id TEXT;
+-- Версия для отказа одновременных правок: растёт при каждом исправлении.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+-- Журнал исправлений. changes — уже отформатированные строки
+-- [{ field, label, before, after }] на момент правки (рецепт или клиента
+-- потом могут переименовать — журнал показывает то, что было). Прибыль —
+-- отдельно, в changes не входит. actor_role — 'worker' | 'manager' | 'admin'
+-- (логинов нет, только роль), actor_plant_name — завод работника.
+CREATE TABLE IF NOT EXISTS order_edits (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  edited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actor_role TEXT NOT NULL,
+  actor_plant_name TEXT NOT NULL DEFAULT '',
+  changes JSONB NOT NULL,
+  profit_before NUMERIC NOT NULL,
+  profit_after NUMERIC NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_order_edits_order ON order_edits(order_id, edited_at DESC);

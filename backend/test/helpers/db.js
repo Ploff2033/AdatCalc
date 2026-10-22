@@ -37,6 +37,9 @@ async function resetRegistry() {
 // t* — их создаёт fixtures.js; рейсы путевых и движения остатков уходят
 // каскадом вместе с заказами/материалами). Сид-данные БД (plant_seed1 и т.п.) не трогаем.
 async function resetClients() {
+  // Записи ДДС тестовых заводов (тест «не трогает ДДС», change order-edit)
+  // держат FK на plants — иначе удаление заводов ниже падает.
+  await db.pool.query("DELETE FROM cash_entries WHERE plant_id LIKE 'tplant_%'");
   await db.pool.query("DELETE FROM orders WHERE plant_id LIKE 'tplant_%'");
   await db.pool.query('DELETE FROM client_prices');
   await db.pool.query('DELETE FROM clients');
@@ -58,8 +61,15 @@ async function resetWaybills() {
   await db.pool.query("DELETE FROM aggregate_trucks WHERE id LIKE 'ttruck_%'");
 }
 
+// Для тестов исправления заказов (change order-edit): то же, что
+// resetClients — журнал правок (order_edits) уходит каскадом вместе с
+// тестовыми заказами.
+async function resetOrders() {
+  await resetClients();
+}
+
 async function close() {
   await db.pool.end();
 }
 
-module.exports = { db, ready, requireDb, resetRegistry, resetClients, resetWaybills, close };
+module.exports = { db, ready, requireDb, resetRegistry, resetClients, resetWaybills, resetOrders, close };
