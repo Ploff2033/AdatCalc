@@ -495,15 +495,25 @@ async function reissueOwnerToken() {
 }
 
 async function getSettings() {
-  const { rows } = await db.pool.query('SELECT owner_token, telegram_registry_chat_id FROM config WHERE id = 1');
+  const { rows } = await db.pool.query('SELECT owner_token, telegram_registry_chat_id, telegram_registry_thread_id FROM config WHERE id = 1');
   const row = rows[0] || {};
-  return { ownerToken: row.owner_token || '', telegramRegistryChatId: row.telegram_registry_chat_id || '' };
+  return {
+    ownerToken: row.owner_token || '',
+    telegramRegistryChatId: row.telegram_registry_chat_id || '',
+    // Тема (Topic) реестра в той же супергруппе, что и заказы/остатки — см.
+    // schema.sql. Пусто — сообщение идёт в общую ленту чата без темы.
+    telegramRegistryThreadId: row.telegram_registry_thread_id || ''
+  };
 }
 
 async function updateSettings(body) {
   if (body && body.telegramRegistryChatId !== undefined) {
     const chat = text(body.telegramRegistryChatId, 'ID чата реестра', false, 64);
     await db.pool.query('UPDATE config SET telegram_registry_chat_id = $1 WHERE id = 1', [chat || null]);
+  }
+  if (body && body.telegramRegistryThreadId !== undefined) {
+    const thread = text(body.telegramRegistryThreadId, 'ID темы реестра', false, 64);
+    await db.pool.query('UPDATE config SET telegram_registry_thread_id = $1 WHERE id = 1', [thread || null]);
   }
   return getSettings();
 }

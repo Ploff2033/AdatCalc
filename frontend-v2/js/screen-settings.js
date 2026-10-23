@@ -395,10 +395,21 @@
       // socks5://user:pass@host:port, см. telegram.js::proxyAgentFor. Пусто —
       // прямое соединение, как раньше.
       '<div class="field"><label for="s-tg-proxy">Прокси (необязательно)</label><input id="s-tg-proxy" class="inp" placeholder="socks5://user:pass@host:port или http://host:port" value="' + (cfg.telegramProxyUrl || '') + '"></div>' +
-      '<p class="hint" style="margin:0">Присылает: новый заказ, дефицит материала, материал ниже порога — сейчас все три вместе, отдельных переключателей пока нет. Прокси нужен, только если сервер не достаёт до Telegram напрямую (таймауты при отправке).</p>';
+      // Темы (Topics) — по просьбе пользователя развести заказы и дефицит
+      // материалов по разным веткам одной супергруппы, а не общей лентой.
+      // ID темы берётся из ссылки на сообщение внутри нужной темы:
+      // t.me/c/<...>/<ID темы> — последнее число в ссылке. Пусто — тема не
+      // используется, сообщение идёт в общую ленту чата (как раньше).
+      '<div class="grid-2">' +
+        '<div class="field"><label for="s-tg-thread-orders">ID темы «Заказы» (необязательно)</label><input id="s-tg-thread-orders" class="inp num" value="' + (cfg.telegramOrdersThreadId || '') + '"></div>' +
+        '<div class="field"><label for="s-tg-thread-stock">ID темы «Остатки» (необязательно)</label><input id="s-tg-thread-stock" class="inp num" value="' + (cfg.telegramStockThreadId || '') + '"></div>' +
+      '</div>' +
+      '<p class="hint" style="margin:0">Присылает: новый заказ и правка заказа — в тему «Заказы», дефицит материала / материал ниже порога — в тему «Остатки». Чат должен быть супергруппой с включёнными темами; ID темы — открыть тему в Telegram, «Скопировать ссылку», последнее число в ссылке (t.me/c/.../<b>ID</b>). Темы не заданы — сообщения идут в общую ленту чата, как раньше. Прокси нужен, только если сервер не достаёт до Telegram напрямую (таймауты при отправке).</p>';
     document.getElementById('s-tg-token').addEventListener('input', function () { markDirty('Telegram-токен'); });
     document.getElementById('s-tg-chat').addEventListener('input', function () { markDirty('Telegram chat id'); });
     document.getElementById('s-tg-proxy').addEventListener('input', function () { markDirty('Telegram-прокси'); });
+    document.getElementById('s-tg-thread-orders').addEventListener('input', function () { markDirty('ID темы «Заказы»'); });
+    document.getElementById('s-tg-thread-stock').addEventListener('input', function () { markDirty('ID темы «Остатки»'); });
     document.getElementById('s-tg-test').addEventListener('click', async function (e) {
       var btn = e.target;
       var original = btn.textContent;
@@ -411,7 +422,9 @@
         await Api.post('/config/telegram-test', {
           telegramBotToken: document.getElementById('s-tg-token').value.trim(),
           telegramChatId: document.getElementById('s-tg-chat').value.trim(),
-          telegramProxyUrl: document.getElementById('s-tg-proxy').value.trim()
+          telegramProxyUrl: document.getElementById('s-tg-proxy').value.trim(),
+          telegramOrdersThreadId: document.getElementById('s-tg-thread-orders').value.trim(),
+          telegramStockThreadId: document.getElementById('s-tg-thread-stock').value.trim()
         });
         await State.loadAll();
         dirtyFields = {};
@@ -509,6 +522,13 @@
         '<button type="button" class="btn ghost sm" id="s-rg-chat-save" style="height:40px">Сохранить</button>' +
         '<button type="button" class="btn ghost sm" id="s-rg-chat-test" style="height:40px">Отправить тестовое</button></div>' +
         '<p class="hint" id="s-rg-chat-status" style="margin:0"></p></div>' +
+      // Тема (Topic) реестра — если чат реестра это та же супергруппа, что
+      // и заказы/остатки (см. раздел «Уведомления в Telegram» выше), сюда
+      // вписывается ID её темы тем же способом (среднее число в ссылке
+      // t.me/c/<чат>/<ID темы>/<ID сообщения>). Пусто — без темы, общая
+      // лента указанного чата.
+      '<div class="field"><label for="s-rg-thread">ID темы реестра в этом чате (необязательно, если чат — супергруппа с темами)</label>' +
+        '<input class="inp num" id="s-rg-thread"></div>' +
       '<div class="grid-2" style="align-items:start">' +
         '<div class="stack g8" data-dict="categories"><b>Категории расходов</b><div class="stack g6 s-rg-list"></div>' +
           '<form class="s-rg-add" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px"><input class="inp" placeholder="Новая категория" aria-label="Новая категория"><button class="btn ghost sm" style="height:40px">Добавить</button></form></div>' +
@@ -530,6 +550,8 @@
       document.getElementById('s-rg-owner-link').value = ownerLink;
       var chat = document.getElementById('s-rg-chat');
       if (document.activeElement !== chat) chat.value = st.telegramRegistryChatId;
+      var thread = document.getElementById('s-rg-thread');
+      if (document.activeElement !== thread) thread.value = st.telegramRegistryThreadId;
     };
     var renderDict = async function (kind) {
       var box = section.querySelector('[data-dict="' + kind + '"] .s-rg-list');
@@ -558,7 +580,13 @@
     });
     var chatStatus = function (text) { document.getElementById('s-rg-chat-status').textContent = text; };
     document.getElementById('s-rg-chat-save').addEventListener('click', async function () {
-      try { await Registry.api.put('/settings', { telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim() }); chatStatus('Сохранено.'); }
+      try {
+        await Registry.api.put('/settings', {
+          telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim(),
+          telegramRegistryThreadId: document.getElementById('s-rg-thread').value.trim()
+        });
+        chatStatus('Сохранено.');
+      }
       catch (err) { chatStatus(err.message); }
     });
     document.getElementById('s-rg-chat-test').addEventListener('click', async function (e) {
@@ -566,7 +594,10 @@
       btn.disabled = true;
       chatStatus('Отправляем…');
       try {
-        await Registry.api.post('/telegram-test', { telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim() });
+        await Registry.api.post('/telegram-test', {
+          telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim(),
+          telegramRegistryThreadId: document.getElementById('s-rg-thread').value.trim()
+        });
         chatStatus('Тестовое сообщение отправлено — проверьте чат.');
       } catch (err) {
         chatStatus(err.message);
@@ -675,6 +706,8 @@
         configBody.telegramBotToken = tgTokenEl.value.trim();
         configBody.telegramChatId = document.getElementById('s-tg-chat').value.trim();
         configBody.telegramProxyUrl = document.getElementById('s-tg-proxy').value.trim();
+        configBody.telegramOrdersThreadId = document.getElementById('s-tg-thread-orders').value.trim();
+        configBody.telegramStockThreadId = document.getElementById('s-tg-thread-stock').value.trim();
       }
       // Поля Mail.ru — тоже только у admin (см. renderMailru), тот же приём.
       var mailruLoginEl = document.getElementById('s-mailru-login');

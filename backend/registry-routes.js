@@ -188,7 +188,7 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
       registryRoles: ADMIN,
       handler: async (req, res) => {
         const body = await readBody(req);
-        if (body.telegramRegistryChatId !== undefined) await registry.updateSettings(body);
+        if (body.telegramRegistryChatId !== undefined || body.telegramRegistryThreadId !== undefined) await registry.updateSettings(body);
         try {
           await telegram.sendRegistryTest();
         } catch (err) {

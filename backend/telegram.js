@@ -37,15 +37,23 @@ function proxyAgentFor(proxyUrl) {
 // Настройках потребовала бы перезапуска.
 async function getCredentials() {
   try {
-    const { rows } = await db.pool.query('SELECT telegram_bot_token, telegram_chat_id, telegram_proxy_url FROM config WHERE id = 1');
+    const { rows } = await db.pool.query(
+      'SELECT telegram_bot_token, telegram_chat_id, telegram_proxy_url, telegram_orders_thread_id, telegram_stock_thread_id FROM config WHERE id = 1'
+    );
     const row = rows[0] || {};
     return {
       botToken: row.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN,
       chatId: row.telegram_chat_id || process.env.TELEGRAM_CHAT_ID,
-      proxyUrl: row.telegram_proxy_url || process.env.TELEGRAM_PROXY_URL || ''
+      proxyUrl: row.telegram_proxy_url || process.env.TELEGRAM_PROXY_URL || '',
+      // Темы (Topics) супергруппы — по просьбе пользователя развести заказы
+      // и дефицит материалов по разным веткам одного чата (см. комментарий
+      // у этих колонок в schema.sql). Пусто — сообщение идёт в общую ленту
+      // чата, как и раньше.
+      ordersThreadId: row.telegram_orders_thread_id || '',
+      stockThreadId: row.telegram_stock_thread_id || ''
     };
   } catch (err) {
-    return { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID, proxyUrl: process.env.TELEGRAM_PROXY_URL || '' };
+    return { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID, proxyUrl: process.env.TELEGRAM_PROXY_URL || '', ordersThreadId: '', stockThreadId: '' };
   }
 }
 
@@ -126,39 +134,51 @@ function sendWithRetry(botToken, payload, agent, attempt, resolve, reject) {
 // реальной отправки) — вызывающие best-effort уведомления (notifyOrderCreated
 // и т.п.) просто вешают .catch(()=>{}) и не ждут результата, а sendTest()
 // ниже действительно ждёт и сообщает об ошибке.
-async function send(text) {
+// threadId — опциональный message_thread_id темы супергруппы (см.
+// ordersThreadId/stockThreadId в getCredentials). notifyOrderCreated и т.п.
+// передают его явно, sendTest() — нет (шлёт в общую ленту чата, это тест
+// соединения, а не конкретной темы).
+async function send(text, threadId) {
   const { botToken, chatId, proxyUrl } = await getCredentials();
   if (!botToken || !chatId) throw new Error('Токен бота или ID чата не заданы');
-  return transport.post(botToken, chatId, text, proxyUrl);
+  return transport.post(botToken, chatId, text, proxyUrl, threadId);
 }
 
 // Сам HTTP-вызов к Telegram — через объект, чтобы тесты реестра оплат могли
 // подменить его и проверить "что и в какой чат ушло" без сети.
 const transport = {
-  post(botToken, chatId, text, proxyUrl) {
-    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
+  post(botToken, chatId, text, proxyUrl, threadId) {
+    const payload = JSON.stringify(Object.assign(
+      { chat_id: chatId, text, parse_mode: 'HTML' },
+      threadId ? { message_thread_id: Number(threadId) } : {}
+    ));
     return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, resolve, reject));
   }
 };
 
-// Реестр оплат — отдельный чат (config.telegram_registry_chat_id), бот тот
-// же, что у заказов, прокси (если настроен) — тоже тот же. Чат не задан —
-// молчим: уведомления реестра необязательны, работа с заявками от них не
-// зависит. Без fallback на env для чата — для реестра настройка только
-// через интерфейс.
+// Реестр оплат — свой chat_id (config.telegram_registry_chat_id, по
+// умолчанию отдельный от заказов/остатков) + своя тема в нём
+// (telegram_registry_thread_id) — та же идея, что ordersThreadId/
+// stockThreadId в getCredentials, но у реестра исторически свой отдельный
+// чат, поэтому отдельный запрос, а не часть основного getCredentials. Бот
+// тот же, что у заказов, прокси (если настроен) — тоже тот же. Чат не
+// задан — молчим: уведомления реестра необязательны, работа с заявками от
+// них не зависит. Без fallback на env для чата — для реестра настройка
+// только через интерфейс.
 async function getRegistryCredentials() {
   const { botToken, proxyUrl } = await getCredentials();
-  const { rows } = await db.pool.query('SELECT telegram_registry_chat_id FROM config WHERE id = 1');
-  return { botToken, proxyUrl, chatId: (rows[0] && rows[0].telegram_registry_chat_id) || '' };
+  const { rows } = await db.pool.query('SELECT telegram_registry_chat_id, telegram_registry_thread_id FROM config WHERE id = 1');
+  const row = rows[0] || {};
+  return { botToken, proxyUrl, chatId: row.telegram_registry_chat_id || '', threadId: row.telegram_registry_thread_id || '' };
 }
 
 // Fire-and-forget, как notifyOrderCreated: вызывается без await из
 // handlers/registry.js, ошибка — только в лог, операцию не отменяет.
 function notifyRegistry(text) {
   return getRegistryCredentials()
-    .then(({ botToken, chatId, proxyUrl }) => {
+    .then(({ botToken, chatId, proxyUrl, threadId }) => {
       if (!botToken || !chatId) return;
-      return transport.post(botToken, chatId, text, proxyUrl);
+      return transport.post(botToken, chatId, text, proxyUrl, threadId);
     })
     .catch((err) => {
       console.error('Telegram (реестр оплат): ' + describeError(err));
@@ -167,11 +187,17 @@ function notifyRegistry(text) {
 
 // Кнопка "Отправить тестовое" в разделе реестра Настроек — ждёт результат.
 async function sendRegistryTest() {
-  const { botToken, chatId, proxyUrl } = await getRegistryCredentials();
+  const { botToken, chatId, proxyUrl, threadId } = await getRegistryCredentials();
   if (!botToken) throw new Error('Токен бота не задан (раздел «Уведомления в Telegram»)');
   if (!chatId) throw new Error('ID чата реестра оплат не задан');
-  return transport.post(botToken, chatId, '✅ Тестовое сообщение реестра оплат AdatBeton Calc.', proxyUrl);
+  return transport.post(botToken, chatId, '✅ Тестовое сообщение реестра оплат AdatBeton Calc.', proxyUrl, threadId);
 }
+
+// Тема — своя на каждую категорию (см. getCredentials), читаем заново на
+// каждое уведомление, а не передаём параметром — notifyOrderCreated и т.п.
+// вызываются из разных хендлеров, которым незачем знать про темы вообще.
+async function ordersThreadId() { return (await getCredentials()).ordersThreadId; }
+async function stockThreadId() { return (await getCredentials()).stockThreadId; }
 
 function notifyOrderCreated(order) {
   const lines = [
@@ -186,7 +212,7 @@ function notifyOrderCreated(order) {
     'Выручка: ' + money(order.totalRevenue),
     'Прибыль: ' + money(order.totalProfit) + ' (' + Number(order.totalMarginPercent || 0).toFixed(1).replace('.', ',') + '%)'
   ];
-  send(lines.join('\n')).catch(() => {});
+  ordersThreadId().then((threadId) => send(lines.join('\n'), threadId)).catch(() => {});
 }
 
 // Исправление заказа (change order-edit) — в тот же чат заказов: это
@@ -202,7 +228,9 @@ function notifyOrderEdited(notice) {
     escapeHtml(notice.profit),
     'Исправил: ' + escapeHtml(notice.actor)
   ];
-  send(lines.join('\n')).catch(() => {});
+  // Та же тема, что и у создания заказа (notifyOrderCreated) — правка это
+  // продолжение той же ленты, не отдельная категория.
+  ordersThreadId().then((threadId) => send(lines.join('\n'), threadId)).catch(() => {});
 }
 
 // Дефицит/приближение к порогу материала — шлётся из handlers/stock.js на
@@ -220,7 +248,7 @@ function notifyStockDeficit(material, available, threshold, orderId, receiptId) 
   ];
   if (orderId) lines.push('Заказ: ' + escapeHtml(orderId));
   if (receiptId) lines.push('Поступление: ' + escapeHtml(receiptId));
-  send(lines.join('\n')).catch(() => {});
+  stockThreadId().then((threadId) => send(lines.join('\n'), threadId)).catch(() => {});
 }
 
 // Для кнопки "Отправить тестовое" в Настройках — в отличие от notify*

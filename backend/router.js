@@ -615,7 +615,8 @@ const routes = [
     role: 'admin',
     handler: async (req, res, m, role) => {
       const body = await readBody(req);
-      if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined || body.telegramProxyUrl !== undefined) {
+      if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined || body.telegramProxyUrl !== undefined
+        || body.telegramOrdersThreadId !== undefined || body.telegramStockThreadId !== undefined) {
         await config.update(body, role);
       }
       try {

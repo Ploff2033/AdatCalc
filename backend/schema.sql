@@ -927,3 +927,23 @@ CREATE TABLE IF NOT EXISTS order_edits (
   profit_after NUMERIC NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_order_edits_order ON order_edits(order_id, edited_at DESC);
+
+-- Темы (Topics) внутри супергруппы "Заказы" (config.telegram_chat_id) — по
+-- просьбе пользователя разнести уведомления о заказах и о дефиците
+-- материалов по разным веткам одного чата, а не читать их общей лентой.
+-- Пусто — сообщение идёт в чат без темы (общая лента), как раньше; это
+-- значит фича не ломает уже настроенные боевые деплои без топиков.
+-- Реестр оплат НЕ трогаем — у него уже свой отдельный чат
+-- (telegram_registry_chat_id), пользователь явно оставил его отдельно.
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_orders_thread_id TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_stock_thread_id TEXT;
+
+-- ...по факту реестр оплат тоже переехал в тему той же супергруппы (не
+-- отдельный чат, как предполагалось выше) — нужно то же поле темы, что и у
+-- заказов/остатков. telegram_registry_chat_id при этом остаётся обычным
+-- chat_id (без примеси ID темы через "/" — такое значение туда один раз
+-- попало вручную через UI и было невалидным для Bot API, выглядело как
+-- "-100.../4"; при деплое НЕ исправляем автоматически, разбор такого
+-- значения неоднозначен в общем случае — просто у новой колонки тоже пусто
+-- по умолчанию, донастраивается через интерфейс).
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_thread_id TEXT;
