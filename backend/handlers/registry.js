@@ -201,7 +201,7 @@ async function get(ref) {
 async function ownerLink(number, origin) {
   const base = (process.env.PUBLIC_BASE_URL || origin || '').replace(/\/+$/, '');
   const token = await getOwnerToken();
-  return base + '/v2/?owner=' + encodeURIComponent(token) + '#/registry/' + encodeURIComponent(number);
+  return base + '/v2/?owner=' + encodeURIComponent(token) + '#/registry' + (number ? '/' + encodeURIComponent(number) : '');
 }
 
 function rub(n) {
@@ -239,6 +239,29 @@ async function messageDecision(r, origin) {
   const lines = ['<b>Решение по №' + h(r.number) + ': ' + what + '</b>', h(r.recipient) + ' · ' + h(r.purpose)];
   if (r.decisionComment) lines.push('Комментарий: ' + h(r.decisionComment));
   lines.push('<a href="' + h(await ownerLink(r.number, origin)) + '">Открыть заявку</a>');
+  return lines.join('\n');
+}
+
+function zayavok(n) {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return n + ' заявка';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return n + ' заявки';
+  return n + ' заявок';
+}
+
+// Одно сообщение на пачку (change reestr-bulk): до 15 строк, дальше «…и ещё N».
+const BULK_LINES = 15;
+async function messageBulk(info, origin) {
+  const h = telegram.escapeHtml;
+  const { decision, applied } = info;
+  const sum = applied.reduce((s, r) => s + calc.toKop(r.amount), 0) / 100;
+  const head = decision === 'approved'
+    ? '✅ <b>Одобрено пачкой: ' + zayavok(applied.length) + ' на ' + rub(sum) + '</b>'
+    : '⏸ <b>Отложено пачкой: ' + zayavok(applied.length) + '</b>';
+  const lines = [head].concat(applied.slice(0, BULK_LINES).map((r) => '№' + h(r.number) + ' · ' + h(r.recipient) + ' · ' + rub(r.amount)));
+  if (applied.length > BULK_LINES) lines.push('…и ещё ' + (applied.length - BULK_LINES));
+  lines.push('<a href="' + h(await ownerLink('', origin)) + '">Открыть реестр</a>');
   return lines.join('\n');
 }
 
@@ -354,6 +377,33 @@ async function remove(id) {
   await Promise.all(toDelete.map(files.remove));
 }
 
+// Общее ядро решения — для одиночного decide и пакетного decideMany
+// (change reestr-bulk): одни и те же проверки и запись. opts.comment —
+// новый комментарий; undefined — оставить прежний (так при пачке).
+async function applyDecision(client, cur, pays, decision, opts) {
+  const o = opts || {};
+  const paid = paidKop(pays);
+  let approved = null;
+  if (decision === 'approved') {
+    approved = (o.approvedAmount === undefined || o.approvedAmount === null || o.approvedAmount === '')
+      ? Number(cur.amount)
+      : money(o.approvedAmount, 'К оплате');
+    if (calc.toKop(approved) > calc.toKop(cur.amount)) {
+      throw new HttpError(400, '«К оплате» не может быть больше суммы заявки (' + rub(cur.amount) + ')');
+    }
+    if (calc.toKop(approved) < paid) {
+      throw new HttpError(409, '«К оплате» не может быть меньше уже оплаченного (' + rub(paid / 100) + ')');
+    }
+  } else if (pays.length) {
+    throw new HttpError(409, 'По заявке уже есть оплаты — сначала удалите оплаты');
+  }
+  const comment = o.comment === undefined ? cur.decision_comment : o.comment;
+  await client.query(
+    'UPDATE pay_requests SET decision=$1, approved_amount=$2, decision_comment=$3, decided_at=now() WHERE id=$4',
+    [decision, approved, comment, cur.id]
+  );
+}
+
 // body: { decision: 'approved'|'rejected'|'postponed', approvedAmount?, comment? }
 async function decide(id, body, ctx) {
   const b = body || {};
@@ -361,30 +411,66 @@ async function decide(id, body, ctx) {
     throw new HttpError(400, 'Неизвестное решение');
   }
   const comment = text(b.comment, 'Комментарий', false, 1000);
-  await withLockedRequest(id, async (client, cur, pays) => {
-    const paid = paidKop(pays);
-    let approved = null;
-    if (b.decision === 'approved') {
-      approved = (b.approvedAmount === undefined || b.approvedAmount === null || b.approvedAmount === '')
-        ? Number(cur.amount)
-        : money(b.approvedAmount, 'К оплате');
-      if (calc.toKop(approved) > calc.toKop(cur.amount)) {
-        throw new HttpError(400, '«К оплате» не может быть больше суммы заявки (' + rub(cur.amount) + ')');
-      }
-      if (calc.toKop(approved) < paid) {
-        throw new HttpError(409, '«К оплате» не может быть меньше уже оплаченного (' + rub(paid / 100) + ')');
-      }
-    } else if (pays.length) {
-      throw new HttpError(409, 'По заявке уже есть оплаты — сначала удалите оплаты');
-    }
-    await client.query(
-      'UPDATE pay_requests SET decision=$1, approved_amount=$2, decision_comment=$3, decided_at=now() WHERE id=$4',
-      [b.decision, approved, comment, id]
-    );
-  });
+  await withLockedRequest(id, (client, cur, pays) => applyDecision(client, cur, pays, b.decision, { approvedAmount: b.approvedAmount, comment }));
   const result = await get(id);
   notify(messageDecision, result, ctx && ctx.origin);
   return result;
+}
+
+// Пакетное решение (change reestr-bulk, design §1): «одобрить» на полную
+// сумму или «отложить», до 100 заявок. Каждая заявка — своя короткая
+// транзакция: изменившиеся за это время пропускаются с причиной, остальные
+// применяются (частичное применение — решение интервью). Одно сводное
+// уведомление вместо сообщения на каждую заявку.
+const BULK_MAX = 100;
+const SKIP_REASON = {
+  approved: 'уже одобрена',
+  partial: 'уже частично оплачена',
+  paid: 'уже оплачена',
+  rejected: 'уже отклонена'
+};
+
+async function decideMany(body, ctx) {
+  const b = body || {};
+  if (!['approved', 'postponed'].includes(b.decision)) {
+    throw new HttpError(400, 'Пачкой можно только одобрить или отложить');
+  }
+  if (!Array.isArray(b.ids) || !b.ids.length) throw new HttpError(400, 'Не выбрано ни одной заявки');
+  const ids = Array.from(new Set(b.ids.map(String)));
+  if (ids.length > BULK_MAX) throw new HttpError(400, 'За раз — не больше ' + BULK_MAX + ' заявок');
+
+  const applied = [];
+  const skipped = [];
+  const today = calc.todayMoscow();
+  for (const id of ids) {
+    let number = null;
+    try {
+      const outcome = await withLockedRequest(id, async (client, cur, pays) => {
+        number = cur.number;
+        const st = calc.computeState(cur, pays, today).status;
+        if (st === 'postponed' && b.decision === 'postponed') return 'unchanged';
+        if (st !== 'pending' && st !== 'postponed') return SKIP_REASON[st] || 'нельзя изменить';
+        await applyDecision(client, cur, pays, b.decision, {});
+        return 'applied';
+      });
+      if (outcome === 'applied' || outcome === 'unchanged') {
+        const r = await get(id);
+        applied.push({ id: r.id, number: r.number, recipient: r.recipient, amount: r.amount, changed: outcome === 'applied' });
+      } else {
+        skipped.push({ id, number, reason: outcome });
+      }
+    } catch (err) {
+      if (err instanceof HttpError) {
+        skipped.push({ id, number, reason: err.status === 404 ? 'заявка не найдена' : err.message });
+      } else {
+        console.error('Реестр оплат: пакетное решение, заявка ' + id + ': ' + err.message);
+        skipped.push({ id, number, reason: 'ошибка сервера' });
+      }
+    }
+  }
+  const changed = applied.filter((x) => x.changed);
+  if (changed.length) notify(messageBulk, { decision: b.decision, applied: changed }, ctx && ctx.origin);
+  return { applied: applied.map(({ changed: _c, ...rest }) => rest), skipped };
 }
 
 // ---------- оплаты ----------
@@ -595,6 +681,7 @@ module.exports = {
   update,
   remove,
   decide,
+  decideMany,
   addPayment,
   removePayment,
   addRequestFile,

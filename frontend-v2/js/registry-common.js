@@ -367,6 +367,166 @@
     });
   }
 
+  // ---------- пакетное решение (change reestr-bulk) ----------
+
+  // Контроллер режима выбора — общий для телефона (mobile-registry.js) и ПК
+  // (screen-registry.js); разметку каждый экран рисует сам по onChange.
+  // opts: { onChange(), onApplied(result) }.
+  function createSelection(opts) {
+    var o = opts || {};
+    var on = false;
+    var picked = {}; // id → заявка (для суммы и подтверждения)
+    var busy = false;
+
+    var changed = function () { if (o.onChange) o.onChange(); };
+    var selectable = function (it) { return it && (it.state.status === 'pending' || it.state.status === 'postponed'); };
+    var list = function () { return Object.keys(picked).map(function (id) { return picked[id]; }); };
+    var sumKop = function () { return list().reduce(function (s, it) { return s + Math.round(it.amount * 100); }, 0); };
+
+    var sel = {
+      isOn: function () { return on; },
+      selectable: selectable,
+      has: function (id) { return Boolean(picked[id]); },
+      count: function () { return list().length; },
+      sumKop: sumKop,
+      enter: function () { on = true; picked = {}; changed(); },
+      exit: function () { if (!on) return; on = false; picked = {}; changed(); },
+      toggle: function (it) {
+        if (!on || !selectable(it)) return false;
+        if (picked[it.id]) delete picked[it.id]; else picked[it.id] = it;
+        changed();
+        return true;
+      },
+      // Все выбираемые заявки группы: если все уже отмечены — снять.
+      toggleGroup: function (items) {
+        var pickable = items.filter(selectable);
+        var all = pickable.length && pickable.every(function (it) { return picked[it.id]; });
+        pickable.forEach(function (it) { if (all) delete picked[it.id]; else picked[it.id] = it; });
+        changed();
+      },
+      groupAllPicked: function (items) {
+        var pickable = items.filter(selectable);
+        return pickable.length > 0 && pickable.every(function (it) { return picked[it.id]; });
+      },
+      barHtml: function () {
+        if (!on) return '';
+        var n = list().length;
+        var dis = n && !busy ? '' : ' disabled';
+        return '<div class="rg-bulkbar" role="region" aria-label="Пакетное решение">' +
+          '<span class="rg-bulkbar-info">Выбрано <b>' + n + '</b>' + (n ? ' · <b class="num">' + rub(sumKop() / 100) + '</b>' : '') + '</span>' +
+          '<div class="rg-bulkbar-actions">' +
+            '<button type="button" class="btn ghost" data-bulk="cancel">Отмена</button>' +
+            '<button type="button" class="btn ghost" data-bulk="postponed"' + dis + '>Отложить</button>' +
+            '<button type="button" class="btn pri" data-bulk="approved"' + dis + '>' + (busy ? 'Применяем…' : 'Одобрить') + '</button>' +
+          '</div></div>';
+      },
+      // Клики по панели — делегированно из экрана: true, если обработан.
+      handleBarClick: function (e) {
+        var b = e.target.closest('[data-bulk]');
+        if (!b) return false;
+        if (b.dataset.bulk === 'cancel') sel.exit();
+        else sel.confirmAndApply(b.dataset.bulk);
+        return true;
+      },
+      confirmAndApply: async function (decision) {
+        var items = list();
+        if (!items.length || busy) return;
+        var ok = await confirmBulk(decision, items, sumKop());
+        if (!ok) return;
+        busy = true;
+        changed();
+        try {
+          var res = await api.post('/decisions', { ids: items.map(function (it) { return it.id; }), decision: decision });
+          busy = false;
+          on = false;
+          picked = {};
+          showBulkResult(decision, res, items.length);
+          changed();
+          if (o.onApplied) o.onApplied(res);
+        } catch (err) {
+          busy = false;
+          changed();
+          showBulkResult(decision, null, items.length, err.message);
+        }
+      }
+    };
+    return sel;
+  }
+
+  function zayavokWord(n) {
+    var m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return 'заявку';
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'заявки';
+    return 'заявок';
+  }
+
+  // Подтверждение со списком (лист снизу на телефоне, диалог на ПК — CSS).
+  // Не window.confirm: нужен список «№ · получатель · сумма» и крупные кнопки.
+  function confirmBulk(decision, items, kop) {
+    return new Promise(function (resolve) {
+      var el = document.createElement('div');
+      el.className = 'rg-modal';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-modal', 'true');
+      var title = decision === 'approved'
+        ? 'Одобрить ' + items.length + ' ' + zayavokWord(items.length) + ' на ' + rub(kop / 100) + '?'
+        : 'Отложить ' + items.length + ' ' + zayavokWord(items.length) + '?';
+      el.innerHTML =
+        '<div class="rg-modal-sheet">' +
+          '<h2>' + esc(title) + '</h2>' +
+          (decision === 'approved' ? '<p class="hint" style="margin:0">Каждая заявка — на свою полную сумму. Уменьшить «К оплате» можно в карточке.</p>' : '') +
+          '<ul class="rg-modal-list">' + items.map(function (it) {
+            return '<li><span class="num hint">' + esc(it.number) + '</span><span class="rg-ellipsis">' + esc(it.recipient) + '</span><b class="num">' + money(it.amount) + '</b></li>';
+          }).join('') + '</ul>' +
+          '<div class="rg-modal-actions">' +
+            '<button type="button" class="btn ghost" data-m="no">Отмена</button>' +
+            '<button type="button" class="btn ' + (decision === 'approved' ? 'pri' : '') + '" data-m="yes">' + (decision === 'approved' ? 'Одобрить' : 'Отложить') + '</button>' +
+          '</div>' +
+        '</div>';
+      var done = function (v) {
+        document.removeEventListener('keydown', onKey);
+        el.remove();
+        document.body.classList.remove('rg-noscroll');
+        resolve(v);
+      };
+      var onKey = function (e) { if (e.key === 'Escape') done(false); };
+      el.addEventListener('click', function (e) {
+        if (e.target === el) return done(false);
+        var b = e.target.closest('[data-m]');
+        if (b) done(b.dataset.m === 'yes');
+      });
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(el);
+      document.body.classList.add('rg-noscroll');
+      el.querySelector('[data-m="yes"]').focus();
+    });
+  }
+
+  // Итог: без пропусков — короткое уведомление; с пропусками или ошибкой —
+  // баннер, висит до закрытия.
+  function showBulkResult(decision, res, total, errorText) {
+    var old = document.getElementById('rg-bulk-result');
+    if (old) old.remove();
+    var el = document.createElement('div');
+    el.id = 'rg-bulk-result';
+    el.setAttribute('role', 'status');
+    var verb = decision === 'approved' ? 'Одобрено' : 'Отложено';
+    var body;
+    if (errorText) {
+      el.className = 'rg-bulk-result bad';
+      body = 'Не удалось применить: ' + esc(errorText);
+    } else {
+      var skipped = res.skipped || [];
+      el.className = 'rg-bulk-result' + (skipped.length ? ' warn' : ' ok');
+      body = '<b>' + verb + ' ' + res.applied.length + ' из ' + total + '</b>' +
+        (skipped.length ? '<br>Не удалось: ' + skipped.map(function (s) { return esc(s.number || 'заявка') + ' — ' + esc(s.reason); }).join('; ') : '');
+    }
+    el.innerHTML = '<span>' + body + '</span><button type="button" class="btn ghost icon" aria-label="Закрыть">✕</button>';
+    el.querySelector('button').addEventListener('click', function () { el.remove(); });
+    document.body.appendChild(el);
+    if (!errorText && !(res.skipped || []).length) setTimeout(function () { el.remove(); }, 4000);
+  }
+
   // ---------- экспорт в Excel (спека payment-registry/export) ----------
 
   function exportXlsx(listResponse) {
@@ -654,6 +814,7 @@
     formHtml: formHtml,
     readForm: readForm,
     bindForm: bindForm,
-    docTarget: docTarget
+    docTarget: docTarget,
+    createSelection: createSelection
   };
 })();

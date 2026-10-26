@@ -12,6 +12,36 @@
   var dicts = { units: [], categories: [] };
   var root = null;
   var bound = false;
+  var inCard = false;
+
+  // Пакетное решение (change reestr-bulk): режим выбора на карточках групп
+  // «Ожидает решения» и «Отложена», панель внизу, подтверждение — в
+  // Registry.createSelection (общий с ПК).
+  var sel = R.createSelection({
+    onChange: function () {
+      if (data && !inCard && document.getElementById('rgm-body')) renderList();
+      renderBar();
+    },
+    onApplied: function () { loadAndRenderList(); }
+  });
+
+  function renderBar() {
+    var bar = document.getElementById('rgm-bulkbar');
+    if (!bar) return;
+    bar.innerHTML = inCard ? '' : sel.barHtml();
+    // У admin на телефоне снизу своё меню — панель ставим над ним по его
+    // реальной высоте (зависит от устройства и safe-area), у учредителя
+    // меню нет — панель у самого низа.
+    var nav = document.querySelector('.bottom-nav');
+    var navH = nav && !R.isOwnerMode() && nav.getClientRects().length ? nav.getBoundingClientRect().height : 0;
+    bar.style.bottom = navH + 'px';
+    var body = document.getElementById('rgm-body');
+    if (body) body.classList.toggle('with-bulkbar', sel.isOn() && !inCard);
+  }
+
+  function groupItems(group) {
+    return ((data && data.items) || []).filter(function (it) { return it.state.group === group; });
+  }
 
   function canPay() {
     return !R.isOwnerMode() && window.Auth && Auth.isAtLeast('admin');
@@ -44,7 +74,8 @@
         '<div class="spread" style="font-size:13px"><span>оплачено <b class="num">' + R.money(s.paid) + '</b></span>' +
         '<span style="color:var(--bad-fg)">не оплачено <b class="num">' + R.money(s.unpaid) + '</b></span></div></div>';
     }
-    var actions = s.status === 'pending'
+    var picking = sel.isOn() && sel.selectable(it);
+    var actions = s.status === 'pending' && !sel.isOn()
       ? '<div class="rgm-actions">' +
           '<button type="button" class="btn sm" data-act="approved" data-id="' + esc(it.id) + '">Одобрить</button>' +
           '<button type="button" class="btn ghost sm" data-act="postponed" data-id="' + esc(it.id) + '">Отложить</button>' +
@@ -52,8 +83,11 @@
         '</div>' : '';
     var comment = it.decisionComment && (it.decision === 'rejected' || it.decision === 'postponed' || s.status === 'partial')
       ? '<span class="hint">' + esc(it.decisionComment) + '</span>' : '';
-    return '<article class="rgm-card' + (s.overdue ? ' overdue' : '') + '" data-number="' + esc(it.number) + '">' +
-      '<div class="spread" style="gap:10px"><span class="num" style="font-size:12px"><span class="' + (s.overdue ? 'rg-overdue-text' : 'hint') + '">' + due + '</span>' +
+    var check = picking
+      ? '<span class="rgm-check' + (sel.has(it.id) ? ' on' : '') + '" role="checkbox" aria-checked="' + sel.has(it.id) + '" aria-label="Выбрать ' + esc(it.number) + '"></span>'
+      : '';
+    return '<article class="rgm-card' + (s.overdue ? ' overdue' : '') + (picking ? ' pickable' : '') + (picking && sel.has(it.id) ? ' picked' : '') + '" data-number="' + esc(it.number) + '" data-id="' + esc(it.id) + '">' +
+      '<div class="spread" style="gap:10px"><span class="num" style="font-size:12px">' + check + '<span class="' + (s.overdue ? 'rg-overdue-text' : 'hint') + '">' + due + '</span>' +
         '<span class="hint"> · ' + esc(it.number) + ' · ' + esc(it.unitName) + '</span></span>' + R.statusChip(it) + '</div>' +
       '<div class="rgm-title"><span>' + esc(it.purpose) + '</span><span class="num">' + R.money(it.amount) + '</span></div>' +
       '<span class="hint">' + esc(it.recipient) + ' · ' + esc(it.categoryName) + (it.applicant ? ' · ' + esc(it.applicant) : '') + '</span>' +
@@ -63,6 +97,7 @@
   }
 
   function renderList() {
+    inCard = false;
     var t = data.totals;
     var items = data.items;
     var html =
@@ -87,8 +122,14 @@
       if (it.state.group !== group) {
         group = it.state.group;
         var g = t.groups[group];
+        var bulkBtn = '';
+        if ((group === 0 || group === 2) && groupItems(group).some(sel.selectable)) {
+          bulkBtn = sel.isOn()
+            ? '<button type="button" class="btn ghost sm rgm-sep-btn" data-bulk-group="' + group + '">' + (sel.groupAllPicked(groupItems(group)) ? 'Снять все' : 'Выбрать все') + '</button>'
+            : '<button type="button" class="btn ghost sm rgm-sep-btn" data-bulk-enter="1">Выбрать</button>';
+        }
         html += '<div class="rgm-sep"><span>' + R.GROUP_LABELS[group] + ' · ' + g.count + '</span>' +
-          (group === 3 ? '' : '<span class="num">' + R.rub(g.sum) + '</span>') + '</div>';
+          '<span class="rgm-sep-right">' + (group === 3 ? '' : '<span class="num">' + R.rub(g.sum) + '</span>') + bulkBtn + '</span></div>';
       }
       html += cardHtml(it);
     });
@@ -98,15 +139,18 @@
       b.addEventListener('click', function () {
         filters.closed = b.dataset.closed === '1';
         filters.status = '';
+        sel.exit();
         loadAndRenderList();
       });
     });
     [['rgm-f-status', 'status'], ['rgm-f-unit', 'unit'], ['rgm-f-category', 'category'], ['rgm-f-period', 'period']].forEach(function (pair) {
       document.getElementById(pair[0]).addEventListener('change', function () {
         filters[pair[1]] = this.value;
+        sel.exit();
         loadAndRenderList();
       });
     });
+    renderBar();
   }
 
   async function loadAndRenderList() {
@@ -146,6 +190,8 @@
   }
 
   function renderCard(it) {
+    inCard = true;
+    renderBar();
     var s = it.state;
     var hasPayments = it.payments.length > 0;
     var decided = it.decision
@@ -255,6 +301,46 @@
     }
   }
 
+  // ---------- долгое нажатие: вход в режим выбора ----------
+
+  // Как в галерее телефона: зажать карточку ~0,5 с — включается режим выбора
+  // и эта заявка сразу отмечается (кнопка «Выбрать» в заголовке группы
+  // остаётся — не все знают про зажатие). Pointer events — одинаково для
+  // пальца и мыши. Сдвиг пальца больше 10 px — это прокрутка, не зажатие.
+  var LONG_PRESS_MS = 500;
+  var suppressNextClick = false; // ровно один клик — тот, которым закончилось зажатие
+
+  function bindLongPress(body) {
+    var timer = null;
+    var start = null;
+    var cancel = function () { clearTimeout(timer); timer = null; start = null; };
+    body.addEventListener('pointerdown', function (e) {
+      suppressNextClick = false;
+      if (e.button > 0 || e.target.closest('a, button, select, input, label')) return;
+      var card = e.target.closest('.rgm-card');
+      if (!card || !data) return;
+      var item = data.items.find(function (x) { return x.id === card.dataset.id; });
+      if (!item || !sel.selectable(item)) return;
+      start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(function () {
+        timer = null;
+        if (!sel.isOn()) sel.enter();
+        if (!sel.has(item.id)) sel.toggle(item);
+        suppressNextClick = true;
+        if (navigator.vibrate) { try { navigator.vibrate(25); } catch (err) { /* не везде есть */ } }
+      }, LONG_PRESS_MS);
+    });
+    body.addEventListener('pointermove', function (e) {
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) { body.addEventListener(t, cancel); });
+    body.addEventListener('scroll', cancel, { passive: true });
+    // Системное меню долгого нажатия («Копировать / Выделить») на карточках не нужно.
+    body.addEventListener('contextmenu', function (e) {
+      if (e.target.closest('.rgm-card') && !e.target.closest('a, img')) e.preventDefault();
+    });
+  }
+
   // ---------- каркас ----------
 
   function scaffold(container) {
@@ -263,7 +349,9 @@
       '<header class="rgm-head"><div class="stack" style="gap:2px"><span class="rgm-cap">' + (R.isOwnerMode() ? 'Учредитель' : 'Все подразделения') + '</span><h1>Реестр оплат</h1></div>' +
         '<button type="button" class="btn sm rgm-excel" id="rgm-excel">' +
           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Excel</button></header>' +
-      '<main class="rgm-body" id="rgm-body"><p class="hint">Загрузка…</p></main>';
+      '<main class="rgm-body" id="rgm-body"><p class="hint">Загрузка…</p></main>' +
+      '<div class="rgm-bulkbar-wrap" id="rgm-bulkbar"></div>';
+    document.getElementById('rgm-bulkbar').addEventListener('click', function (e) { sel.handleBarClick(e); });
     document.getElementById('rgm-excel').addEventListener('click', async function () {
       try {
         if (!data || !data.totals) data = await R.api.get('/requests' + R.listQuery(filters));
@@ -273,12 +361,25 @@
     });
     var body = document.getElementById('rgm-body');
     R.bindThumbs(body);
+    bindLongPress(body);
     body.addEventListener('click', function (e) {
+      // Клик, которым закончилось долгое нажатие, — уже обработан.
+      if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
+      if (e.target.closest('[data-bulk-enter]')) { sel.enter(); return; }
+      var grp = e.target.closest('[data-bulk-group]');
+      if (grp) { sel.toggleGroup(groupItems(Number(grp.dataset.bulkGroup))); return; }
       var actBtn = e.target.closest('[data-act]');
       if (actBtn) { quickDecision(actBtn); return; }
       if (e.target.closest('a, button, select, input, label')) return;
       var card = e.target.closest('.rgm-card');
-      if (card) go(card.dataset.number);
+      if (!card) return;
+      // В режиме выбора тап по выбираемой карточке — отметка, по остальным —
+      // как обычно, открыть карточку.
+      if (sel.isOn()) {
+        var item = data.items.find(function (x) { return x.id === card.dataset.id; });
+        if (item && sel.toggle(item)) return;
+      }
+      go(card.dataset.number);
     });
   }
 

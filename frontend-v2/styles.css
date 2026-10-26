@@ -590,3 +590,71 @@ textarea.inp.rg-purpose { min-height: 112px; }
 }
 .rg-suggest-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 12px; font: inherit; color: var(--ink); cursor: pointer; }
 .rg-suggest-item:hover, .rg-suggest-item.on { background: var(--surface-3); }
+
+/* ---------- реестр: пакетное решение (change reestr-bulk) ---------- */
+.rgm-sep-right, .rg-group-right { display: inline-flex; align-items: center; gap: 10px; }
+.rgm-sep { align-items: center; }
+.rgm-sep-btn { height: 34px; padding: 0 12px; background: #fff; }
+.rgm-check, .rg-cb {
+  display: inline-block; width: 22px; height: 22px; border: 2px solid #9C978C; border-radius: 5px; background: #fff;
+  vertical-align: -6px; margin-right: 8px; position: relative; flex: none;
+}
+.rgm-check.on, .rg-cb.on { background: var(--accent); border-color: var(--accent); }
+.rgm-check.on::after, .rg-cb.on::after {
+  content: ''; position: absolute; left: 6px; top: 1px; width: 6px; height: 12px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
+}
+.rg-cb { margin: 0; }
+.rgm-card.pickable { cursor: pointer; }
+.rgm-card.picked { background: var(--act-bg); box-shadow: inset 4px 0 0 var(--accent); }
+button.row.rg-row.picked { background: var(--act-bg); }
+.rgm-body.with-bulkbar { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+
+.rg-bulkbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--sidebar-bg); color: #fff;
+  box-shadow: 0 -6px 18px rgba(28,29,27,.18);
+}
+.rg-bulkbar-info { font-size: 15px; }
+.rg-bulkbar-actions { display: flex; gap: 8px; }
+.rg-bulkbar .btn { height: 44px; }
+.rg-bulkbar .btn.ghost { background: transparent; color: #fff; border-color: #4A4D47; }
+.rg-bulkbar .btn:disabled { opacity: .45; }
+/* Телефон: панель прижата к низу экрана; у admin — над нижним меню. */
+.rgm-bulkbar-wrap { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; }
+/* У admin над нижним меню (отступ ставит mobile-registry.js::renderBar) —
+   safe-area уже учтена в самом меню. */
+body:not(.owner-mode) .rgm-bulkbar-wrap .rg-bulkbar { padding-bottom: 10px; }
+body.owner-mode .rgm-bulkbar-wrap { max-width: 720px; margin: 0 auto; }
+@media (max-width: 420px) {
+  .rg-bulkbar-actions { width: 100%; }
+  .rg-bulkbar-actions .btn { flex: 1; padding: 0 8px; }
+  .rg-bulkbar-actions .btn.pri { flex: 1.4; }
+}
+/* ПК: панель липнет к низу области страницы. */
+.rg-bulkbar-wrap.desk { position: sticky; bottom: 0; z-index: 6; margin: 0 -36px -28px; }
+.rg-bulkbar-wrap.desk .rg-bulkbar { padding: 12px 36px; }
+.rg-bulkbar-wrap.desk:empty { display: none; }
+
+.rg-modal { position: fixed; inset: 0; z-index: 70; background: rgba(28,29,27,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.rg-modal-sheet { width: 520px; max-width: 100%; max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 12px; background: var(--surface); border-radius: 8px; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.rg-modal-sheet h2 { font-size: 19px; font-weight: 600; }
+.rg-modal-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-top: 1px solid var(--border-soft); }
+.rg-modal-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+.rg-modal-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.rg-modal-actions .btn { height: 48px; }
+@media (max-width: 860px) {
+  .rg-modal { align-items: flex-end; padding: 0; }
+  .rg-modal-sheet { width: 100%; border-radius: 14px 14px 0 0; max-height: 85vh; padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+}
+
+.rg-bulk-result {
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 80;
+  width: min(560px, calc(100vw - 24px)); display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: 14px;
+}
+.rg-bulk-result.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.rg-bulk-result.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.rg-bulk-result.bad { background: var(--bad-bg); color: var(--bad-fg); }
+.rg-bulk-result .btn.icon { width: 28px; height: 28px; flex: none; }
+/* Долгое нажатие на карточку — режим выбора: без системного меню и выделения текста. */
+.rgm-card { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

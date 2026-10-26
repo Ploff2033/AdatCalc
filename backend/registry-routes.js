@@ -75,6 +75,14 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
       handler: async (req, res, m) => sendJson(res, 200, await registry.decide(id(m), await readBody(req), { origin: originOf(req) }))
     },
 
+    // Пакетное решение (change reestr-bulk): одобрить / отложить до 100 заявок.
+    {
+      method: 'POST',
+      pattern: /^\/api\/registry\/decisions$/,
+      registryRoles: ADMIN_OWNER,
+      handler: async (req, res) => sendJson(res, 200, await registry.decideMany(await readBody(req), { origin: originOf(req) }))
+    },
+
     // --- оплаты ---
     {
       method: 'POST',

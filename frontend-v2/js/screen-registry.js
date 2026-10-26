@@ -11,6 +11,12 @@
   var esc = R.esc;
 
   var COLS = '118px minmax(0,1fr) minmax(0,1.7fr) 112px 118px 150px 112px 112px 118px';
+  var HEAD_CELLS = '<div>№ · срок</div><div>Заявитель</div><div>Получатель · цель</div><div>Категория</div><div class="r">Сумма</div><div>Статус</div><div class="r">Оплачено</div><div class="r">К оплате</div><div class="r">Не оплачено</div>';
+
+  // Пакетное решение (change reestr-bulk): в режиме выбора слева колонка
+  // отметок, внизу панель (Registry.createSelection, общий с телефоном).
+  var sel = null;
+  function cols() { return (sel && sel.isOn() ? '36px ' : '') + COLS; }
 
   var HTML =
     '<div class="page-head">' +
@@ -38,11 +44,12 @@
     '<p class="banner" id="rg-load-error" hidden></p>' +
     '<section class="card" style="overflow-x:auto">' +
       '<div style="min-width:1080px">' +
-        '<div class="row head" style="grid-template-columns:' + COLS + '"><div>№ · срок</div><div>Заявитель</div><div>Получатель · цель</div><div>Категория</div><div class="r">Сумма</div><div>Статус</div><div class="r">Оплачено</div><div class="r">К оплате</div><div class="r">Не оплачено</div></div>' +
+        '<div class="row head" id="rg-head" style="grid-template-columns:' + COLS + '">' + HEAD_CELLS + '</div>' +
         '<div id="rg-rows"></div>' +
         '<p class="empty-state" id="rg-empty" hidden>Заявок не найдено.</p>' +
       '</div>' +
     '</section>' +
+    '<div class="rg-bulkbar-wrap desk" id="rg-bulkbar"></div>' +
     '<div class="rg-backdrop" id="rg-backdrop" hidden></div>' +
     '<aside class="drawer rg-drawer" id="rg-drawer" hidden aria-labelledby="rg-drawer-title"></aside>';
 
@@ -133,7 +140,14 @@
     var fileCount = it.files.length;
     var comment = (it.decision === 'rejected' || it.decision === 'postponed') && it.decisionComment
       ? '<span class="hint rg-ellipsis">' + esc(it.decisionComment) + '</span>' : '';
-    return '<button type="button" class="row rg-row' + (s.overdue ? ' overdue' : '') + '" data-id="' + esc(it.id) + '" style="grid-template-columns:' + COLS + '">' +
+    var mark = '';
+    if (sel.isOn()) {
+      mark = sel.selectable(it)
+        ? '<span class="rg-cb' + (sel.has(it.id) ? ' on' : '') + '" role="checkbox" aria-checked="' + sel.has(it.id) + '" aria-label="Выбрать ' + esc(it.number) + '"></span>'
+        : '<span></span>';
+    }
+    var picked = sel.isOn() && sel.has(it.id);
+    return '<button type="button" class="row rg-row' + (s.overdue ? ' overdue' : '') + (picked ? ' picked' : '') + '" data-id="' + esc(it.id) + '" style="grid-template-columns:' + cols() + '">' + mark +
       '<div class="stack" style="gap:1px"><span class="num" style="font-weight:600">' + esc(it.number) + '</span>' + dueCell(it) + '</div>' +
       '<div class="stack" style="gap:1px;min-width:0"><span class="rg-ellipsis">' + (esc(it.applicant) || '<span class="hint">—</span>') + '</span><span class="hint rg-ellipsis">' + esc(it.unitName) + '</span></div>' +
       '<div class="stack" style="gap:1px;min-width:0"><span class="rg-ellipsis" style="font-weight:600">' + esc(it.recipient) +
@@ -157,8 +171,15 @@
       if (it.state.group !== currentGroup) {
         currentGroup = it.state.group;
         var g = data.totals.groups[currentGroup];
+        var bulkBtn = '';
+        var gi = items.filter(function (x) { return x.state.group === currentGroup; });
+        if ((currentGroup === 0 || currentGroup === 2) && gi.some(sel.selectable)) {
+          bulkBtn = sel.isOn()
+            ? '<button type="button" class="btn ghost sm" data-bulk-group="' + currentGroup + '">' + (sel.groupAllPicked(gi) ? 'Снять все' : 'Выбрать все') + '</button>'
+            : '<button type="button" class="btn ghost sm" data-bulk-enter="1">Выбрать</button>';
+        }
         html += '<div class="rg-group"><span>' + R.GROUP_LABELS[currentGroup] + ' · ' + g.count + '</span>' +
-          '<span class="num">' + (currentGroup === 3 ? '' : 'не оплачено ' + R.money(g.sum)) + '</span></div>';
+          '<span class="rg-group-right"><span class="num">' + (currentGroup === 3 ? '' : 'не оплачено ' + R.money(g.sum)) + '</span>' + bulkBtn + '</span></div>';
       }
       html += rowHtml(it);
     });
@@ -167,13 +188,17 @@
         a.amount += it.amount; a.paid += it.state.paid; a.toPay += it.state.toPay || 0; a.unpaid += it.state.unpaid;
         return a;
       }, { amount: 0, paid: 0, toPay: 0, unpaid: 0 });
-      html += '<div class="row rg-total" style="grid-template-columns:' + COLS + '">' +
+      html += '<div class="row rg-total" style="grid-template-columns:' + cols() + '">' + (sel.isOn() ? '<div></div>' : '') +
         '<div>Итого</div><div class="hint">' + zayavok(items.length) + '</div><div></div><div></div>' +
         '<div class="r num">' + R.money(sum.amount) + '</div><div></div>' +
         '<div class="r num">' + R.money(sum.paid) + '</div><div class="r num">' + R.money(sum.toPay) + '</div>' +
         '<div class="r num">' + R.money(sum.unpaid) + '</div></div>';
     }
     document.getElementById('rg-rows').innerHTML = html;
+    var head = document.getElementById('rg-head');
+    head.style.gridTemplateColumns = cols();
+    head.innerHTML = (sel.isOn() ? '<div></div>' : '') + HEAD_CELLS;
+    document.getElementById('rg-bulkbar').innerHTML = sel.barHtml();
   }
 
   // ---------- drawer: общее ----------
@@ -682,6 +707,10 @@
   var documentBound = false;
   function init() {
     document.getElementById('page-registry').innerHTML = HTML;
+    sel = R.createSelection({
+      onChange: function () { renderRows(); },
+      onApplied: function () { loadList(); }
+    });
     document.getElementById('rg-add-btn').addEventListener('click', function () {
       releaseQueue();
       openDrawer({ mode: 'new' });
@@ -709,6 +738,7 @@
       b.addEventListener('click', function () {
         filters.closed = b.dataset.closed === '1';
         filters.status = '';
+        sel.exit();
         renderFilters();
         loadList();
       });
@@ -716,14 +746,26 @@
     [['rg-f-status', 'status'], ['rg-f-unit', 'unit'], ['rg-f-category', 'category'], ['rg-f-period', 'period']].forEach(function (pair) {
       document.getElementById(pair[0]).addEventListener('change', function () {
         filters[pair[1]] = this.value;
+        sel.exit();
         loadList();
       });
     });
+    document.getElementById('rg-bulkbar').addEventListener('click', function (e) { sel.handleBarClick(e); });
     document.getElementById('rg-rows').addEventListener('click', function (e) {
+      if (e.target.closest('[data-bulk-enter]')) { sel.enter(); return; }
+      var grp = e.target.closest('[data-bulk-group]');
+      if (grp) {
+        var g = Number(grp.dataset.bulkGroup);
+        sel.toggleGroup(data.items.filter(function (x) { return x.state.group === g; }));
+        return;
+      }
       var row = e.target.closest('.rg-row');
       if (!row) return;
       var item = data.items.find(function (x) { return x.id === row.dataset.id; });
       if (!item) return;
+      // В режиме выбора клик по выбираемой строке — отметка, по остальным —
+      // как обычно, карточка.
+      if (sel.isOn() && sel.toggle(item)) return;
       // Сразу показываем данные из списка, но тут же берём свежие с сервера:
       // список мог загрузиться раньше, чем догрузился файл (автозаполнение
       // догружает счёт в фоне) — иначе карточка показала бы «Файлов нет».
