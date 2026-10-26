@@ -18,6 +18,14 @@
       '<div class="page-head-actions"><button class="btn ghost sm" id="rg-export-btn">Экспорт в Excel</button><button class="btn pri sm" id="rg-add-btn">Новая заявка</button></div>' +
     '</div>' +
     '<div class="grid-4" id="rg-tiles" style="gap:12px"></div>' +
+    // Автозаполнение из счёта (registry-autofill.js, макет PaymentsDrop) —
+    // основной путь ввода; «Новая заявка» в шапке остаётся ручным вводом.
+    '<div class="rg-autodrop" id="rg-autodrop" tabindex="0" role="button" aria-label="Перетащите счета или выберите файлы">' +
+      '<div class="rg-autodrop-idle"><b>Перетащите счета</b><span class="hint">PDF или фото, до 20 файлов за раз · или вставьте скриншот Ctrl+V</span></div>' +
+      '<div class="rg-autodrop-over"><b id="rg-autodrop-over-text">Отпустите, чтобы распознать</b></div>' +
+      '<button type="button" class="btn ghost sm" id="rg-autodrop-pick">Выбрать файлы</button>' +
+      '<input type="file" id="rg-autodrop-input" multiple accept="application/pdf,image/jpeg,image/png,image/webp" hidden>' +
+    '</div>' +
     '<div class="rg-filters">' +
       '<div class="seg" role="group" aria-label="Активные или закрытые" id="rg-closed-seg" style="width:240px">' +
         '<button type="button" data-closed="0" class="on" aria-pressed="true">Активные</button><button type="button" data-closed="1" aria-pressed="false">Закрытые</button>' +
@@ -188,63 +196,10 @@
     document.getElementById('rg-backdrop').hidden = true;
   }
 
-  function selectableOptions(list, current) {
-    return '<option value="">— выберите —</option>' + list.filter(function (d) { return !d.hidden || d.id === current; }).map(function (d) {
-      return '<option value="' + esc(d.id) + '"' + (d.id === current ? ' selected' : '') + '>' + esc(d.name) + (d.hidden ? ' (скрыто)' : '') + '</option>';
-    }).join('');
-  }
-
-  function fieldsHtml(it) {
-    var v = it || {};
-    return '<div class="grid-2">' +
-        '<div class="field"><label for="rg-i-unit">Подразделение <span class="req">*</span></label><select id="rg-i-unit" class="inp">' + selectableOptions(dicts.units, v.unitId) + '</select></div>' +
-        '<div class="field"><label for="rg-i-category">Категория <span class="req">*</span></label><select id="rg-i-category" class="inp">' + selectableOptions(dicts.categories, v.categoryId) + '</select></div>' +
-      '</div>' +
-      '<div class="grid-2">' +
-        '<div class="field"><label for="rg-i-applicant">Заявитель</label><input id="rg-i-applicant" class="inp" list="rg-dl-applicant" autocomplete="off" value="' + esc(v.applicant) + '"></div>' +
-        '<div class="field"><label for="rg-i-due">Срок оплаты</label><input id="rg-i-due" type="date" class="inp" value="' + esc(v.dueDate || '') + '"></div>' +
-      '</div>' +
-      '<div class="field"><label for="rg-i-recipient">Получатель <span class="req">*</span></label><input id="rg-i-recipient" class="inp" list="rg-dl-recipient" autocomplete="off" value="' + esc(v.recipient) + '"></div>' +
-      '<div class="field"><label for="rg-i-basis">Основание (счёт / договор)</label><input id="rg-i-basis" class="inp" value="' + esc(v.basis) + '" placeholder="Счёт №… от …"></div>' +
-      '<div class="field"><label for="rg-i-amount">Сумма <span class="req">*</span></label><div class="unit"><input id="rg-i-amount" class="inp num" inputmode="decimal" style="height:48px;font-size:20px;font-weight:600"><span>₽</span></div></div>' +
-      '<div class="field"><label for="rg-i-purpose">Цель расхода <span class="req">*</span></label><textarea id="rg-i-purpose" class="inp" style="height:72px;padding:10px 12px;resize:vertical">' + esc(v.purpose) + '</textarea></div>' +
-      '<datalist id="rg-dl-applicant"></datalist><datalist id="rg-dl-recipient"></datalist>';
-  }
-
-  function readFields() {
-    return {
-      unitId: document.getElementById('rg-i-unit').value,
-      categoryId: document.getElementById('rg-i-category').value,
-      applicant: document.getElementById('rg-i-applicant').value,
-      dueDate: document.getElementById('rg-i-due').value || null,
-      recipient: document.getElementById('rg-i-recipient').value,
-      basis: document.getElementById('rg-i-basis').value,
-      amount: document.getElementById('rg-i-amount').value,
-      purpose: document.getElementById('rg-i-purpose').value
-    };
-  }
-
-  // Подсказки заявителя/получателя из ранее введённых (GET /suggest).
-  function bindSuggest(field) {
-    var input = document.getElementById('rg-i-' + field);
-    var list = document.getElementById('rg-dl-' + field);
-    var timer = null;
-    var load = function () {
-      R.api.get('/suggest?field=' + field + '&q=' + encodeURIComponent(input.value.trim())).then(function (values) {
-        list.innerHTML = values.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('');
-      }).catch(function () {});
-    };
-    input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 200); });
-    input.addEventListener('focus', load, { once: true });
-  }
-
-  function bindFields(it) {
-    var amount = document.getElementById('rg-i-amount');
-    NumericInput.attach(amount);
-    if (it) NumericInput.setFormattedValue(amount, it.amount);
-    bindSuggest('applicant');
-    bindSuggest('recipient');
-  }
+  // Форма заявки — общая с экраном проверки счетов (Registry.formHtml и т. д.).
+  function fieldsHtml(it) { return R.formHtml(it, dicts); }
+  function readFields() { return R.readForm(); }
+  function bindFields(it) { R.bindForm(it); }
 
   function showError(id, err) {
     var el = document.getElementById(id);
@@ -292,7 +247,25 @@
   }
 
   // Ctrl+V скриншота — пока открыт drawer (новая заявка или карточка).
+  function pastedImages(e) {
+    var files = [];
+    Array.prototype.forEach.call((e.clipboardData && e.clipboardData.items) || [], function (item) {
+      if (item.kind === 'file' && /^image\//.test(item.type)) {
+        var f = item.getAsFile();
+        if (f) files.push(new File([f], 'Скриншот ' + new Date().toLocaleString('ru-RU').replace(/[/:]/g, '-') + '.png', { type: f.type }));
+      }
+    });
+    return files;
+  }
+
   function onPaste(e) {
+    // Не открыта ни форма, ни карточка — скриншот счёта идёт в автозаполнение.
+    if (!drawer && document.getElementById('rg-autodrop') && !document.getElementById('rg-autodrop').closest('[hidden]') &&
+        !(window.Viewport && Viewport.isMobile())) {
+      var shots = pastedImages(e);
+      if (shots.length) { e.preventDefault(); RegistryAutofill.add(shots); }
+      return;
+    }
     if (!drawer || !document.getElementById('rg-drop')) return;
     var files = [];
     Array.prototype.forEach.call((e.clipboardData && e.clipboardData.items) || [], function (item) {
@@ -667,6 +640,43 @@
     else renderCard();
   }
 
+  // ---------- зона «Перетащите счета» ----------
+
+  function bindAutodrop() {
+    var zone = document.getElementById('rg-autodrop');
+    var input = document.getElementById('rg-autodrop-input');
+    var overText = document.getElementById('rg-autodrop-over-text');
+    var depth = 0;
+    var count = function (e) {
+      var items = e.dataTransfer && e.dataTransfer.items;
+      return items ? Array.prototype.filter.call(items, function (i) { return i.kind === 'file'; }).length : 0;
+    };
+    document.getElementById('rg-autodrop-pick').addEventListener('click', function (e) { e.stopPropagation(); input.click(); });
+    zone.addEventListener('click', function () { input.click(); });
+    zone.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+    input.addEventListener('change', function () {
+      var files = Array.prototype.slice.call(input.files);
+      input.value = '';
+      RegistryAutofill.add(files);
+    });
+    zone.addEventListener('dragenter', function (e) {
+      e.preventDefault();
+      depth++;
+      var n = count(e);
+      overText.textContent = n ? 'Отпустите, чтобы распознать ' + n + ' ' + plural(n, 'счёт', 'счёта', 'счетов') : 'Отпустите, чтобы распознать';
+      zone.classList.add('over');
+    });
+    zone.addEventListener('dragover', function (e) { e.preventDefault(); });
+    zone.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; zone.classList.remove('over'); } });
+    zone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      depth = 0;
+      zone.classList.remove('over');
+      RegistryAutofill.add(Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []));
+    });
+    RegistryAutofill.onDone(function () { loadList(); });
+  }
+
   // ---------- каркас ----------
 
   var documentBound = false;
@@ -681,6 +691,7 @@
       R.exportXlsx(data);
     });
     document.getElementById('rg-backdrop').addEventListener('click', closeDrawer);
+    bindAutodrop();
     var drawerEl = document.getElementById('rg-drawer');
     drawerEl.addEventListener('click', onDrawerClick);
     R.bindThumbs(drawerEl);
@@ -712,7 +723,14 @@
       var row = e.target.closest('.rg-row');
       if (!row) return;
       var item = data.items.find(function (x) { return x.id === row.dataset.id; });
-      if (item) openDrawer({ mode: 'card', item: item });
+      if (!item) return;
+      // Сразу показываем данные из списка, но тут же берём свежие с сервера:
+      // список мог загрузиться раньше, чем догрузился файл (автозаполнение
+      // догружает счёт в фоне) — иначе карточка показала бы «Файлов нет».
+      openDrawer({ mode: 'card', item: item });
+      R.api.get('/requests/' + encodeURIComponent(item.id)).then(function (fresh) {
+        if (drawer && drawer.mode === 'card' && drawer.item.id === fresh.id) { drawer.item = fresh; renderCard(); }
+      }).catch(function () {});
     });
   }
 

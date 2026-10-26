@@ -25,7 +25,14 @@ const CONTENT_TYPES = {
   '.webp': 'image/webp',
   // Счета реестра оплат (backend/registry-files.js) — без явного типа
   // телефон скачал бы PDF как бинарник вместо встроенного просмотрщика.
-  '.pdf': 'application/pdf'
+  '.pdf': 'application/pdf',
+  // Распознавание счетов в браузере (frontend-v2/vendor/tesseract, реестр
+  // оплат): .wasm — с правильным типом, иначе браузер не компилирует его
+  // потоково; языковые данные *.traineddata.gz отдаются как есть, без
+  // Content-Encoding — tesseract.js сам распаковывает gzip.
+  '.wasm': 'application/wasm',
+  '.traineddata': 'application/octet-stream',
+  '.gz': 'application/octet-stream'
 };
 
 // Сжимаем только текстовые форматы — картинки/иконки и так компактны,
@@ -126,4 +133,4 @@ async function serveStatic(req, res, pathname, isFallback) {
   }
 }
 
-module.exports = { serveStatic };
+module.exports = { serveStatic, CONTENT_TYPES, COMPRESSIBLE };

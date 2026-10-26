@@ -204,6 +204,169 @@
     return { blob: file, name: file.name || 'документ.pdf' };
   }
 
+  // ---------- форма заявки (боковая панель и экран проверки) ----------
+
+  // Одна форма на два места: боковая панель реестра (screen-registry.js,
+  // раскладка в две колонки) и узкая колонка экрана проверки счетов
+  // (registry-autofill.js, opts.column). prefix — префикс id полей, чтобы
+  // формы не пересекались, если обе окажутся в DOM.
+  function selectableOptions(list, current) {
+    return '<option value="">— выберите —</option>' + list.filter(function (d) { return !d.hidden || d.id === current; }).map(function (d) {
+      return '<option value="' + esc(d.id) + '"' + (d.id === current ? ' selected' : '') + '>' + esc(d.name) + (d.hidden ? ' (скрыто)' : '') + '</option>';
+    }).join('');
+  }
+
+  // opts.notes[key] — HTML под полем (подсказка распознавания, «как в прошлой
+  // заявке»), opts.flagged[key] — подсветить поле для проверки.
+  function formField(key, v, dicts, p, opts) {
+    var note = (opts.notes && opts.notes[key]) || '';
+    var cls = 'field' + (opts.flagged && opts.flagged[key] ? ' rg-flag' : '');
+    var label = function (text, req) {
+      return '<label for="' + p + '-' + key + '">' + text + (req ? ' <span class="req">*</span>' : '') + '</label>';
+    };
+    var wrap = function (inner) { return '<div class="' + cls + '" data-field="' + key + '">' + inner + note + '</div>'; };
+    switch (key) {
+      case 'unit':
+        return wrap(label('Подразделение', true) + '<select id="' + p + '-unit" class="inp">' + selectableOptions(dicts.units, v.unitId) + '</select>');
+      case 'category':
+        return wrap(label('Категория', true) + '<select id="' + p + '-category" class="inp">' + selectableOptions(dicts.categories, v.categoryId) + '</select>');
+      case 'applicant':
+        return wrap(label('Заявитель') + '<input id="' + p + '-applicant" class="inp" list="' + p + '-dl-applicant" autocomplete="off" value="' + esc(v.applicant) + '">');
+      case 'due':
+        return wrap(label('Срок оплаты') + '<input id="' + p + '-due" type="date" class="inp" value="' + esc(v.dueDate || '') + '">');
+      case 'recipient':
+        // Многострочное: длинные названия («ИП Фамилия Имя Отчество»,
+        // «ООО «ЛУКОЙЛ-Интер-Кард»») видны целиком и в узкой колонке
+        // экрана проверки. Подсказки — свой список (datalist у textarea нет).
+        return wrap(label('Получатель', true) + '<div class="rg-suggest-wrap"><textarea id="' + p + '-recipient" class="inp rg-grow" rows="1" autocomplete="off" spellcheck="false">' + esc(v.recipient) + '</textarea><div class="rg-suggest" id="' + p + '-sg-recipient" hidden></div></div>');
+      case 'inn':
+        return wrap(label('ИНН получателя') + '<input id="' + p + '-inn" class="inp num" inputmode="numeric" maxlength="14" value="' + esc(v.recipientInn) + '">');
+      case 'basis':
+        return wrap(label('Основание (счёт / договор)') + '<textarea id="' + p + '-basis" class="inp" rows="2" style="height:auto;min-height:40px;padding:9px 12px;resize:vertical" placeholder="Счёт №… от …">' + esc(v.basis) + '</textarea>');
+      case 'amount':
+        return wrap(label('Сумма', true) + '<div class="unit"><input id="' + p + '-amount" class="inp num" inputmode="decimal" style="height:48px;font-size:20px;font-weight:600"><span>₽</span></div>');
+      case 'purpose':
+        return wrap(label('Цель расхода', true) + '<textarea id="' + p + '-purpose" class="inp rg-grow rg-purpose" rows="5">' + esc(v.purpose) + '</textarea>');
+    }
+    return '';
+  }
+
+  function formHtml(it, dicts, opts) {
+    var o = opts || {};
+    var p = o.prefix || 'rg-i';
+    var v = it || {};
+    var f = function (key) { return formField(key, v, dicts, p, o); };
+    var pair = function (a, b) { return '<div class="grid-2">' + f(a) + f(b) + '</div>'; };
+    // Узкая колонка экрана проверки — в порядке чтения счёта сверху вниз
+    // (макет PaymentsReview): сначала то, что распознано, потом выбор.
+    var body = o.column
+      ? ['recipient', 'inn', 'amount', 'basis', 'purpose', 'due', 'unit', 'category', 'applicant'].map(f).join('')
+      : pair('unit', 'category') + pair('applicant', 'due') + f('recipient') + pair('inn', 'amount') + f('basis') + f('purpose');
+    return body + '<datalist id="' + p + '-dl-applicant"></datalist>';
+  }
+
+  function readForm(prefix) {
+    var p = prefix || 'rg-i';
+    var val = function (key) { var el = document.getElementById(p + '-' + key); return el ? el.value : undefined; };
+    return {
+      unitId: val('unit'),
+      categoryId: val('category'),
+      applicant: val('applicant'),
+      dueDate: val('due') || null,
+      recipient: val('recipient'),
+      recipientInn: val('inn'),
+      basis: val('basis'),
+      amount: val('amount'),
+      purpose: val('purpose')
+    };
+  }
+
+  // Поля, растущие по тексту (получатель, цель): высота = содержимое.
+  function autoGrow(el) {
+    var fit = function () {
+      el.style.height = 'auto';
+      el.style.height = (el.scrollHeight + 2) + 'px';
+    };
+    el.addEventListener('input', fit);
+    // В скрытом/ещё не отрисованном контейнере scrollHeight = 0 — досчитываем после кадра.
+    fit();
+    requestAnimationFrame(fit);
+  }
+
+  // Подсказки получателя для многострочного поля: свой выпадающий список
+  // (datalist работает только с <input>). Enter по подсказке не нужен —
+  // клик или стрелки+Enter.
+  function bindRecipientSuggest(p) {
+    var input = document.getElementById(p + '-recipient');
+    var box = document.getElementById(p + '-sg-recipient');
+    if (!input || !box) return;
+    var timer = null;
+    var values = [];
+    var active = -1;
+    var paint = function () {
+      box.hidden = !values.length;
+      box.innerHTML = values.map(function (x, i) {
+        return '<button type="button" class="rg-suggest-item' + (i === active ? ' on' : '') + '" data-i="' + i + '">' + esc(x) + '</button>';
+      }).join('');
+    };
+    var choose = function (i) {
+      input.value = values[i];
+      values = [];
+      paint();
+      input.dispatchEvent(new Event('input'));
+    };
+    var load = function () {
+      var q = input.value.trim();
+      api.get('/suggest?field=recipient&q=' + encodeURIComponent(q)).then(function (res) {
+        values = res.filter(function (x) { return x !== input.value; });
+        active = -1;
+        if (document.activeElement === input) paint();
+      }).catch(function () {});
+    };
+    input.addEventListener('input', function (e) { if (e.isTrusted !== false) { clearTimeout(timer); timer = setTimeout(load, 200); } });
+    input.addEventListener('focus', load);
+    input.addEventListener('blur', function () { setTimeout(function () { values = []; paint(); }, 150); });
+    input.addEventListener('keydown', function (e) {
+      if (!values.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % values.length; paint(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + values.length) % values.length; paint(); }
+      else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(active); }
+      else if (e.key === 'Escape') { values = []; paint(); }
+    });
+    box.addEventListener('mousedown', function (e) {
+      var b = e.target.closest('[data-i]');
+      if (b) { e.preventDefault(); choose(Number(b.dataset.i)); }
+    });
+  }
+
+  // Подсказки заявителя из ранее введённых (GET /suggest).
+  function bindSuggest(p, field) {
+    var input = document.getElementById(p + '-' + field);
+    var list = document.getElementById(p + '-dl-' + field);
+    if (!input || !list) return;
+    var timer = null;
+    var load = function () {
+      api.get('/suggest?field=' + field + '&q=' + encodeURIComponent(input.value.trim())).then(function (values) {
+        list.innerHTML = values.map(function (x) { return '<option value="' + esc(x) + '"></option>'; }).join('');
+      }).catch(function () {});
+    };
+    input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 200); });
+    input.addEventListener('focus', load, { once: true });
+  }
+
+  function bindForm(it, prefix) {
+    var p = prefix || 'rg-i';
+    var amount = document.getElementById(p + '-amount');
+    NumericInput.attach(amount);
+    if (it && it.amount !== null && it.amount !== undefined) NumericInput.setFormattedValue(amount, it.amount);
+    bindSuggest(p, 'applicant');
+    bindRecipientSuggest(p);
+    ['recipient', 'purpose'].forEach(function (k) {
+      var el = document.getElementById(p + '-' + k);
+      if (el) autoGrow(el);
+    });
+  }
+
   // ---------- экспорт в Excel (спека payment-registry/export) ----------
 
   function exportXlsx(listResponse) {
@@ -488,6 +651,9 @@
     closePhoto: closePhoto,
     thumb: thumb,
     bindThumbs: bindThumbs,
+    formHtml: formHtml,
+    readForm: readForm,
+    bindForm: bindForm,
     docTarget: docTarget
   };
 })();

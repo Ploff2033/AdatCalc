@@ -947,3 +947,13 @@ ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_stock_thread_id TEXT;
 -- значения неоднозначен в общем случае — просто у новой колонки тоже пусто
 -- по умолчанию, донастраивается через интерфейс).
 ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_thread_id TEXT;
+
+-- ==================== Реестр оплат: автозаполнение из счёта (change reestr-autofill) ====================
+-- ИНН получателя и № счёта — заполняются из распознанного счёта (в браузере,
+-- frontend-v2/js/invoice-parse.js), необязательны, у старых заявок NULL.
+-- По ИНН подставляются подразделение/категория/заявитель из прошлой заявки
+-- того же получателя, по паре ИНН + № счёта ловится дубль (предупреждение,
+-- не запрет) — см. handlers/registry.js::lookup.
+ALTER TABLE pay_requests ADD COLUMN IF NOT EXISTS recipient_inn TEXT;
+ALTER TABLE pay_requests ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+CREATE INDEX IF NOT EXISTS idx_pay_requests_inn ON pay_requests(recipient_inn, created_at DESC) WHERE recipient_inn IS NOT NULL;

@@ -115,6 +115,14 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
       handler: async (req, res, m) => sendJson(res, 200, await registry.removeFile(id(m)))
     },
 
+    // Автозаполнение из счёта: подстановка по ИНН и поиск дубля (только admin —
+    // заявки заводит он, учредителю это не нужно).
+    {
+      method: 'GET',
+      pattern: /^\/api\/registry\/lookup$/,
+      registryRoles: ADMIN,
+      handler: async (req, res, m, role, query) => sendJson(res, 200, await registry.lookup(query))
+    },
     {
       method: 'GET',
       pattern: /^\/api\/registry\/suggest$/,

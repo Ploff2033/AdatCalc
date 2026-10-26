@@ -40,6 +40,29 @@ function money(value, field) {
   return Math.round(n * 100) / 100;
 }
 
+// ИНН получателя: пусто или 10 / 12 цифр (юрлицо / ИП). Пробелы, которые
+// бывают при ручном вводе, отбрасываем.
+function inn(value) {
+  const v = String(value === null || value === undefined ? '' : value).replace(/\s/g, '');
+  if (!v) return null;
+  if (!/^(\d{10}|\d{12})$/.test(v)) throw new HttpError(400, 'ИНН получателя должен состоять из 10 или 12 цифр');
+  return v;
+}
+
+// № счёта отдельно не вводится — он уже записан в «Основании» («Счёт № 531
+// от 22.10.2026; договор …»). Сервер извлекает его оттуда при создании и
+// правке, чтобы было по чему ловить дубли (lookup), в т.ч. у заявок,
+// заведённых вручную. Нет «Счёт № …» в основании — номера нет.
+function invoiceFromBasis(basis) {
+  const m = /сч[её]т(?:\s+на\s+оплату)?\s*(?:№|N|#)\s*([^\s,;]+)/i.exec(String(basis || ''));
+  return m ? m[1].replace(/[.,;:]+$/, '').slice(0, 64) : null;
+}
+
+// Для сравнения номеров счетов при поиске дубля: «RU-12 », «ru-12» — один номер.
+function normInvoiceNo(value) {
+  return String(value || '').replace(/\s/g, '').toLowerCase();
+}
+
 function date(value, field, required) {
   if (value === null || value === undefined || value === '') {
     if (required) throw new HttpError(400, 'Поле «' + field + '» обязательно');
@@ -103,6 +126,8 @@ async function loadRequests(where, params) {
       categoryName: r.category_name,
       applicant: r.applicant,
       basis: r.basis,
+      recipientInn: r.recipient_inn,
+      invoiceNumber: r.invoice_number,
       recipient: r.recipient,
       purpose: r.purpose,
       amount: Number(r.amount),
@@ -237,6 +262,8 @@ async function create(body, ctx) {
   const applicant = text(b.applicant, 'Заявитель', false);
   const basis = text(b.basis, 'Основание', false, 1000);
   const dueDate = date(b.dueDate, 'Срок оплаты', false);
+  const recipientInn = inn(b.recipientInn);
+  const invoiceNumber = invoiceFromBasis(basis);
   await dictionaries.assertSelectable('units', unitId);
   await dictionaries.assertSelectable('categories', categoryId);
 
@@ -245,9 +272,9 @@ async function create(body, ctx) {
   const seq = Number(rows[0].seq);
   const number = calc.formatNumber(calc.todayMoscow(), seq);
   await db.pool.query(
-    `INSERT INTO pay_requests (id, seq, number, unit_id, category_id, applicant, basis, recipient, purpose, amount, due_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [id, seq, number, unitId, categoryId, applicant, basis, recipient, purpose, amount, dueDate]
+    `INSERT INTO pay_requests (id, seq, number, unit_id, category_id, applicant, basis, recipient, purpose, amount, due_date, recipient_inn, invoice_number)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [id, seq, number, unitId, categoryId, applicant, basis, recipient, purpose, amount, dueDate, recipientInn, invoiceNumber]
   );
   const created = await get(id);
   notify(messageNew, created, ctx && ctx.origin);
@@ -293,8 +320,11 @@ async function update(id, body) {
       amount: b.amount !== undefined ? money(b.amount, 'Сумма') : Number(cur.amount),
       applicant: b.applicant !== undefined ? text(b.applicant, 'Заявитель', false) : cur.applicant,
       basis: b.basis !== undefined ? text(b.basis, 'Основание', false, 1000) : cur.basis,
-      due_date: b.dueDate !== undefined ? date(b.dueDate, 'Срок оплаты', false) : cur.due_date
+      due_date: b.dueDate !== undefined ? date(b.dueDate, 'Срок оплаты', false) : cur.due_date,
+      recipient_inn: b.recipientInn !== undefined ? inn(b.recipientInn) : cur.recipient_inn,
+      invoice_number: null
     };
+    next.invoice_number = invoiceFromBasis(next.basis);
     // Скрытое значение нельзя ВЫБРАТЬ, но оставить уже выбранное — можно.
     if (next.unit_id !== cur.unit_id) await dictionaries.assertSelectable('units', next.unit_id);
     if (next.category_id !== cur.category_id) await dictionaries.assertSelectable('categories', next.category_id);
@@ -306,8 +336,8 @@ async function update(id, body) {
     if (approved !== null && calc.toKop(approved) > amountKop) approved = next.amount;
     await client.query(
       `UPDATE pay_requests SET unit_id=$1, category_id=$2, recipient=$3, purpose=$4, amount=$5, applicant=$6,
-         basis=$7, due_date=$8, approved_amount=$9, updated_at=now() WHERE id=$10`,
-      [next.unit_id, next.category_id, next.recipient, next.purpose, next.amount, next.applicant, next.basis, next.due_date, approved, id]
+         basis=$7, due_date=$8, approved_amount=$9, recipient_inn=$10, invoice_number=$11, updated_at=now() WHERE id=$12`,
+      [next.unit_id, next.category_id, next.recipient, next.purpose, next.amount, next.applicant, next.basis, next.due_date, approved, next.recipient_inn, next.invoice_number, id]
     );
   });
   return get(id);
@@ -472,6 +502,45 @@ async function suggest(field, q) {
   return rows.map((r) => r.v);
 }
 
+// ---------- автозаполнение из счёта ----------
+
+// Один запрос на распознанный файл (design §4): что подставить из последней
+// заявки этого получателя и есть ли уже заявка с тем же счётом. Скрытые
+// значения справочников не подставляются — их нельзя выбрать в новой заявке.
+async function lookup(query) {
+  const q = query || {};
+  const recipientInn = q.inn ? inn(q.inn) : null;
+  if (!recipientInn) return { defaults: null, duplicates: [] };
+  const { rows } = await db.pool.query(
+    `SELECT r.number, r.applicant, r.unit_id, u.hidden AS unit_hidden, r.category_id, c.hidden AS category_hidden
+     FROM pay_requests r
+     JOIN pay_units u ON u.id = r.unit_id
+     JOIN pay_categories c ON c.id = r.category_id
+     WHERE r.recipient_inn = $1
+     ORDER BY r.created_at DESC, r.seq DESC LIMIT 1`,
+    [recipientInn]
+  );
+  const last = rows[0];
+  const defaults = last ? {
+    unitId: last.unit_hidden ? null : last.unit_id,
+    categoryId: last.category_hidden ? null : last.category_id,
+    applicant: last.applicant || '',
+    fromNumber: last.number
+  } : null;
+  let duplicates = [];
+  const no = normInvoiceNo(q.invoiceNumber);
+  if (no) {
+    const { rows: dup } = await db.pool.query(
+      `SELECT id, number FROM pay_requests
+       WHERE recipient_inn = $1 AND lower(regexp_replace(coalesce(invoice_number, ''), '\\s', '', 'g')) = $2
+       ORDER BY created_at DESC`,
+      [recipientInn, no]
+    );
+    duplicates = dup.map((d) => ({ id: d.id, number: d.number }));
+  }
+  return { defaults, duplicates };
+}
+
 // ---------- учредитель и настройки ----------
 
 async function getOwnerToken() {
@@ -532,6 +601,7 @@ module.exports = {
   setPaymentFile,
   removeFile,
   suggest,
+  lookup,
   getOwnerToken,
   checkOwnerToken,
   reissueOwnerToken,

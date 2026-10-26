@@ -518,3 +518,75 @@ body.owner-mode .page { padding: 0; gap: 0; }
 .cl-pr-edit { display: grid; grid-template-columns: 96px minmax(0,1fr) minmax(0,1fr) 64px; gap: 8px; align-items: center; padding: 10px; background: var(--act-bg); }
 .cl-ib { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #45473F; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .cl-ib:hover { background: var(--surface-3); }
+
+/* ---------- реестр: автозаполнение из счёта (registry-autofill.js, макеты PaymentsDrop / PaymentsReview) ---------- */
+.rg-autodrop {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px;
+  border: 1.5px dashed #B9B3A7; border-radius: 6px; background: var(--surface); cursor: pointer;
+}
+.rg-autodrop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rg-autodrop-idle { display: flex; flex-direction: column; gap: 2px; }
+.rg-autodrop-idle b, .rg-autodrop-over b { font-size: 16px; font-weight: 600; }
+.rg-autodrop-over { display: none; }
+.rg-autodrop.over { border-color: var(--accent); background: var(--act-bg); border-style: solid; }
+.rg-autodrop.over .rg-autodrop-idle { display: none; }
+.rg-autodrop.over .rg-autodrop-over { display: block; color: var(--act-fg); }
+@media (max-width: 860px) { .rg-autodrop { display: none; } }
+
+.ra-overlay { position: fixed; inset: 0; z-index: 45; background: var(--bg); display: flex; flex-direction: column; }
+.ra-strip { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.ra-strip-title { font-weight: 600; white-space: nowrap; }
+.ra-tiles { flex: 1; min-width: 0; display: flex; gap: 8px; overflow-x: auto; padding: 2px; }
+.ra-tile { display: flex; align-items: center; gap: 4px; flex: none; border: 1px solid var(--border); border-radius: 6px; background: #fff; padding-right: 4px; }
+.ra-tile.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.ra-tile.created { background: var(--ok-bg); border-color: #B7D3C2; }
+.ra-tile.error { background: var(--bad-bg); border-color: #E3B8B1; }
+.ra-tile-main { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 4px 6px 6px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.ra-tile:not(.ready) .ra-tile-main { cursor: default; }
+.ra-tile-thumb { width: 34px; height: 44px; border-radius: 3px; border: 1px solid var(--border); background: var(--surface-3); display: flex; align-items: center; justify-content: center; overflow: hidden; font: 700 9px 'Rubik', sans-serif; color: var(--muted); flex: none; }
+.ra-tile-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.ra-tile-text { display: flex; flex-direction: column; min-width: 0; width: 150px; }
+.ra-tile-name { font-size: 13px; font-weight: 600; }
+.ra-tile-status { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ra-tile.created .ra-tile-status { color: var(--ok-fg); }
+.ra-tile.error .ra-tile-status { color: var(--bad-fg); }
+.ra-tile.ready .ra-tile-status { color: var(--act-fg); }
+.ra-tile-x { width: 28px; height: 28px; }
+.ra-counter { white-space: nowrap; font-size: 13px; color: var(--ink-soft); }
+.ra-flash { margin: 8px 16px 0; }
+.ra-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) max(20%, 300px); }
+.ra-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #E6E2D9; }
+.ra-viewer-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface-3); border-bottom: 1px solid var(--border); }
+.ra-viewer-bar .btn.sm { height: 32px; min-width: 32px; padding: 0 10px; }
+.ra-viewer-bar .num { min-width: 46px; text-align: center; font-size: 13px; }
+.ra-viewer-bar .hint { margin-left: auto; }
+.ra-pages { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.ra-pages img { display: block; max-width: none; background: #fff; box-shadow: 0 2px 14px rgba(28,29,27,.18); }
+.ra-form { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--border); }
+.ra-form-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.ra-form-body .field label { font-size: 12px; }
+.ra-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-3); }
+.ra-wait { margin: auto; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--muted); text-align: center; }
+.ra-spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: ra-spin 0.9s linear infinite; }
+@keyframes ra-spin { to { transform: rotate(360deg); } }
+.ra-banner { margin: 0; }
+.ra-banner.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.ra-banner.info { background: var(--mute-bg); color: var(--mute-fg); }
+/* Подсветка полей для проверки (спека «Подсветка полей для проверки»). */
+.field.rg-flag .inp { background: #FFF6DB; border-color: #E2BE5C; }
+.ra-note { font-size: 11px; color: var(--warn-fg); }
+.ra-note.warn { font-weight: 600; }
+.ra-note.muted { color: var(--muted); }
+/* Основание в узкой колонке — до трёх строк без прокрутки. */
+.ra-form-body #ra-basis { min-height: 84px !important; }
+/* Получатель и цель расхода растут по тексту (Registry.formHtml / autoGrow). */
+textarea.inp.rg-grow { height: auto; min-height: 40px; padding: 9px 12px; resize: vertical; overflow: hidden; line-height: 1.4; }
+textarea.inp.rg-purpose { min-height: 112px; }
+.ra-form-body textarea.inp.rg-purpose { min-height: 132px; }
+.rg-suggest-wrap { position: relative; }
+.rg-suggest {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 5; max-height: 220px; overflow-y: auto;
+  background: #fff; border: 1px solid #CFCAC0; border-radius: 4px; box-shadow: 0 6px 16px rgba(28,29,27,.12);
+}
+.rg-suggest-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 12px; font: inherit; color: var(--ink); cursor: pointer; }
+.rg-suggest-item:hover, .rg-suggest-item.on { background: var(--surface-3); }
