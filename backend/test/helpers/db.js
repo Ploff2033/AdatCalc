@@ -30,6 +30,15 @@ async function requireDb(t) {
 async function resetRegistry() {
   await db.pool.query('TRUNCATE pay_files, pay_payments, pay_requests, pay_categories, pay_units RESTART IDENTITY CASCADE');
   await db.pool.query('UPDATE config SET telegram_registry_chat_id = NULL WHERE id = 1');
+  // Сбой отправки теперь кладёт сообщение в очередь (change
+  // telegram-proxy-failover) — не тащим его в следующий тест.
+  await db.pool.query('TRUNCATE telegram_outbox RESTART IDENTITY');
+}
+
+// Очередь недоставленных и настройки Telegram (change telegram-proxy-failover).
+async function resetTelegram() {
+  await db.pool.query('TRUNCATE telegram_outbox RESTART IDENTITY');
+  await db.pool.query("UPDATE config SET telegram_bot_token = 'bot-test', telegram_chat_id = 'orders-chat', telegram_proxy_url = NULL, telegram_orders_thread_id = NULL, telegram_stock_thread_id = NULL, telegram_registry_chat_id = NULL, telegram_registry_thread_id = NULL WHERE id = 1");
 }
 
 // Для тестов клиентов/заказов (change client-list): заказы тестовых заводов,
@@ -72,4 +81,4 @@ async function close() {
   await db.pool.end();
 }
 
-module.exports = { db, ready, requireDb, resetRegistry, resetClients, resetWaybills, resetOrders, close };
+module.exports = { db, ready, requireDb, resetRegistry, resetTelegram, resetClients, resetWaybills, resetOrders, close };

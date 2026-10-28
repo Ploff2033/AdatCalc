@@ -974,3 +974,19 @@ UPDATE orders SET delivery_mode = 'hired', hire_rate_per_m3 = delivery_cost_tota
   WHERE delivery_mode = 'own' AND mixer_name = 'Найм' AND sale_volume > 0;
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_delivery_mode_check;
 ALTER TABLE orders ADD CONSTRAINT orders_delivery_mode_check CHECK (delivery_mode IN ('own', 'pickup', 'hired'));
+
+-- ==================== Очередь недоставленных в Telegram (change telegram-proxy-failover) ====================
+-- Сообщение, не ушедшее ни через один сервер прокси (или в ручном режиме —
+-- через заданный прокси/напрямую), ждёт здесь; backend/telegram.js::drainOutbox
+-- раз в 5 минут досылает по порядку id со строкой «⏱ Задержано: создано …»,
+-- старше 24 часов — удаляет без отправки. Чат и тема — на момент создания
+-- (смена настроек не перенаправляет старые), токен бота — текущий.
+CREATE TABLE IF NOT EXISTS telegram_outbox (
+  id BIGSERIAL PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  thread_id TEXT,
+  text TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  attempts INT NOT NULL DEFAULT 0,
+  last_error TEXT
+);

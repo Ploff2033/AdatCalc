@@ -15,22 +15,24 @@ services:
       timeout: 5s
       retries: 10
 
-  # Xray-core — локальный SOCKS5-прокси поверх VLESS+Reality (пользователь
-  # обнаружил: с этого сервера api.telegram.org недоступен напрямую на
-  # уровне TCP, подтверждено диагностикой — не баг кода). У пользователя уже
-  # есть VPN-подписка (VLESS/Reality, не обычный SOCKS5/HTTP) — такую нельзя
-  # отдать напрямую в HttpsProxyAgent/SocksProxyAgent (backend/telegram.js),
-  # нужен настоящий Xray-клиент, который её "развернёт". xray-config.json —
-  # НЕ в git (содержит UUID/ключи подписки, секрет), создаётся на сервере
-  # вручную один раз, см. инструкцию пользователя. Порт 10808 наружу не
-  # пробрасывается — только в докер-сети, calc достаёт его по имени
-  # сервиса (TELEGRAM_PROXY_URL=socks5://xray:10808 ниже).
+  # Xray-core — пул SOCKS5-прокси до api.telegram.org (с этого сервера
+  # Telegram недоступен напрямую на уровне TCP, подтверждено диагностикой).
+  # Change telegram-proxy-failover: вместо ручного xray-config.json с одним
+  # сервером — свой образ (xray/), супервизор качает VPN-подписку по
+  # XRAY_SUBSCRIPTION_URL (только в .env на сервере, секрет) при старте и раз
+  # в 6 часов и даёт по SOCKS-порту на каждый VLESS-сервер: xray:10801,
+  # xray:10802, … Список портов — в ./xray-state/manifest.json, его читает
+  # calc и при сбое отправки сам переключается на следующий сервер.
+  # ./xray-state — НЕ в git (конфиг Xray с UUID/ключами подписки). Порты
+  # наружу не пробрасываются — только в докер-сети.
   xray:
-    image: teddysun/xray:latest
+    build: ./xray
     container_name: adat-xray
     restart: unless-stopped
+    environment:
+      - XRAY_SUBSCRIPTION_URL=${XRAY_SUBSCRIPTION_URL:-}
     volumes:
-      - ./xray-config.json:/etc/xray/config.json:ro
+      - ./xray-state:/state
 
   calc:
     build: .
@@ -50,18 +52,18 @@ services:
       # контейнера (docker compose up -d --build) стирала бы все загруженные
       # фото, файловая система контейнера сама по себе не сохраняется.
       - ./uploads:/app/backend/uploads
+      # Манифест пула прокси от сервиса xray (только чтение) — см.
+      # backend/telegram.js::readManifest. Нет файла — ручной режим.
+      - ./xray-state:/app/xray-state:ro
     environment:
       - PORT=3000
       - HOST=0.0.0.0
       - DATABASE_URL=postgres://${POSTGRES_USER:-calc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-calc}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
-      # Только fallback — реальное значение обычно уже сохранено в Настройках
-      # (config.telegram_proxy_url, см. backend/telegram.js::getCredentials)
-      # и имеет приоритет над этой переменной. Задана тут по умолчанию на
-      # сервис xray выше — просто чтобы работало "из коробки" сразу после
-      # docker compose up, без похода в Настройки.
-      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-socks5://xray:10808}
+      # Ручной режим — только когда пула xray нет (нет манифеста). Есть пул —
+      # и эта переменная, и поле «Прокси» в Настройках игнорируются.
+      - TELEGRAM_PROXY_URL=${TELEGRAM_PROXY_URL:-}
       # Публичный адрес для ссылок учредителя в Telegram-уведомлениях реестра
       # оплат (https://домен, без слэша в конце). Пусто — берётся из заголовков запроса.
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}

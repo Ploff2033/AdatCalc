@@ -1,4 +1,5 @@
-const { moscowDate } = require('./order-edit-diff');
+const { moscowDate, moscowDateTime } = require('./order-edit-diff');
+const fs = require('fs');
 const https = require('https');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SocksProxyAgent } = require('socks-proxy-agent');
@@ -90,8 +91,14 @@ function sendOnce(botToken, payload, agent, onDone) {
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
       res.on('end', () => {
-        if (res.statusCode >= 300) onDone(new Error('HTTP ' + res.statusCode + ': ' + body));
-        else onDone(null);
+        if (res.statusCode >= 300) {
+          // Ответ пришёл от самого Telegram — прокси рабочий. telegramStatus
+          // отличает такую ошибку от сетевой: на 4xx сервер не ищем и не
+          // повторяем (неверный токен/чат другой прокси не исправит).
+          const err = new Error('HTTP ' + res.statusCode + ': ' + body);
+          err.telegramStatus = res.statusCode;
+          onDone(err);
+        } else onDone(null);
       });
     }
   );
@@ -105,15 +112,13 @@ function sendOnce(botToken, payload, agent, onDone) {
 // с части российских сетей отдельные из них не проходят на уровне TCP, хотя
 // другие — без проблем (проверено эмпирически). Повторная попытка делает
 // свежее DNS-резолвение и имеет шанс попасть на рабочий адрес, вместо того
-// чтобы просто один раз не повезло и тихо промолчать. resolve/reject —
-// опциональны: notifyOrderCreated и т.п. их не передают (fire-and-forget,
-// ошибка только в консоли), а send() ниже передаёт — нужно для кнопки
-// "Отправить тестовое" в Настройках, которая должна показать реальный
-// результат, а не всегда "успех".
-function sendWithRetry(botToken, payload, agent, attempt, resolve, reject) {
+// чтобы просто один раз не повезло и тихо промолчать. maxAttempts — 3 в
+// ручном режиме, 1 в пуле (там при сбое переходим на другой сервер, см.
+// deliverViaPool). Ошибку самого Telegram (4xx) не повторяем.
+function sendWithRetry(botToken, payload, agent, attempt, maxAttempts, resolve, reject) {
   sendOnce(botToken, payload, agent, (err) => {
     if (!err) { if (resolve) resolve(); return; }
-    if (attempt >= MAX_ATTEMPTS) {
+    if (attempt >= maxAttempts || isTelegramError(err)) {
       var described = describeError(err);
       console.error('Telegram: ошибка отправки после ' + attempt + ' попыток (' + described + ')');
       // err.message бывает ПУСТЫМ (например, у AggregateError от таймаута
@@ -123,75 +128,311 @@ function sendWithRetry(botToken, payload, agent, attempt, resolve, reject) {
       // способом узнать её было лезть в логи сервера (реальный случай,
       // нашёл пользователь). describeError() собирает code/name/message
       // вместе — всегда непустой.
-      if (reject) reject(new Error(described));
+      // telegramStatus сохраняем — по нему deliver() решает, искать ли сервер.
+      if (reject) reject(Object.assign(new Error(described), err.telegramStatus ? { telegramStatus: err.telegramStatus } : {}));
       return;
     }
-    setTimeout(() => sendWithRetry(botToken, payload, agent, attempt + 1, resolve, reject), RETRY_DELAY_MS);
+    setTimeout(() => sendWithRetry(botToken, payload, agent, attempt + 1, maxAttempts, resolve, reject), RETRY_DELAY_MS);
   });
 }
 
-// send() всегда возвращает Promise (резолвится/реджектится по итогам
-// реальной отправки) — вызывающие best-effort уведомления (notifyOrderCreated
-// и т.п.) просто вешают .catch(()=>{}) и не ждут результата, а sendTest()
-// ниже действительно ждёт и сообщает об ошибке.
-// threadId — опциональный message_thread_id темы супергруппы (см.
-// ordersThreadId/stockThreadId в getCredentials). notifyOrderCreated и т.п.
-// передают его явно, sendTest() — нет (шлёт в общую ленту чата, это тест
-// соединения, а не конкретной темы).
-async function send(text, threadId) {
-  const { botToken, chatId, proxyUrl } = await getCredentials();
-  if (!botToken || !chatId) throw new Error('Токен бота или ID чата не заданы');
-  return transport.post(botToken, chatId, text, proxyUrl, threadId);
-}
-
-// Сам HTTP-вызов к Telegram — через объект, чтобы тесты реестра оплат могли
-// подменить его и проверить "что и в какой чат ушло" без сети.
+// Сам HTTP-вызов к Telegram — через объект, чтобы тесты могли подменить его и
+// проверить "что, в какой чат и через какой прокси ушло" без сети.
+// attempts — сколько попыток через ЭТОТ прокси: в ручном режиме 3 (как
+// раньше), в пуле — 1 (при сбое быстрее перейти на другой сервер, чем
+// повторять через мёртвый).
 const transport = {
-  post(botToken, chatId, text, proxyUrl, threadId) {
+  post(botToken, chatId, text, proxyUrl, threadId, attempts) {
     const payload = JSON.stringify(Object.assign(
       { chat_id: chatId, text, parse_mode: 'HTML' },
       threadId ? { message_thread_id: Number(threadId) } : {}
     ));
-    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, resolve, reject));
+    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, attempts || MAX_ATTEMPTS, resolve, reject));
   }
 };
+
+// Ответ от самого Telegram с ошибкой клиента (неверный токен/чат/тема, 429) —
+// прокси тут ни при чём: сервер не ищем, в очередь не ставим.
+function isTelegramError(err) {
+  return !!(err && err.telegramStatus >= 400 && err.telegramStatus < 500);
+}
+
+class AllProxiesFailed extends Error {
+  constructor(lastErr, total) {
+    super('ни один из ' + total + ' серверов прокси не ответил (последняя ошибка: ' + describeError(lastErr) + ')');
+    this.code = 'ALL_PROXIES_FAILED';
+  }
+}
+
+// ---- Пул серверов прокси (change telegram-proxy-failover) ----
+// Манифест пишет супервизор сервиса xray (xray/supervisor.js): серверы VPN-
+// подписки, у каждого свой SOCKS-порт. Нет файла / битый / пустой — пула
+// нет, работает ручной режим (поле «Прокси» в Настройках или env). Читаем
+// перед каждой отправкой, но парсим только при смене mtime/размера —
+// подписка обновляется раз в 6 часов, а сообщения идут чаще.
+function manifestPath() {
+  return process.env.TELEGRAM_PROXY_MANIFEST || '/app/xray-state/manifest.json';
+}
+
+let manifestCache = { key: null, data: null };
+function readManifest() {
+  const file = manifestPath();
+  let st;
+  try { st = fs.statSync(file); } catch (e) { return null; }
+  const key = file + ':' + st.mtimeMs + ':' + st.size;
+  if (manifestCache.key === key) return manifestCache.data;
+  let data = null;
+  try {
+    const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (json && Array.isArray(json.servers) && json.servers.length) data = json;
+  } catch (e) { data = null; }
+  manifestCache = { key, data };
+  return data;
+}
+
+// Состояние пула — в памяти процесса: после перезапуска текущим считается
+// первый сервер, первый же сбой сам найдёт рабочий (персистентность не
+// нужна, см. design.md). searching — общий промис идущего поиска: два
+// одновременных сбоя не устраивают два перебора по 10 серверов.
+const pool = { currentId: null, since: null, lastSwitch: null, searching: null };
+
+function currentIndex(servers) {
+  const i = servers.findIndex((s) => s.id === pool.currentId);
+  return i < 0 ? 0 : i;
+}
+
+function markCurrent(server) {
+  if (pool.currentId !== server.id) {
+    pool.currentId = server.id;
+    pool.since = new Date();
+  }
+}
+
+function postVia(server, msg) {
+  return transport.post(msg.botToken, msg.chatId, msg.text, server.proxyUrl, msg.threadId, 1);
+}
+
+function shortReason(err) {
+  return (err && (err.code || err.message)) || 'неизвестная ошибка';
+}
+
+// Перебор по кругу со следующего за упавшим. Первый сервер, через который
+// ушло сообщение (или ответил сам Telegram — значит, туннель живой), становится
+// текущим.
+async function searchFrom(servers, failedIdx, firstErr, msg) {
+  const failed = servers[failedIdx];
+  let lastErr = firstErr;
+  for (let k = 1; k < servers.length; k++) {
+    const s = servers[(failedIdx + k) % servers.length];
+    try {
+      await postVia(s, msg);
+    } catch (err) {
+      if (!isTelegramError(err)) { lastErr = err; continue; }
+      switchTo(s, failed, firstErr);
+      throw err;
+    }
+    switchTo(s, failed, firstErr);
+    return;
+  }
+  throw new AllProxiesFailed(lastErr, servers.length);
+}
+
+function switchTo(server, failed, reasonErr) {
+  pool.lastSwitch = { at: new Date(), fromName: failed.name, reason: shortReason(reasonErr) };
+  console.error('Telegram: сервер «' + failed.name + '» не ответил (' + describeError(reasonErr) + '), переключение на «' + server.name + '»');
+  markCurrent(server);
+}
+
+// Запуск поиска под общим промисом. Проверка и установка pool.searching —
+// синхронно, до первого await: иначе два почти одновременных сбоя оба
+// увидели бы "поиска нет".
+function search(servers, failedIdx, firstErr, msg) {
+  const p = searchFrom(servers, failedIdx, firstErr, msg);
+  pool.searching = p;
+  p.catch(() => {}).then(() => { if (pool.searching === p) pool.searching = null; });
+  return p;
+}
+
+// Попытка через текущий сервер; сетевой сбой — к поиску. Если поиск уже идёт
+// (его запустило другое сообщение), ждём его и пробуем через найденный.
+async function deliverViaPool(servers, msg) {
+  if (pool.searching) await pool.searching.catch(() => {});
+  let idx = currentIndex(servers);
+  try {
+    await postVia(servers[idx], msg);
+    markCurrent(servers[idx]);
+    return;
+  } catch (err) {
+    if (isTelegramError(err)) { markCurrent(servers[idx]); throw err; }
+    if (pool.searching) {
+      await pool.searching.catch(() => {});
+      const now = currentIndex(servers);
+      if (now !== idx) {
+        try { await postVia(servers[now], msg); return; } catch (err2) {
+          if (isTelegramError(err2)) throw err2;
+          idx = now;
+          err = err2;
+        }
+      }
+    }
+    return search(servers, idx, err, msg);
+  }
+}
+
+// Единая точка доставки одного сообщения: пул есть — через него с поиском,
+// нет — как раньше (прокси из Настроек/env или напрямую, 3 попытки).
+async function deliver(msg) {
+  const manifest = readManifest();
+  if (manifest) return deliverViaPool(manifest.servers, msg);
+  const { proxyUrl } = await getCredentials();
+  return transport.post(msg.botToken, msg.chatId, msg.text, proxyUrl, msg.threadId);
+}
+
+// ---- Очередь недоставленных (telegram_outbox) ----
+async function enqueue(msg, err) {
+  await db.pool.query(
+    'INSERT INTO telegram_outbox (chat_id, thread_id, text, last_error) VALUES ($1, $2, $3, $4)',
+    [String(msg.chatId), msg.threadId ? String(msg.threadId) : null, msg.text, describeError(err)]
+  );
+}
+
+// Fire-and-forget-доставка для notify*: операцию не ждёт и не отменяет.
+// Сетевой сбой (не ушло ни через один сервер) — в очередь; ошибка самого
+// Telegram — только в лог (повтор её не исправит).
+async function deliverOrQueue(msg, label) {
+  try {
+    await deliver(msg);
+  } catch (err) {
+    if (isTelegramError(err)) {
+      console.error('Telegram' + label + ': ' + describeError(err));
+      return;
+    }
+    console.error('Telegram' + label + ': не отправлено (' + describeError(err) + ') — сообщение в очереди');
+    try { await enqueue(msg, err); } catch (e) { console.error('Telegram: не удалось поставить в очередь — ' + describeError(e)); }
+  }
+}
+
+// «⏱ Задержано: создано 14:05» — сегодня (по Москве) только время, иначе с датой.
+function delayedStamp(createdAt, now) {
+  const c = moscowDateTime(createdAt);
+  const n = moscowDateTime(now);
+  return c.slice(0, 10) === n.slice(0, 10) ? c.slice(11) : c.slice(0, 5) + ' ' + c.slice(11);
+}
+
+const OUTBOX_TTL_HOURS = 24;
+let draining = false;
+
+// Раз в 5 минут из server.js (тесты зовут напрямую, now — для детерминизма).
+// Самое старое первым; ушло — следующее; сетевой сбой — стоп до следующего
+// прогона (остальные через тот же мёртвый пул всё равно не уйдут).
+async function drainOutbox(now) {
+  if (draining) return;
+  draining = true;
+  const at = now ? new Date(now) : new Date();
+  try {
+    const { rows: expired } = await db.pool.query(
+      "DELETE FROM telegram_outbox WHERE created_at < $1::timestamptz - interval '" + OUTBOX_TTL_HOURS + " hours' RETURNING id, created_at",
+      [at]
+    );
+    expired.forEach((r) => console.error('Telegram: сообщение из очереди от ' + moscowDateTime(r.created_at) + ' старше 24 ч — удалено без отправки'));
+    const { rows } = await db.pool.query('SELECT id, chat_id, thread_id, text, created_at FROM telegram_outbox ORDER BY id');
+    if (!rows.length) return;
+    const { botToken } = await getCredentials();
+    if (!botToken) return;
+    for (const r of rows) {
+      const text = r.text + '\n⏱ Задержано: создано ' + delayedStamp(r.created_at, at);
+      try {
+        await deliver({ botToken, chatId: r.chat_id, threadId: r.thread_id, text });
+      } catch (err) {
+        if (isTelegramError(err)) {
+          console.error('Telegram: сообщение из очереди от ' + moscowDateTime(r.created_at) + ' отклонено Telegram (' + describeError(err) + ') — удалено');
+          await db.pool.query('DELETE FROM telegram_outbox WHERE id = $1', [r.id]);
+          continue;
+        }
+        await db.pool.query('UPDATE telegram_outbox SET attempts = attempts + 1, last_error = $2 WHERE id = $1', [r.id, describeError(err)]);
+        return;
+      }
+      await db.pool.query('DELETE FROM telegram_outbox WHERE id = $1', [r.id]);
+    }
+  } finally {
+    draining = false;
+  }
+}
+
+// Статус для admin в Настройках (GET /api/config/telegram-status). Без
+// адреса подписки, ключей и id серверов — только имя и номер.
+async function status(now) {
+  const at = now ? new Date(now) : new Date();
+  const { rows } = await db.pool.query('SELECT count(*)::int AS count, min(created_at) AS oldest FROM telegram_outbox');
+  const queue = { count: rows[0].count, oldestAt: rows[0].oldest ? new Date(rows[0].oldest).toISOString() : null };
+  const manifest = readManifest();
+  if (!manifest) return { mode: 'manual', current: null, lastSwitch: null, subscription: null, queue };
+  const servers = manifest.servers;
+  const used = servers.some((s) => s.id === pool.currentId);
+  const idx = currentIndex(servers);
+  const refreshedAt = manifest.refreshedAt ? new Date(manifest.refreshedAt) : null;
+  return {
+    mode: 'auto',
+    current: { index: idx + 1, total: servers.length, name: servers[idx].name, since: used && pool.since ? pool.since.toISOString() : null },
+    lastSwitch: pool.lastSwitch ? { at: pool.lastSwitch.at.toISOString(), fromName: pool.lastSwitch.fromName, reason: pool.lastSwitch.reason } : null,
+    subscription: {
+      refreshedAt: refreshedAt ? refreshedAt.toISOString() : null,
+      count: servers.length,
+      stale: !refreshedAt || at - refreshedAt > OUTBOX_TTL_HOURS * 3600 * 1000
+    },
+    queue
+  };
+}
+
+// Уведомления заказов/остатков — общий чат (getCredentials) + своя тема.
+// Не заданы токен или чат — молча пропускаем, как раньше.
+function notify(text, threadId) {
+  return getCredentials()
+    .then(({ botToken, chatId }) => {
+      if (!botToken || !chatId) return;
+      return deliverOrQueue({ botToken, chatId, threadId, text }, '');
+    })
+    .catch((err) => console.error('Telegram: ' + describeError(err)));
+}
 
 // Реестр оплат — свой chat_id (config.telegram_registry_chat_id, по
 // умолчанию отдельный от заказов/остатков) + своя тема в нём
 // (telegram_registry_thread_id) — та же идея, что ordersThreadId/
 // stockThreadId в getCredentials, но у реестра исторически свой отдельный
 // чат, поэтому отдельный запрос, а не часть основного getCredentials. Бот
-// тот же, что у заказов, прокси (если настроен) — тоже тот же. Чат не
+// тот же, что у заказов, прокси — тоже тот же (пул или ручной). Чат не
 // задан — молчим: уведомления реестра необязательны, работа с заявками от
 // них не зависит. Без fallback на env для чата — для реестра настройка
 // только через интерфейс.
 async function getRegistryCredentials() {
-  const { botToken, proxyUrl } = await getCredentials();
+  const { botToken } = await getCredentials();
   const { rows } = await db.pool.query('SELECT telegram_registry_chat_id, telegram_registry_thread_id FROM config WHERE id = 1');
   const row = rows[0] || {};
-  return { botToken, proxyUrl, chatId: row.telegram_registry_chat_id || '', threadId: row.telegram_registry_thread_id || '' };
+  return { botToken, chatId: row.telegram_registry_chat_id || '', threadId: row.telegram_registry_thread_id || '' };
 }
 
 // Fire-and-forget, как notifyOrderCreated: вызывается без await из
-// handlers/registry.js, ошибка — только в лог, операцию не отменяет.
+// handlers/registry.js; сбой — в очередь или в лог, операцию не отменяет.
 function notifyRegistry(text) {
   return getRegistryCredentials()
-    .then(({ botToken, chatId, proxyUrl, threadId }) => {
+    .then(({ botToken, chatId, threadId }) => {
       if (!botToken || !chatId) return;
-      return transport.post(botToken, chatId, text, proxyUrl, threadId);
+      return deliverOrQueue({ botToken, chatId, threadId, text }, ' (реестр оплат)');
     })
     .catch((err) => {
       console.error('Telegram (реестр оплат): ' + describeError(err));
     });
 }
 
-// Кнопка "Отправить тестовое" в разделе реестра Настроек — ждёт результат.
+// Кнопка "Отправить тестовое" в разделе реестра Настроек — ждёт результат,
+// с тем же поиском сервера, но без очереди: ошибка сразу на экран.
 async function sendRegistryTest() {
-  const { botToken, chatId, proxyUrl, threadId } = await getRegistryCredentials();
+  const { botToken, chatId, threadId } = await getRegistryCredentials();
   if (!botToken) throw new Error('Токен бота не задан (раздел «Уведомления в Telegram»)');
   if (!chatId) throw new Error('ID чата реестра оплат не задан');
-  return transport.post(botToken, chatId, '✅ Тестовое сообщение реестра оплат AdatBeton Calc.', proxyUrl, threadId);
+  return deliver({ botToken, chatId, threadId, text: '✅ Тестовое сообщение реестра оплат AdatBeton Calc.' });
 }
+
 
 // Тема — своя на каждую категорию (см. getCredentials), читаем заново на
 // каждое уведомление, а не передаём параметром — notifyOrderCreated и т.п.
@@ -216,7 +457,7 @@ function notifyOrderCreated(order) {
     'Выручка: ' + money(order.totalRevenue),
     'Прибыль: ' + money(order.totalProfit) + ' (' + Number(order.totalMarginPercent || 0).toFixed(1).replace('.', ',') + '%)'
   ];
-  ordersThreadId().then((threadId) => send(lines.join('\n'), threadId)).catch(() => {});
+  ordersThreadId().then((threadId) => notify(lines.join('\n'), threadId)).catch(() => {});
 }
 
 // Исправление заказа (change order-edit) — в тот же чат заказов: это
@@ -234,7 +475,7 @@ function notifyOrderEdited(notice) {
   ];
   // Та же тема, что и у создания заказа (notifyOrderCreated) — правка это
   // продолжение той же ленты, не отдельная категория.
-  ordersThreadId().then((threadId) => send(lines.join('\n'), threadId)).catch(() => {});
+  ordersThreadId().then((threadId) => notify(lines.join('\n'), threadId)).catch(() => {});
 }
 
 // Дефицит/приближение к порогу материала — шлётся из handlers/stock.js на
@@ -252,13 +493,26 @@ function notifyStockDeficit(material, available, threshold, orderId, receiptId) 
   ];
   if (orderId) lines.push('Заказ: ' + escapeHtml(orderId));
   if (receiptId) lines.push('Поступление: ' + escapeHtml(receiptId));
-  stockThreadId().then((threadId) => send(lines.join('\n'), threadId)).catch(() => {});
+  stockThreadId().then((threadId) => notify(lines.join('\n'), threadId)).catch(() => {});
 }
 
 // Для кнопки "Отправить тестовое" в Настройках — в отличие от notify*
-// выше, реально дожидается результата и пробрасывает ошибку наверх.
-function sendTest() {
-  return send('✅ Тестовое сообщение из AdatBeton Calc. Если вы это видите — бот настроен верно.');
+// выше, реально дожидается результата и пробрасывает ошибку наверх. Тема не
+// передаётся (общая лента чата — это тест соединения, а не конкретной темы),
+// поиск сервера — как у обычных сообщений, очереди нет.
+async function sendTest() {
+  const { botToken, chatId } = await getCredentials();
+  if (!botToken || !chatId) throw new Error('Токен бота или ID чата не заданы');
+  return deliver({ botToken, chatId, text: '✅ Тестовое сообщение из AdatBeton Calc. Если вы это видите — бот настроен верно.' });
 }
 
-module.exports = { notifyOrderCreated, notifyOrderEdited, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, escapeHtml, transport };
+// Только для тестов: сбросить текущий сервер и кэш манифеста между сценариями.
+function resetPoolForTests() {
+  pool.currentId = null;
+  pool.since = null;
+  pool.lastSwitch = null;
+  pool.searching = null;
+  manifestCache = { key: null, data: null };
+}
+
+module.exports = { notifyOrderCreated, notifyOrderEdited, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, escapeHtml, transport, drainOutbox, status, resetPoolForTests };

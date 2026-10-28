@@ -14,3 +14,7 @@ backend/assets/~$*
 # Xray-клиент (docker-compose.yml::xray) — содержит UUID/ключи VPN-подписки
 # пользователя, секрет, создаётся на сервере вручную, не в git.
 xray-config.json
+
+# Состояние сервиса xray (change telegram-proxy-failover): конфиг Xray с
+# UUID/ключами из подписки и манифест серверов для calc — секрет, только на сервере.
+xray-state/

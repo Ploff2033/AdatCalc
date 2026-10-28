@@ -1,6 +1,7 @@
 const http = require('http');
 const db = require('./backend/db');
 const { handleRequest } = require('./backend/router');
+const telegram = require('./backend/telegram');
 
 const PORT = process.env.PORT || 3000;
 // 0.0.0.0 по умолчанию — в контейнере/на сервере снаружи не достучаться до
@@ -10,6 +11,12 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 async function main() {
   await db.load();
+
+  // Очередь недоставленных в Telegram (change telegram-proxy-failover) —
+  // раз в 5 минут досылаем то, что не ушло ни через один сервер прокси.
+  setInterval(() => {
+    telegram.drainOutbox().catch((err) => console.error('Telegram: ошибка досылки очереди — ' + (err && err.message)));
+  }, 5 * 60 * 1000);
 
   const server = http.createServer((req, res) => {
     handleRequest(req, res).catch((err) => {

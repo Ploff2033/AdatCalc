@@ -395,6 +395,10 @@
       // socks5://user:pass@host:port, см. telegram.js::proxyAgentFor. Пусто —
       // прямое соединение, как раньше.
       '<div class="field"><label for="s-tg-proxy">Прокси (необязательно)</label><input id="s-tg-proxy" class="inp" placeholder="socks5://user:pass@host:port или http://host:port" value="' + (cfg.telegramProxyUrl || '') + '"></div>' +
+      // Статус доставки (change telegram-proxy-failover) — только чтение:
+      // пул серверов из VPN-подписки, текущий сервер, очередь недоставленных.
+      // Заполняется loadTelegramStatus() отдельным запросом.
+      '<div id="s-tg-status" class="hint" style="margin:0 0 12px"></div>' +
       // Темы (Topics) — по просьбе пользователя развести заказы и дефицит
       // материалов по разным веткам одной супергруппы, а не общей лентой.
       // ID темы берётся из ссылки на сообщение внутри нужной темы:
@@ -404,7 +408,7 @@
         '<div class="field"><label for="s-tg-thread-orders">ID темы «Заказы» (необязательно)</label><input id="s-tg-thread-orders" class="inp num" value="' + (cfg.telegramOrdersThreadId || '') + '"></div>' +
         '<div class="field"><label for="s-tg-thread-stock">ID темы «Остатки» (необязательно)</label><input id="s-tg-thread-stock" class="inp num" value="' + (cfg.telegramStockThreadId || '') + '"></div>' +
       '</div>' +
-      '<p class="hint" style="margin:0">Присылает: новый заказ и правка заказа — в тему «Заказы», дефицит материала / материал ниже порога — в тему «Остатки». Чат должен быть супергруппой с включёнными темами; ID темы — открыть тему в Telegram, «Скопировать ссылку», последнее число в ссылке (t.me/c/.../<b>ID</b>). Темы не заданы — сообщения идут в общую ленту чата, как раньше. Прокси нужен, только если сервер не достаёт до Telegram напрямую (таймауты при отправке).</p>';
+      '<p class="hint" style="margin:0">Присылает: новый заказ и правка заказа — в тему «Заказы», дефицит материала / материал ниже порога — в тему «Остатки». Чат должен быть супергруппой с включёнными темами; ID темы — открыть тему в Telegram, «Скопировать ссылку», последнее число в ссылке (t.me/c/.../<b>ID</b>). Темы не заданы — сообщения идут в общую ленту чата, как раньше. Прокси нужен, только если сервер не достаёт до Telegram напрямую (таймауты при отправке); если на сервере настроена VPN-подписка, серверы прокси выбираются автоматически и поле не используется.</p>';
     document.getElementById('s-tg-token').addEventListener('input', function () { markDirty('Telegram-токен'); });
     document.getElementById('s-tg-chat').addEventListener('input', function () { markDirty('Telegram chat id'); });
     document.getElementById('s-tg-proxy').addEventListener('input', function () { markDirty('Telegram-прокси'); });
@@ -436,7 +440,60 @@
         btn.textContent = original;
         btn.disabled = false;
       }
+      // Тест мог сменить текущий сервер или не уйти — показываем свежий статус.
+      loadTelegramStatus();
     });
+    loadTelegramStatus();
+  }
+
+  function tgPlural(n, one, few, many) {
+    var m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+
+  // ДД.ММ ЧЧ:ММ по Москве — как время в самих уведомлениях.
+  function tgMoscow(iso, timeOnly) {
+    var parts = {};
+    new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(iso)).forEach(function (p) { parts[p.type] = p.value; });
+    var time = parts.hour + ':' + parts.minute;
+    return timeOnly ? time : parts.day + '.' + parts.month + ' ' + time;
+  }
+
+  function tgEsc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Блок статуса доставки (GET /api/config/telegram-status, только admin).
+  // Ошибку загрузки не показываем алертом — это вспомогательная информация.
+  async function loadTelegramStatus() {
+    var box = document.getElementById('s-tg-status');
+    if (!box) return;
+    var st;
+    try { st = await Api.get('/config/telegram-status'); } catch (err) { box.textContent = ''; return; }
+    var proxy = document.getElementById('s-tg-proxy');
+    var lines = [];
+    if (st.mode === 'auto') {
+      if (proxy) { proxy.disabled = true; proxy.title = 'Используется пул серверов из подписки'; }
+      lines.push('<b>Доставка:</b> автоматически (пул серверов из подписки)');
+      var c = st.current;
+      lines.push('Сервер ' + c.index + ' из ' + c.total + ' · ' + tgEsc(c.name) + ' · ' + (c.since ? 'с ' + tgMoscow(c.since) : 'ещё не использовался'));
+      if (st.lastSwitch) {
+        lines.push('Последнее переключение: ' + tgMoscow(st.lastSwitch.at) + ' · сервер «' + tgEsc(st.lastSwitch.fromName) + '» не ответил (' + tgEsc(st.lastSwitch.reason) + ')');
+      }
+      var sub = st.subscription;
+      lines.push('Подписка: ' + (sub.refreshedAt ? 'обновлена ' + tgMoscow(sub.refreshedAt) : 'ещё не обновлялась') + ' · ' + sub.count + ' ' + tgPlural(sub.count, 'сервер', 'сервера', 'серверов'));
+      if (sub.stale) lines.push('<span style="color:var(--warn-fg)">⚠ Подписка не обновлялась больше суток</span>');
+    } else {
+      if (proxy) { proxy.disabled = false; proxy.title = ''; }
+      lines.push('<b>Доставка:</b> вручную (поле «Прокси»)');
+    }
+    if (st.queue && st.queue.count) {
+      lines.push('В очереди: ' + st.queue.count + ' ' + tgPlural(st.queue.count, 'сообщение', 'сообщения', 'сообщений') + ', самое старое — ' + tgMoscow(st.queue.oldestAt, true));
+    }
+    box.innerHTML = lines.join('<br>');
   }
 
   // Автосинхронизация ДДС в Облако Mail.ru — по просьбе пользователя
@@ -603,6 +660,7 @@
         chatStatus(err.message);
       } finally {
         btn.disabled = false;
+        loadTelegramStatus();
       }
     });
     Array.prototype.forEach.call(section.querySelectorAll('.s-rg-add'), function (form) {

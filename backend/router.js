@@ -627,6 +627,16 @@ const routes = [
       sendJson(res, 200, { ok: true });
     }
   },
+  // Статус доставки в Telegram (change telegram-proxy-failover): режим
+  // (пул серверов / ручной), текущий сервер, последнее переключение,
+  // свежесть подписки, очередь недоставленных. Только чтение, только admin —
+  // как и весь раздел Telegram в Настройках.
+  {
+    method: 'GET',
+    pattern: /^\/api\/config\/telegram-status$/,
+    role: 'admin',
+    handler: async (req, res) => sendJson(res, 200, await telegram.status())
+  },
   // Проверка синхронизации ДДС с Облаком Mail.ru — тот же приём, что и
   // telegram-test выше: сохраняет логин/пароль, если пришли в теле, и
   // реально ждёт результат загрузки по WebDAV, а не просто пишет в БД.
