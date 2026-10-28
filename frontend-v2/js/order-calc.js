@@ -8,15 +8,26 @@
 
   // input: { plant, recipe, mixer, data:{materials,aggregateTrucks,plants,personnelSummary,config},
   //          selfPickup, saleVolume, dist, addressFilled, priceNet, vatGrossMode,
-  //          nbCity, fuelPrice, ureaPrice, deliveryChargePerM3, maxLoad }
+  //          nbCity, fuelPrice, ureaPrice, deliveryChargePerM3, maxLoad,
+  //          deliveryMode, hireRate }
   // maxLoad — ограничение загрузки миксера (м³, сложный подъезд); пусто/0 —
   // по вместимости. Влияет только на число рейсов (change client-list).
+  // deliveryMode — own / pickup / hired (change order-hired-delivery); без
+  // него режим выводится из selfPickup. hireRate — ставка найма, ₽/м³.
+  function deliveryModeOf(input) {
+    if (input.deliveryMode) return input.deliveryMode;
+    return input.selfPickup ? 'pickup' : 'own';
+  }
+
   function run(input) {
     var data = input.data;
     var plant = input.plant;
     var recipe = input.recipe;
     var mixer = input.mixer;
-    var selfPickup = !!input.selfPickup;
+    var deliveryMode = deliveryModeOf(input);
+    var selfPickup = deliveryMode === 'pickup';
+    var hired = deliveryMode === 'hired';
+    var hireRate = hired ? (input.hireRate || 0) : 0;
     var saleVolume = input.saleVolume || 0;
     var dist = input.dist || 0;
 
@@ -46,14 +57,24 @@
     var mixMarginPercent = Calc.marginPercent(mixProfit, mixRevenue);
     var safetyMargin = priceNet - costPerM3;
 
-    var deliveryReady = selfPickup || (!!mixer && dist > 0 && input.addressFilled);
+    // Найм: миксера и км не нужно — адрес и ставка (рейсов нет, расход —
+    // ставка × объём, см. ниже).
+    var deliveryReady = selfPickup || (hired ? (!!input.addressFilled && hireRate > 0) : (!!mixer && dist > 0 && input.addressFilled));
     var effectiveLoad = 0, loadLimited = false;
     var trips = 0, roundTrip = 0, fuelCostPerTrip = 0, ureaCostPerTrip = 0, platonCostPerTrip = 0, amortCostPerTrip = 0,
       neighborCity = !!input.nbCity, surchargePerTrip = 0, deliveryCostTotal = 0, deliveryChargePerM3 = 0,
       deliveryRevenue = 0, deliveryProfit = 0, deliveryMarginPercent = 0;
     var neighborCitySurcharge = (plant && plant.neighborCitySurcharge) || 0;
 
-    if (deliveryReady && !selfPickup) {
+    if (deliveryReady && hired) {
+      // Сторонний перевозчик за ставку за м³: топливо, мочевина, Платон,
+      // амортизация и надбавка за соседний город не начисляются.
+      deliveryCostTotal = hireRate * saleVolume;
+      deliveryChargePerM3 = input.deliveryChargePerM3 || 0;
+      deliveryRevenue = deliveryChargePerM3 * saleVolume;
+      deliveryProfit = deliveryRevenue - deliveryCostTotal;
+      deliveryMarginPercent = Calc.marginPercent(deliveryProfit, deliveryRevenue);
+    } else if (deliveryReady && !selfPickup) {
       effectiveLoad = Calc.loadPerTrip(mixer, input.maxLoad);
       loadLimited = effectiveLoad > 0 && effectiveLoad < (mixer.capacity || 0);
       trips = Calc.tripsForVolume(mixer, saleVolume, input.maxLoad);
@@ -88,7 +109,8 @@
     var vatAmount = vatGrossMode && mixRevenue > 0 ? mixRevenueGross - mixRevenue : 0;
     // Безубыточная цена доставки (для мобильной подсказки "доставка в минус
     // от X ₽/м³") — расход на 1 м³ при текущем плече/миксере.
-    var deliveryBreakevenPerM3 = saleVolume > 0 && trips > 0 ? deliveryCostTotal / saleVolume : 0;
+    // У найма рейсов нет — безубыточная цена равна ставке.
+    var deliveryBreakevenPerM3 = saleVolume > 0 && (trips > 0 || hired) ? deliveryCostTotal / saleVolume : 0;
     // "Порог с НДС" — та же себестоимость, но переведённая в цену, которую
     // нужно выставить клиенту С УЧЁТОМ НДС, чтобы выйти в ноль. Сама маржа
     // (safetyMargin выше) остаётся честной, без НДС — это просто удобная
@@ -98,7 +120,7 @@
     var costPerM3Gross = costPerM3 * VAT_MULT;
 
     return {
-      deliveryReady: deliveryReady, trips: trips, roundTrip: roundTrip, effectiveLoad: effectiveLoad, loadLimited: loadLimited,
+      deliveryReady: deliveryReady, deliveryMode: deliveryMode, hireRate: hireRate, trips: trips, roundTrip: roundTrip, effectiveLoad: effectiveLoad, loadLimited: loadLimited,
       materialsCost: materialsCost, payroll: payroll, depr: depr, utilities: utilities, costPerM3: costPerM3, costPerM3Gross: costPerM3Gross,
       materialsBreakdown: materialsBreakdown, priceNet: priceNet,
       mixRevenue: mixRevenue, mixRevenueGross: mixRevenueGross, mixCost: mixCost, mixProfit: mixProfit, mixMarginPercent: mixMarginPercent,
@@ -115,13 +137,15 @@
   // Собирает payload для POST /api/orders из результата run() + сырых input —
   // тот же набор полей, что backend/handlers/orders.js::sanitize() ожидает.
   function toOrderPayload(input, calc) {
-    var plant = input.plant, recipe = input.recipe, mixer = input.mixer, selfPickup = !!input.selfPickup;
+    var plant = input.plant, recipe = input.recipe, mixer = input.mixer;
+    var deliveryMode = deliveryModeOf(input), selfPickup = deliveryMode === 'pickup', hired = deliveryMode === 'hired';
+    var noMixer = selfPickup || hired;
     return {
       plantId: plant.id, plantName: plant.name, recipeName: recipe.name, materials: calc.materialsBreakdown,
-      mixerName: selfPickup ? 'Самовывоз' : mixer.name, mixerPlate: selfPickup ? '' : (mixer.licensePlate || ''),
-      driverName: '', driverLicenseNumber: '', saleVolume: input.saleVolume, distanceKm: selfPickup ? 0 : input.dist,
+      mixerName: selfPickup ? 'Самовывоз' : (hired ? 'Найм' : mixer.name), mixerPlate: noMixer ? '' : (mixer.licensePlate || ''),
+      driverName: '', driverLicenseNumber: '', saleVolume: input.saleVolume, distanceKm: selfPickup ? 0 : (input.dist || 0),
       address: selfPickup ? '' : (input.address || ''), fuelPricePerLiter: input.fuelPrice || 0, ureaPricePerLiter: input.ureaPrice || 0,
-      ureaCostPerTrip: calc.ureaCostPerTrip, platonCostPerTrip: calc.platonCostPerTrip, neighborCity: !!input.nbCity,
+      ureaCostPerTrip: calc.ureaCostPerTrip, platonCostPerTrip: calc.platonCostPerTrip, neighborCity: hired ? false : !!input.nbCity,
       surchargePerTrip: calc.surchargePerTrip, tripCount: calc.trips, roundTripKm: calc.roundTrip, fuelCostPerTrip: calc.fuelCostPerTrip,
       amortCostPerTrip: calc.amortCostPerTrip, deliveryCostTotal: calc.deliveryCostTotal, deliveryChargePerM3: calc.deliveryChargePerM3,
       deliveryRevenue: calc.deliveryRevenue, deliveryProfit: calc.deliveryProfit, deliveryMarginPercent: calc.deliveryMarginPercent,
@@ -131,8 +155,10 @@
       vatApplied: !!input.vatGrossMode, createdAt: new Date().toISOString(),
       // Для памяти клиента (change client-list); maxLoadM3 — снимок только
       // ограниченной загрузки, иначе null (см. backend/handlers/orders.js).
-      recipeId: recipe.id, mixerId: selfPickup ? null : (mixer ? mixer.id : null), selfPickup: selfPickup,
-      maxLoadM3: !selfPickup && calc.loadLimited ? calc.effectiveLoad : null
+      recipeId: recipe.id, mixerId: noMixer ? null : (mixer ? mixer.id : null), selfPickup: selfPickup,
+      maxLoadM3: !noMixer && calc.loadLimited ? calc.effectiveLoad : null,
+      // Режим и ставка (change order-hired-delivery); ставка — только у найма.
+      deliveryMode: deliveryMode, hireRatePerM3: hired ? calc.hireRate : null
     };
   }
 

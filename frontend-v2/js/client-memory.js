@@ -98,7 +98,10 @@
   }
 
   // Заголовок свёрнутой сводки «Доставка»: при ограничении — «4 × 5 м³».
-  function deliverySummary(trips, effectiveLoad, limited, distKm) {
+  // hireRate не null — режим «Найм» (change order-hired-delivery): рейсов
+  // нет, вместо них ставка перевозчика.
+  function deliverySummary(trips, effectiveLoad, limited, distKm, hireRate) {
+    if (hireRate != null) return 'Доставка · Найм · ' + (hireRate > 0 ? num(hireRate) : '—') + ' ₽/м³ · ' + num(distKm) + ' км';
     var tripsPart = limited ? trips + ' × ' + num(effectiveLoad) + ' м³' : num(trips) + ' рейс(ов)';
     return 'Доставка · ' + tripsPart + ' · ' + num(distKm) + ' км';
   }

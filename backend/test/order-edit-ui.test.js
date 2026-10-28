@@ -185,7 +185,7 @@ test('Цены справочника изменились — прибыль н
 });
 
 test('Блокировка полей при путевых листах', () => {
-  assert.deepStrictEqual(OE.lockedFields(order({ hasWaybills: true })), ['recipeId', 'saleVolume', 'selfPickup', 'mixerId', 'maxLoad']);
+  assert.deepStrictEqual(OE.lockedFields(order({ hasWaybills: true })), ['recipeId', 'saleVolume', 'deliveryMode', 'mixerId', 'maxLoad']); // change order-hired-delivery
   assert.deepStrictEqual(OE.lockedFields(order()), []);
 });
 
@@ -197,4 +197,39 @@ test('409 «уже исправили» — выход из режима; бло
   assert.strictEqual(OE.isTerminalError(err(403, 'Исправить заказ можно в течение суток — обратитесь к менеджеру')), true);
   assert.strictEqual(OE.isTerminalError(err(409, OE.LOCKED_HINT)), false);
   assert.strictEqual(OE.isTerminalError(err(400, 'Неизвестный клиент')), false);
+});
+
+// ---- Найм (change order-hired-delivery) ----
+const hiredOrder = (patch) => order(Object.assign({ deliveryMode: 'hired', hireRatePerM3: 500, mixerId: null, mixerName: 'Найм',
+  address: 'пос. Северный', distanceKm: 30, deliveryChargePerM3: 700 }, patch));
+const hiredPayload = (o, patch) => payload(o, Object.assign({ deliveryMode: 'hired', hireRatePerM3: o.hireRatePerM3 }, patch));
+
+test('Наёмный заказ: форма из заказа — «Найм», 500 ₽/м³, адрес и 30 км', () => {
+  const st = OE.formState(hiredOrder(), DATA);
+  assert.strictEqual(st.deliveryMode, 'hired');
+  assert.strictEqual(st.hireRate, 500);
+  assert.strictEqual(st.address, 'пос. Северный');
+  assert.strictEqual(st.distanceKm, 30);
+  assert.strictEqual(st.mixerId, '');
+  assert.strictEqual(st.selfPickup, false);
+});
+
+test('Наёмный заказ: без правок не изменён, правка только ставки — изменён', () => {
+  const o = hiredOrder();
+  assert.strictEqual(OE.isDirty(o, hiredPayload(o)), false);
+  assert.strictEqual(OE.isDirty(o, hiredPayload(o, { hireRatePerM3: 550 })), true);
+});
+
+test('Смена режима — изменение; старые заказы без поля режима читаются по mixerName', () => {
+  const own = order();
+  assert.strictEqual(OE.isDirty(own, payload(own, { deliveryMode: 'own' })), false);
+  assert.strictEqual(OE.isDirty(own, payload(own, { deliveryMode: 'hired', mixerName: 'Найм', hireRatePerM3: 500 })), true);
+  assert.strictEqual(OE.formState(order({ mixerName: 'Самовывоз', mixerId: null }), DATA).deliveryMode, 'pickup');
+  assert.strictEqual(OE.formState(own, DATA).deliveryMode, 'own');
+  assert.strictEqual(OE.formState(own, DATA).hireRate, null);
+});
+
+test('Блокировка режима при путевых листах', () => {
+  assert.ok(OE.lockedFields(hiredOrder({ hasWaybills: true })).includes('deliveryMode'));
+  assert.ok(!OE.lockedFields(hiredOrder({ hasWaybills: true })).includes('hireRate'));
 });

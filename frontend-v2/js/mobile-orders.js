@@ -42,6 +42,8 @@
 
   function statusFor(order) {
     if (order.cancelledAt) return { cls: 'mute', label: 'Отменён', pct: 0 };
+    // Найм (change order-hired-delivery) — тоже без рейсов, но не самовывоз.
+    if (OrderEdit.deliveryModeOf(order) === 'hired') return { cls: 'act', label: 'Найм', pct: 100 };
     if (!order.tripCount) return { cls: 'ok', label: 'Самовывоз', pct: 100 };
     var allocated = WaybillCalc.allocatedForOrder(State.data.waybillEntries || [], order.id);
     var pct = order.tripCount > 0 ? Math.round((allocated / order.tripCount) * 100) : 0;
@@ -121,6 +123,7 @@
       var time = new Date(o.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       var meta = [o.clientName || 'Без клиента', Format.fmtNum(o.saleVolume, 1, 'м³'), Format.fmtNum(o.distanceKm, 0, 'км')];
       if (o.neighborCity) meta.push('соседний город');
+      if (OrderEdit.deliveryModeOf(o) === 'hired') meta.push('найм ' + Format.fmtNum(o.hireRatePerM3, o.hireRatePerM3 % 1 ? 2 : 0) + ' ₽/м³');
       // НДС уже вынесен в основной бейдж для не-админа (см. badge ниже) —
       // тут дублировать незачем, а админу он тут по-прежнему нужен, раз его
       // бейдж занят статусом рейсов.

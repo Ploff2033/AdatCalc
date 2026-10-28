@@ -45,7 +45,12 @@
         '<section class="card stack g16" style="padding:20px" id="m-delivery-section">' +
           '<div class="spread">' +
             '<div class="card-h2"><span class="step-num">2</span><h2>Доставка</h2></div>' +
-            '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer"><button type="button" class="tog" id="m-self-pickup" aria-pressed="false"><i></i></button>Самовывоз</label>' +
+            // Режим доставки (change order-hired-delivery) вместо тумблера «Самовывоз».
+            '<div class="seg" role="group" aria-label="Режим доставки" id="m-delivery-mode" style="width:300px">' +
+              '<button type="button" data-mode="own" class="on" aria-pressed="true">Своя</button>' +
+              '<button type="button" data-mode="pickup" aria-pressed="false">Самовывоз</button>' +
+              '<button type="button" data-mode="hired" aria-pressed="false">Найм</button>' +
+            '</div>' +
           '</div>' +
           '<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:14px">' +
             '<div class="field" id="m-address-field"><label for="m-address">Адрес / объект</label><input id="m-address" class="inp"></div>' +
@@ -60,6 +65,8 @@
           '</div>' +
           '<div class="grid-3">' +
             '<div class="field"><label for="m-delivery-charge">Цена доставки клиенту</label><div class="unit"><input id="m-delivery-charge" class="inp num" inputmode="decimal" value="500"><span>₽/м³</span></div></div>' +
+            '<div class="field" id="m-hire-rate-field" hidden><label for="m-hire-rate">Ставка найма</label><div class="unit"><input id="m-hire-rate" class="inp num" inputmode="decimal"><span>₽/м³</span></div>' +
+              '<span class="hint" id="m-hire-rate-hint" style="font-size:12px;color:#8C2217" hidden>Укажите ставку найма</span></div>' +
           '</div>' +
           '<div class="grid-2">' +
             '<div class="field"><label for="m-fuel-price">Цена топлива <button type="button" class="hint" id="m-fuel-reset" style="border:0;background:none;cursor:pointer;text-decoration:underline">сбросить</button></label><input id="m-fuel-price" class="inp num" inputmode="decimal"></div>' +
@@ -131,6 +138,8 @@
   var selectedClientId = ''; // '' | реальный id | '__new__' (см. populateClientSelect)
   // Ограничение загрузки миксера (м³, сложный подъезд) — null = по вместимости.
   var maxLoadLimit = null;
+  // Режим доставки: own — свой миксер, pickup — самовывоз, hired — найм.
+  var deliveryMode = 'own';
   var vatGrossMode = false;
   var priceDirty = false;
   var priceNetStored = 0;
@@ -145,6 +154,19 @@
 
   function mixerLabel(mixer) {
     return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
+  }
+
+  function setDeliveryMode(mode) {
+    deliveryMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#m-delivery-mode button'), function (b) {
+      var on = b.getAttribute('data-mode') === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function setDeliveryModeDisabled(disabled) {
+    Array.prototype.forEach.call(document.querySelectorAll('#m-delivery-mode button'), function (b) { b.disabled = disabled; });
   }
 
   function populateSelect(select, items, preferredId, labelFn) {
@@ -214,10 +236,10 @@
     vatGrossMode = terms.vatGross;
     setVatButtons();
     if (!('selfPickup' in terms)) return;
-    var pickup = document.getElementById('m-self-pickup');
-    pickup.classList.toggle('on', terms.selfPickup);
-    pickup.setAttribute('aria-pressed', terms.selfPickup ? 'true' : 'false');
-    if (terms.selfPickup) return;
+    // Найм — разовая история, в памяти его нет: выбранный найм и ставка
+    // остаются, если только у клиента в памяти не самовывоз.
+    if (terms.selfPickup) { setDeliveryMode('pickup'); return; }
+    if (deliveryMode !== 'hired') setDeliveryMode('own');
     if ('address' in terms) document.getElementById('m-address').value = terms.address;
     if ('distanceKm' in terms) NumericInput.setFormattedValue(document.getElementById('m-dist'), terms.distanceKm);
     if ('deliveryChargePerM3' in terms) NumericInput.setFormattedValue(document.getElementById('m-delivery-charge'), terms.deliveryChargePerM3);
@@ -318,12 +340,19 @@
     var placeOrderBtn = document.getElementById('m-place-order-btn');
     var nbCityInput = document.getElementById('m-nb-city');
 
-    var selfPickup = document.getElementById('m-self-pickup').classList.contains('on');
+    var selfPickup = deliveryMode === 'pickup';
+    var hired = deliveryMode === 'hired';
     var maxLoadInput = document.getElementById('m-max-load');
-    [mixerSelect, distInput, addressInput, nbCityInput, maxLoadInput].forEach(function (el) { el.disabled = selfPickup; });
-    document.getElementById('m-fuel-price').disabled = selfPickup;
-    document.getElementById('m-urea-price').disabled = selfPickup;
+    // Найм: адрес, км и цена клиенту — как у своей доставки; миксер,
+    // загрузка, соседний город и цены ГСМ к стороннему перевозчику не относятся.
+    [distInput, addressInput].forEach(function (el) { el.disabled = selfPickup; });
+    [mixerSelect, nbCityInput, maxLoadInput].forEach(function (el) { el.disabled = selfPickup || hired; });
+    document.getElementById('m-fuel-price').disabled = selfPickup || hired;
+    document.getElementById('m-urea-price').disabled = selfPickup || hired;
     document.getElementById('m-delivery-section').style.opacity = selfPickup ? '.55' : '1';
+    var hireRateInput = document.getElementById('m-hire-rate');
+    document.getElementById('m-hire-rate-field').hidden = !hired;
+    var hireRate = hired ? (NumericInput.parseNumber(hireRateInput.value) || 0) : 0;
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
@@ -333,7 +362,7 @@
 
     var distRaw = distInput.value;
     var dist = NumericInput.parseNumber(distRaw) || 0;
-    var distMissing = !selfPickup && (distRaw.trim() === '' || !(dist > 0));
+    var distMissing = deliveryMode === 'own' && (distRaw.trim() === '' || !(dist > 0));
     var addressMissing = !selfPickup && !addressInput.value.trim();
 
     var pricePlantId = plant ? plant.id : null;
@@ -358,18 +387,25 @@
     var clientMissing = !clientSelect.value || (clientSelect.value === '__new__' && !document.getElementById('m-client-new-name').value.trim());
 
     var missingDelivery = [];
-    if (!selfPickup && !mixer) missingDelivery.push(mixerSelect);
+    if (deliveryMode === 'own' && !mixer) missingDelivery.push(mixerSelect);
+    var hireRateMissing = hired && !(hireRate > 0);
+    if (hireRateMissing) missingDelivery.push(document.getElementById('m-hire-rate-field'));
+    // Кнопка оформления неактивна, пока доставка не готова, — подсказку
+    // показываем сразу, а не после попытки оформить.
+    document.getElementById('m-hire-rate-hint').hidden = !hireRateMissing;
     if (distMissing) missingDelivery.push(distInput.closest('.field'));
     if (addressMissing) missingDelivery.push(addressInput.closest('.field'));
     if (clientMissing) missingDelivery.push(clientSelect.value === '__new__' ? clientNewNameField : clientSelect);
     var missing = recipe ? missingDelivery : [recipeSelect].concat(missingDelivery);
 
-    [recipeSelect, mixerSelect, distInput.closest('.field'), addressInput.closest('.field'), clientSelect, clientNewNameField].forEach(function (el) { el.style.borderColor = ''; });
+    [recipeSelect, mixerSelect, distInput.closest('.field'), addressInput.closest('.field'), clientSelect, clientNewNameField, document.getElementById('m-hire-rate-field')].forEach(function (el) { el.style.borderColor = ''; });
     if (submitAttempted && missing.length) {
       missing.forEach(function (el) { if (el.style) el.style.borderColor = '#8C2217'; });
       banner.textContent = selfPickup
         ? 'Заполните обязательные поля: марка/рецепт и клиент.'
-        : 'Заполните обязательные поля: марка/рецепт, клиент, миксер, расстояние и адрес доставки.';
+        : hired
+          ? 'Заполните обязательные поля: марка/рецепт, клиент, адрес доставки и ставка найма.'
+          : 'Заполните обязательные поля: марка/рецепт, клиент, миксер, расстояние и адрес доставки.';
       banner.hidden = false;
     } else {
       banner.hidden = true;
@@ -399,7 +435,7 @@
     }
     var loadHint = ClientMemory.loadHint(mixer, maxLoadLimit, saleVolume);
     var loadHintEl = document.getElementById('m-max-load-hint');
-    loadHintEl.hidden = selfPickup || !loadHint.text;
+    loadHintEl.hidden = selfPickup || hired || !loadHint.text;
     loadHintEl.textContent = loadHint.text;
     loadHintEl.style.color = loadHint.warn ? '#8C2217' : (loadHint.limited ? '#8A3410' : '');
     maxLoadInput.style.borderColor = loadHint.warn ? '#A62A1E' : (loadHint.limited ? '#B8481A' : '');
@@ -409,14 +445,17 @@
     deliveryChargeInput.disabled = selfPickup;
 
     var calc = OrderCalc.run({
-      plant: plant, recipe: recipe, mixer: mixer, data: data, selfPickup: selfPickup, saleVolume: saleVolume,
+      plant: plant, recipe: recipe, mixer: mixer, data: data, deliveryMode: deliveryMode, hireRate: hireRate, saleVolume: saleVolume,
       dist: dist, addressFilled: !addressMissing, priceNet: priceNet, vatGrossMode: vatGrossMode,
       nbCity: nbCityInput.checked, fuelPrice: fuelPrice, ureaPrice: ureaPrice,
       deliveryChargePerM3: NumericInput.parseNumber(deliveryChargeInput.value) || 0,
       maxLoad: maxLoadLimit
     });
 
-    if (calc.deliveryReady && !selfPickup) {
+    if (hired) {
+      document.getElementById('m-trip-count').textContent = '0 (найм)';
+      document.getElementById('m-delivery-box').style.display = '';
+    } else if (calc.deliveryReady && !selfPickup) {
       document.getElementById('m-trip-count').textContent = calc.loadLimited
         ? calc.trips + ' × ' + String(calc.effectiveLoad).replace('.', ',') + ' м³'
         : Format.fmtNum(calc.trips, 0);
@@ -467,7 +506,9 @@
     document.getElementById('m-mix-profit').textContent = Format.fmt(calc.mixProfit, 0);
     document.getElementById('m-mix-margin').textContent = Format.fmtNum(calc.mixMarginPercent, 1, '%');
 
-    document.getElementById('m-delivery-trips-label').textContent = calc.loadLimited
+    document.getElementById('m-delivery-trips-label').textContent = hired
+      ? 'Найм · ' + Format.fmtNum(hireRate, hireRate % 1 ? 2 : 0) + ' ₽/м³'
+      : calc.loadLimited
       ? calc.trips + ' × ' + String(calc.effectiveLoad).replace('.', ',') + ' м³'
       : Format.fmtNum(calc.trips, 0, 'рейс(ов)');
     document.getElementById('m-delivery-revenue').textContent = Format.fmt(calc.deliveryRevenue, 0);
@@ -487,7 +528,7 @@
 
     placeOrderBtn.disabled = false;
     lastCalc = OrderCalc.toOrderPayload({
-      plant: plant, recipe: recipe, mixer: mixer, selfPickup: selfPickup, saleVolume: saleVolume, dist: dist,
+      plant: plant, recipe: recipe, mixer: mixer, deliveryMode: deliveryMode, saleVolume: saleVolume, dist: dist,
       address: addressInput.value.trim(), fuelPrice: fuelPrice, ureaPrice: ureaPrice, nbCity: nbCityInput.checked,
       vatGrossMode: vatGrossMode
     }, calc);
@@ -510,9 +551,9 @@
     setVatButtons();
     priceDirty = true;
     priceNetStored = st.priceNet;
-    var pickup = document.getElementById('m-self-pickup');
-    pickup.classList.toggle('on', st.selfPickup);
-    pickup.setAttribute('aria-pressed', st.selfPickup ? 'true' : 'false');
+    setDeliveryMode(st.deliveryMode);
+    if (st.hireRate == null) document.getElementById('m-hire-rate').value = '';
+    else NumericInput.setFormattedValue(document.getElementById('m-hire-rate'), st.hireRate);
     document.getElementById('m-address').value = st.address;
     if (st.distanceKm === '') document.getElementById('m-dist').value = '';
     else NumericInput.setFormattedValue(document.getElementById('m-dist'), st.distanceKm);
@@ -560,7 +601,8 @@
     document.getElementById('m-page-cap').textContent = order ? 'Исправление заказа' : 'Новый расчёт';
     if (!order) {
       btn.textContent = 'Оформить заказ';
-      ['m-recipe', 'm-volume', 'm-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      ['m-recipe', 'm-volume'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      setDeliveryModeDisabled(false);
       return;
     }
 
@@ -580,12 +622,13 @@
     var locked = OrderEdit.lockedFields(order);
     var lockedHint = document.getElementById('m-edit-locked');
     lockedHint.hidden = !locked.length;
-    lockedHint.textContent = OrderEdit.LOCKED_HINT + ': рецепт, объём, самовывоз, миксер и макс. загрузка не меняются.';
+    lockedHint.textContent = OrderEdit.LOCKED_HINT + ': рецепт, объём, режим доставки, миксер и макс. загрузка не меняются.';
     if (locked.length) {
-      ['m-recipe', 'm-volume', 'm-self-pickup', 'm-mixer', 'm-max-load'].forEach(function (id) { document.getElementById(id).disabled = true; });
+      ['m-recipe', 'm-volume', 'm-mixer', 'm-max-load'].forEach(function (id) { document.getElementById(id).disabled = true; });
     } else {
-      ['m-recipe', 'm-volume', 'm-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      ['m-recipe', 'm-volume'].forEach(function (id) { document.getElementById(id).disabled = false; });
     }
+    setDeliveryModeDisabled(locked.length > 0);
 
     var payload = editPayload(order);
     btn.textContent = 'Сохранить исправление';
@@ -650,8 +693,8 @@
     ['m-dist', 'm-address', 'm-volume', 'm-delivery-charge'].forEach(function (id) { document.getElementById(id).value = ''; });
     document.getElementById('m-ship-date').value = new Date().toISOString().slice(0, 10);
     document.getElementById('m-nb-city').checked = false;
-    document.getElementById('m-self-pickup').classList.remove('on');
-    document.getElementById('m-self-pickup').setAttribute('aria-pressed', 'false');
+    setDeliveryMode('own');
+    document.getElementById('m-hire-rate').value = '';
     document.getElementById('m-price').value = '';
     priceDirty = false;
     priceNetStored = 0;
@@ -706,11 +749,11 @@
     document.getElementById('m-vat-on').addEventListener('click', function () { vatGrossMode = true; setVatButtons(); recalc(); });
     setVatButtons();
 
-    document.getElementById('m-self-pickup').addEventListener('click', function () {
-      this.classList.toggle('on');
-      this.setAttribute('aria-pressed', this.classList.contains('on') ? 'true' : 'false');
-      recalc();
+    Array.prototype.forEach.call(document.querySelectorAll('#m-delivery-mode button'), function (b) {
+      b.addEventListener('click', function () { setDeliveryMode(this.getAttribute('data-mode')); recalc(); });
     });
+    NumericInput.attach(document.getElementById('m-hire-rate'));
+    document.getElementById('m-hire-rate').addEventListener('input', recalc);
 
     NumericInput.attach(document.getElementById('m-price'));
     document.getElementById('m-price').addEventListener('input', function () {

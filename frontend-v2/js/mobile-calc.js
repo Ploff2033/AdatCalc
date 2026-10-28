@@ -35,9 +35,18 @@
         '</div>' +
       '</section>' +
       '<section class="card-flat stack g10" style="padding:12px">' +
-        '<div class="spread" style="min-height:44px"><span class="sub">Доставка</span><label style="display:flex;align-items:center;gap:10px;font-size:13px">Самовывоз<button type="button" class="tog" id="mc-self-pickup" aria-pressed="false"><i></i></button></label></div>' +
+        '<span class="sub">Доставка</span>' +
+        // Режим доставки (change order-hired-delivery) вместо тумблера «Самовывоз».
+        '<div class="seg" role="group" aria-label="Режим доставки" id="mc-delivery-mode">' +
+          '<button type="button" data-mode="own" class="on" aria-pressed="true" style="height:44px">Своя</button>' +
+          '<button type="button" data-mode="pickup" aria-pressed="false" style="height:44px">Самовывоз</button>' +
+          '<button type="button" data-mode="hired" aria-pressed="false" style="height:44px">Найм</button>' +
+        '</div>' +
         '<div class="field"><label for="mc-delivery-charge">Цена доставки для клиента</label><div class="unit"><input id="mc-delivery-charge" class="inp num" value="500" style="height:48px;font-size:16px" inputmode="decimal"><span>₽/м³</span></div>' +
           '<span class="hint" id="mc-delivery-hint" style="font-size:12px"></span>' +
+        '</div>' +
+        '<div class="field" id="mc-hire-rate-field" hidden><label for="mc-hire-rate">Ставка найма</label><div class="unit"><input id="mc-hire-rate" class="inp num" style="height:48px;font-size:16px" inputmode="decimal"><span>₽/м³</span></div>' +
+          '<span class="hint" id="mc-hire-rate-hint" style="font-size:12px;color:#8C2217" hidden>Укажите ставку найма</span>' +
         '</div>' +
         '<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:8px">' +
           '<div class="field"><label for="mc-mixer">Миксер</label><select id="mc-mixer" class="inp" style="height:48px"></select></div>' +
@@ -98,10 +107,25 @@
   // Ограничение загрузки миксера (м³, сложный подъезд) — null = по вместимости.
   // В поле показывается ограничение или вместимость выбранного миксера.
   var maxLoadLimit = null;
+  // Режим доставки: own — свой миксер, pickup — самовывоз, hired — найм.
+  var deliveryMode = 'own';
   var vatGrossMode = false, priceDirty = false, priceNetStored = 0;
   var fuelPriceDirty = false, ureaPriceDirty = false, lastPricePlantId = null;
   var lastCalc = null;
   var editCreatedInitial = '';
+
+  function setDeliveryMode(mode) {
+    deliveryMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#mc-delivery-mode button'), function (b) {
+      var on = b.getAttribute('data-mode') === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function setDeliveryModeDisabled(disabled) {
+    Array.prototype.forEach.call(document.querySelectorAll('#mc-delivery-mode button'), function (b) { b.disabled = disabled; });
+  }
 
   function mixerLabel(mixer) {
     return mixer.name + (mixer.licensePlate ? ' (' + mixer.licensePlate + ')' : '');
@@ -185,10 +209,10 @@
     if (!terms) return;
     setVatMode(terms.vatGross);
     if (!('selfPickup' in terms)) return;
-    var pickup = document.getElementById('mc-self-pickup');
-    pickup.classList.toggle('on', terms.selfPickup);
-    pickup.setAttribute('aria-pressed', terms.selfPickup ? 'true' : 'false');
-    if (terms.selfPickup) return; // разовый самовывоз в памяти — объект не подставляем
+    // Разовый самовывоз в памяти — объект не подставляем. Найм в памяти не
+    // хранится: выбранный найм и ставка остаются (см. screen-main.js).
+    if (terms.selfPickup) { setDeliveryMode('pickup'); return; }
+    if (deliveryMode !== 'hired') setDeliveryMode('own');
     if ('address' in terms) document.getElementById('mc-address').value = terms.address;
     if ('distanceKm' in terms) NumericInput.setFormattedValue(document.getElementById('mc-dist'), terms.distanceKm);
     if ('deliveryChargePerM3' in terms) NumericInput.setFormattedValue(document.getElementById('mc-delivery-charge'), terms.deliveryChargePerM3);
@@ -220,14 +244,23 @@
     var mixerSelect = document.getElementById('mc-mixer');
     var distInput = document.getElementById('mc-dist');
     var addressInput = document.getElementById('mc-address');
-    var selfPickup = document.getElementById('mc-self-pickup').classList.contains('on');
+    var selfPickup = deliveryMode === 'pickup';
+    var hired = deliveryMode === 'hired';
     var placeBtn = document.getElementById('mc-place-order-btn');
     var errorEl = document.getElementById('mc-error');
 
     var maxLoadInput = document.getElementById('mc-max-load');
-    [mixerSelect, distInput, addressInput, maxLoadInput].forEach(function (el) { el.disabled = selfPickup; });
-    document.getElementById('mc-nb-city').disabled = selfPickup;
+    // Найм: адрес, км и цена клиенту активны; миксер, загрузка, соседний
+    // город и цены ГСМ — нет (сторонний перевозчик, см. screen-main.js).
+    [distInput, addressInput].forEach(function (el) { el.disabled = selfPickup; });
+    [mixerSelect, maxLoadInput].forEach(function (el) { el.disabled = selfPickup || hired; });
+    document.getElementById('mc-nb-city').disabled = selfPickup || hired;
+    document.getElementById('mc-fuel-price').disabled = selfPickup || hired;
+    document.getElementById('mc-urea-price').disabled = selfPickup || hired;
     document.getElementById('mc-delivery-charge').disabled = selfPickup;
+    document.getElementById('mc-hire-rate-field').hidden = !hired;
+    var hireRate = hired ? (NumericInput.parseNumber(document.getElementById('mc-hire-rate').value) || 0) : 0;
+    document.getElementById('mc-hire-rate-hint').hidden = !(hired && !(hireRate > 0));
 
     selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
@@ -269,7 +302,7 @@
     }
     var loadHint = ClientMemory.loadHint(mixer, maxLoadLimit, saleVolume);
     var loadHintEl = document.getElementById('mc-max-load-hint');
-    loadHintEl.hidden = selfPickup || !loadHint.text;
+    loadHintEl.hidden = selfPickup || hired || !loadHint.text;
     loadHintEl.textContent = loadHint.text;
     loadHintEl.style.color = loadHint.warn ? '#8C2217' : (loadHint.limited ? '#8A3410' : '');
     maxLoadInput.style.borderColor = loadHint.warn ? '#A62A1E' : (loadHint.limited ? '#B8481A' : '');
@@ -279,7 +312,7 @@
     var addressFilled = selfPickup || !!addressInput.value.trim();
 
     var calc = OrderCalc.run({
-      plant: plant, recipe: recipe, mixer: mixer, data: data, selfPickup: selfPickup, saleVolume: saleVolume,
+      plant: plant, recipe: recipe, mixer: mixer, data: data, deliveryMode: deliveryMode, hireRate: hireRate, saleVolume: saleVolume,
       dist: dist, addressFilled: addressFilled, priceNet: priceNet, vatGrossMode: vatGrossMode,
       nbCity: document.getElementById('mc-nb-city').checked, fuelPrice: fuelPrice, ureaPrice: ureaPrice,
       deliveryChargePerM3: NumericInput.parseNumber(document.getElementById('mc-delivery-charge').value) || 0,
@@ -310,7 +343,7 @@
     var deliveryDetails = document.getElementById('mc-delivery-details');
     deliveryDetails.hidden = selfPickup;
     deliveryDetails.style.borderColor = calc.deliveryProfit < 0 ? '#E3B8B1' : '';
-    document.getElementById('mc-delivery-summary-label').textContent = ClientMemory.deliverySummary(calc.trips, calc.effectiveLoad, calc.loadLimited, dist);
+    document.getElementById('mc-delivery-summary-label').textContent = ClientMemory.deliverySummary(calc.trips, calc.effectiveLoad, calc.loadLimited, dist, hired ? hireRate : null);
     var deliverySummaryEl = document.getElementById('mc-delivery-summary-val');
     deliverySummaryEl.textContent = (calc.deliveryProfit >= 0 ? '+' : '') + Format.fmt(calc.deliveryProfit, 0);
     deliverySummaryEl.style.color = calc.deliveryProfit >= 0 ? '#1F5239' : '#8C2217';
@@ -323,7 +356,7 @@
 
     var deliveryChargeInput = document.getElementById('mc-delivery-charge');
     var deliveryHint = document.getElementById('mc-delivery-hint');
-    if (!selfPickup && calc.deliveryProfit < 0 && calc.trips > 0) {
+    if (!selfPickup && calc.deliveryProfit < 0 && (calc.trips > 0 || (hired && calc.deliveryReady))) {
       deliveryChargeInput.style.borderColor = '#A62A1E';
       deliveryHint.style.color = '#8C2217';
       deliveryHint.textContent = 'Доставка в минус. Безубыточно от ' + Format.fmt(calc.deliveryBreakevenPerM3, 0) + '/м³';
@@ -352,7 +385,7 @@
     placeBtn.disabled = false;
     errorEl.hidden = true;
     lastCalc = OrderCalc.toOrderPayload({
-      plant: plant, recipe: recipe, mixer: mixer, selfPickup: selfPickup, saleVolume: saleVolume, dist: dist,
+      plant: plant, recipe: recipe, mixer: mixer, deliveryMode: deliveryMode, saleVolume: saleVolume, dist: dist,
       address: addressInput.value.trim(), fuelPrice: fuelPrice, ureaPrice: ureaPrice,
       nbCity: document.getElementById('mc-nb-city').checked, vatGrossMode: vatGrossMode
     }, calc);
@@ -372,9 +405,9 @@
     setVatMode(st.vatGross);
     priceDirty = true;
     priceNetStored = st.priceNet;
-    var pickup = document.getElementById('mc-self-pickup');
-    pickup.classList.toggle('on', st.selfPickup);
-    pickup.setAttribute('aria-pressed', st.selfPickup ? 'true' : 'false');
+    setDeliveryMode(st.deliveryMode);
+    if (st.hireRate == null) document.getElementById('mc-hire-rate').value = '';
+    else NumericInput.setFormattedValue(document.getElementById('mc-hire-rate'), st.hireRate);
     document.getElementById('mc-address').value = st.address;
     if (st.distanceKm === '') document.getElementById('mc-dist').value = '';
     else NumericInput.setFormattedValue(document.getElementById('mc-dist'), st.distanceKm);
@@ -400,7 +433,7 @@
     return Object.assign({}, lastCalc, clientPart, { createdAt: createdAt, version: order.version });
   }
 
-  var LOCKABLE = ['mc-recipe', 'mc-volume', 'mc-self-pickup', 'mc-mixer', 'mc-max-load'];
+  var LOCKABLE = ['mc-recipe', 'mc-volume', 'mc-mixer', 'mc-max-load'];
 
   function renderEditUi() {
     var order = OrderEdit.current();
@@ -410,7 +443,8 @@
     diffEl.hidden = !order;
     if (!order) {
       btn.textContent = 'Оформить заказ';
-      ['mc-recipe', 'mc-volume', 'mc-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      ['mc-recipe', 'mc-volume'].forEach(function (id) { document.getElementById(id).disabled = false; });
+      setDeliveryModeDisabled(false);
       return;
     }
     document.getElementById('mc-edit-title').textContent = OrderEdit.bannerTitle(order);
@@ -428,9 +462,10 @@
     var locked = OrderEdit.lockedFields(order).length > 0;
     var lockedHint = document.getElementById('mc-edit-locked');
     lockedHint.hidden = !locked;
-    lockedHint.textContent = OrderEdit.LOCKED_HINT + ': рецепт, объём, самовывоз, миксер и загрузка не меняются.';
+    lockedHint.textContent = OrderEdit.LOCKED_HINT + ': рецепт, объём, режим доставки, миксер и загрузка не меняются.';
     if (locked) LOCKABLE.forEach(function (id) { document.getElementById(id).disabled = true; });
-    else ['mc-recipe', 'mc-volume', 'mc-self-pickup'].forEach(function (id) { document.getElementById(id).disabled = false; });
+    else ['mc-recipe', 'mc-volume'].forEach(function (id) { document.getElementById(id).disabled = false; });
+    setDeliveryModeDisabled(locked);
 
     var payload = editPayload(order);
     btn.textContent = 'Сохранить исправление';
@@ -450,6 +485,9 @@
     document.getElementById('mc-volume').value = '';
     document.getElementById('mc-dist').value = '';
     document.getElementById('mc-address').value = '';
+    // Найм — разовая история: следующий заказ снова «Своя», ставка пустая.
+    setDeliveryMode('own');
+    document.getElementById('mc-hire-rate').value = '';
     document.getElementById('mc-ship-date').value = new Date().toISOString().slice(0, 10);
     // Клиент тоже сбрасывается (в отличие от миксера) — см. tab-main.js.
     selectedClientId = '';
@@ -571,11 +609,11 @@
       render();
     });
 
-    document.getElementById('mc-self-pickup').addEventListener('click', function () {
-      this.classList.toggle('on');
-      this.setAttribute('aria-pressed', this.classList.contains('on') ? 'true' : 'false');
-      render();
+    Array.prototype.forEach.call(document.querySelectorAll('#mc-delivery-mode button'), function (b) {
+      b.addEventListener('click', function () { setDeliveryMode(this.getAttribute('data-mode')); render(); });
     });
+    NumericInput.attach(document.getElementById('mc-hire-rate'));
+    document.getElementById('mc-hire-rate').addEventListener('input', render);
 
     NumericInput.attach(document.getElementById('mc-price'));
     document.getElementById('mc-price').addEventListener('input', function () { priceDirty = true; priceNetStored = netFromField(this); render(); });

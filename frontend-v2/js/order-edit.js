@@ -12,9 +12,18 @@
   var VAT_MULT = 1.22;
   var WINDOW_MS = 24 * 60 * 60 * 1000;
   var SELF_PICKUP = 'Самовывоз';
+  var HIRED = 'Найм';
   var LOCKED_HINT = 'По заказу есть путевые листы — сначала удалите их';
 
-  function isSelfPickup(order) { return order.mixerName === SELF_PICKUP; }
+  // Режим доставки заказа (change order-hired-delivery): own / pickup /
+  // hired; у заказа без поля режима — по снимку mixerName.
+  function deliveryModeOf(order) {
+    if (order.deliveryMode) return order.deliveryMode;
+    if (order.mixerName === SELF_PICKUP) return 'pickup';
+    if (order.mixerName === HIRED) return 'hired';
+    return 'own';
+  }
+  function isSelfPickup(order) { return deliveryModeOf(order) === 'pickup'; }
 
   // Рецепт заказа среди рецептов завода: по сохранённой ссылке, у старых
   // заказов (до change) — по названию. Не нашли — null, поле остаётся пустым.
@@ -28,7 +37,7 @@
   }
 
   function findMixer(order, mixers) {
-    if (isSelfPickup(order)) return null;
+    if (deliveryModeOf(order) !== 'own') return null;
     var list = mixers || [];
     if (order.mixerId) {
       var byId = list.find(function (m) { return m.id === order.mixerId; });
@@ -86,6 +95,8 @@
       priceNet: order.salePrice,
       vatGross: !!order.vatApplied,
       selfPickup: isSelfPickup(order),
+      deliveryMode: deliveryModeOf(order),
+      hireRate: order.hireRatePerM3 != null ? order.hireRatePerM3 : null,
       address: order.address || '',
       distanceKm: isSelfPickup(order) ? '' : order.distanceKm,
       neighborCity: !!order.neighborCity,
@@ -98,21 +109,27 @@
 
   // Поля, заблокированные при путевых листах (ключи — как у formState).
   function lockedFields(order) {
-    return order && order.hasWaybills ? ['recipeId', 'saleVolume', 'selfPickup', 'mixerId', 'maxLoad'] : [];
+    return order && order.hasWaybills ? ['recipeId', 'saleVolume', 'deliveryMode', 'mixerId', 'maxLoad'] : [];
   }
 
   // Снимок полей формы для «есть ли изменения» — одинаково строится из
   // заказа и из payload формы (у них общие имена полей, см. order-calc.js).
   // Сравниваются названия рецепта/миксера: у старых заказов нет id.
   var SNAPSHOT_FIELDS = ['plantId', 'createdAt', 'recipeName', 'saleVolume', 'shipDate', 'clientId', 'salePrice', 'vatApplied',
-    'mixerName', 'address', 'distanceKm', 'neighborCity', 'deliveryChargePerM3', 'maxLoadM3', 'fuelPricePerLiter', 'ureaPricePerLiter'];
+    'mixerName', 'address', 'distanceKm', 'neighborCity', 'deliveryChargePerM3', 'maxLoadM3', 'fuelPricePerLiter', 'ureaPricePerLiter',
+    'deliveryMode', 'hireRatePerM3'];
 
   function snapshot(o) {
     var out = {};
     SNAPSHOT_FIELDS.forEach(function (f) { out[f] = o[f] === undefined ? null : o[f]; });
     if (out.createdAt) out.createdAt = new Date(out.createdAt).toISOString().slice(0, 16);
     if (!out.shipDate && o.createdAt) out.shipDate = moscowYmd(o.createdAt);
-    if (out.mixerName === SELF_PICKUP) { out.distanceKm = 0; out.deliveryChargePerM3 = 0; out.address = ''; out.maxLoadM3 = null; }
+    out.deliveryMode = deliveryModeOf(o);
+    if (out.deliveryMode !== 'hired') out.hireRatePerM3 = null;
+    if (out.deliveryMode === 'pickup') { out.distanceKm = 0; out.deliveryChargePerM3 = 0; out.address = ''; out.maxLoadM3 = null; }
+    // Найм: адрес, км и цена доставки остаются; миксера, загрузки и
+    // соседнего города нет (форма их не отправляет — см. order-calc.js).
+    if (out.deliveryMode === 'hired') { out.maxLoadM3 = null; out.neighborCity = false; }
     return out;
   }
 
@@ -201,7 +218,7 @@
 
   var api = {
     VAT_MULT: VAT_MULT, LOCKED_HINT: LOCKED_HINT,
-    findRecipe: findRecipe, findMixer: findMixer, canEdit: canEdit, formState: formState, lockedFields: lockedFields,
+    deliveryModeOf: deliveryModeOf, findRecipe: findRecipe, findMixer: findMixer, canEdit: canEdit, formState: formState, lockedFields: lockedFields,
     isDirty: isDirty, beforeAfter: beforeAfter, editLines: editLines, bannerTitle: bannerTitle, isTerminalError: isTerminalError,
     toDatetimeLocal: toDatetimeLocal, start: start, open: open, current: current, takeFill: takeFill, releaseFill: releaseFill, finish: finish
   };

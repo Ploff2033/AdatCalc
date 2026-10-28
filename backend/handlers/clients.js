@@ -211,6 +211,20 @@ async function applyOrder(executor, f) {
     return;
   }
 
+  if (f.deliveryMode === 'hired') {
+    // Разовый найм (change order-hired-delivery): объект и цена доставки —
+    // условия клиента, их пишем; миксер, ограничение загрузки и «соседний
+    // город» — свойства нашей доставки, их не трогаем. Сам режим и ставка
+    // не запоминаются: следующий заказ откроется в режиме «Своя».
+    await executor.query(
+      `UPDATE clients SET vat_gross = $2, self_pickup = FALSE, site_address = $3, site_distance_km = $4,
+         delivery_charge_per_m3 = $5, terms_updated_at = now(), terms_source = 'order'
+       WHERE id = $1`,
+      [f.clientId, f.vatApplied, f.address, f.distanceKm, f.deliveryChargePerM3]
+    );
+    return;
+  }
+
   let mixerId = null;
   if (f.mixerId) {
     const { rows } = await executor.query('SELECT id FROM mixers WHERE id = $1', [f.mixerId]);

@@ -203,7 +203,11 @@ function notifyOrderCreated(order) {
   const lines = [
     '🧱 <b>Новый заказ — ' + escapeHtml(order.plantName) + '</b>',
     'Марка: ' + escapeHtml(order.recipeName),
-    'Миксер: ' + escapeHtml(order.mixerName),
+    // Найм (change order-hired-delivery): машину ищут на стороне — вместо
+    // миксера режим и ставка перевозчика.
+    order.deliveryMode === 'hired'
+      ? 'Доставка: Найм · ' + String(order.hireRatePerM3).replace('.', ',') + ' ₽/м³'
+      : 'Миксер: ' + escapeHtml(order.mixerName),
     'Объём: ' + order.saleVolume + ' м³',
     // Ограничение подъезда (change client-list): миксер едет неполным —
     // это должны видеть оператор РБУ и водитель. Без ограничения строки нет.

@@ -957,3 +957,20 @@ ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_thread_id TEXT;
 ALTER TABLE pay_requests ADD COLUMN IF NOT EXISTS recipient_inn TEXT;
 ALTER TABLE pay_requests ADD COLUMN IF NOT EXISTS invoice_number TEXT;
 CREATE INDEX IF NOT EXISTS idx_pay_requests_inn ON pay_requests(recipient_inn, created_at DESC) WHERE recipient_inn IS NOT NULL;
+
+-- ==================== Доставка наёмной техникой (change order-hired-delivery) ====================
+-- Режим доставки заказа — явная колонка вместо прежнего признака
+-- mixer_name = 'Самовывоз': own — свой миксер, pickup — самовывоз, hired —
+-- сторонний перевозчик за ставку за м³ (hire_rate_per_m3, у остальных NULL).
+-- mixer_name остаётся снимком для v1 и печати ('Самовывоз' / 'Найм').
+-- UPDATE идемпотентен: новые заказы «Своя» не получают mixer_name 'Самовывоз'.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_mode TEXT NOT NULL DEFAULT 'own';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS hire_rate_per_m3 NUMERIC;
+UPDATE orders SET delivery_mode = 'pickup' WHERE delivery_mode = 'own' AND mixer_name = 'Самовывоз';
+-- Наёмные заказы, оформленные новым фронтендом на старом сервере (до этой
+-- миграции): режим и ставка тогда не сохранились, но mixer_name = 'Найм' и
+-- delivery_cost_total = ставка × объём — восстанавливаем из них.
+UPDATE orders SET delivery_mode = 'hired', hire_rate_per_m3 = delivery_cost_total / sale_volume
+  WHERE delivery_mode = 'own' AND mixer_name = 'Найм' AND sale_volume > 0;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_delivery_mode_check;
+ALTER TABLE orders ADD CONSTRAINT orders_delivery_mode_check CHECK (delivery_mode IN ('own', 'pickup', 'hired'));

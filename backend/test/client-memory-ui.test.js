@@ -107,3 +107,10 @@ test('Разовые покупатели: ничего не подставля�
   assert.strictEqual(CM.basePriceNet(fiz, M300), 11000);
   assert.strictEqual(plain(CM.priceHint(fiz, M300, false)), 'По прайсу рецепта 11 000 ₽');
 });
+
+// change order-hired-delivery: сводка режима «Найм».
+test('Сводка найма: «Доставка · Найм · 500 ₽/м³ · 30 км»', () => {
+  assert.strictEqual(CM.deliverySummary(0, 0, false, 30, 500), 'Доставка · Найм · 500 ₽/м³ · 30 км');
+  assert.strictEqual(CM.deliverySummary(0, 0, false, 30, 0), 'Доставка · Найм · — ₽/м³ · 30 км');
+  assert.strictEqual(CM.deliverySummary(3, 8, false, 30, null), 'Доставка · 3 рейс(ов) · 30 км');
+});

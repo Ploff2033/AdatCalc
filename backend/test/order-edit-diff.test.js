@@ -37,7 +37,7 @@ test('Дата в часовом поясе Москвы, дата отгруз�
 
 test('Самовывоз: миксер без названия, без госномера', () => {
   const changes = diffOrder(BASE, edit({ mixerName: 'Самовывоз' }));
-  assert.deepStrictEqual(texts(changes), ['Самовывоз: нет → да', 'Миксер: Миксер 1 → —']);
+  assert.deepStrictEqual(texts(changes), ['Доставка: Своя → Самовывоз', 'Миксер: Миксер 1 → —']); // change order-hired-delivery
 });
 
 test('Без изменений — пустой список, шум float не считается', () => {

@@ -10,6 +10,8 @@
 
 const VAT_MULT = 1.22;
 const SELF_PICKUP = 'Самовывоз';
+const HIRED = 'Найм';
+const DELIVERY_MODE_LABELS = { own: 'Своя', pickup: 'Самовывоз', hired: 'Найм' };
 
 // ru-RU разделяет разряды неразрывным пробелом — в журнале и Telegram нужен
 // обычный, иначе строки не совпадают с тем, что набирают в тестах и поиске.
@@ -35,7 +37,14 @@ function plainDate(ymd) {
   return d + '.' + m + '.' + y;
 }
 
-const isSelfPickup = (o) => o.mixerName === SELF_PICKUP;
+// Режим доставки (change order-hired-delivery); у заказа без поля режима
+// (в журнале — снимок до выкатки) — по прежнему признаку в mixerName.
+function deliveryMode(o) {
+  if (o.deliveryMode) return o.deliveryMode;
+  if (o.mixerName === SELF_PICKUP) return 'pickup';
+  if (o.mixerName === HIRED) return 'hired';
+  return 'own';
+}
 const yesNo = (v) => (v ? 'да' : 'нет');
 const text = (v) => ({ value: v ? String(v) : '—', unit: '' });
 
@@ -53,13 +62,14 @@ const FIELDS = [
     ? { value: number(Math.round(o.salePrice * VAT_MULT * 100) / 100), unit: '₽ с НДС' }
     : { value: number(o.salePrice), unit: '₽' })],
   ['vatApplied', 'НДС', (o) => text(o.vatApplied ? 'с НДС' : 'без НДС')],
-  ['selfPickup', 'Самовывоз', (o) => text(yesNo(isSelfPickup(o)))],
+  ['deliveryMode', 'Доставка', (o) => text(DELIVERY_MODE_LABELS[deliveryMode(o)])],
+  ['hireRatePerM3', 'Ставка найма', (o) => (o.hireRatePerM3 == null ? { value: '—', unit: '₽/м³' } : { value: number(o.hireRatePerM3), unit: '₽/м³' })],
   ['address', 'Адрес', (o) => text(o.address)],
   ['distanceKm', 'Км', (o) => ({ value: number(o.distanceKm), unit: 'км' })],
   ['neighborCity', 'Соседний город', (o) => text(yesNo(o.neighborCity))],
   ['deliveryChargePerM3', 'Цена доставки', (o) => ({ value: number(o.deliveryChargePerM3), unit: '₽/м³' })],
   // Только название — госномер в журнал не пишем.
-  ['mixer', 'Миксер', (o) => text(isSelfPickup(o) ? '' : o.mixerName)],
+  ['mixer', 'Миксер', (o) => text(deliveryMode(o) === 'own' ? o.mixerName : '')],
   ['maxLoadM3', 'Макс. загрузка', (o) => (o.maxLoadM3 == null ? text('по вместимости') : { value: number(o.maxLoadM3), unit: 'м³' })],
   ['fuelPricePerLiter', 'Цена топлива', (o) => ({ value: number(o.fuelPricePerLiter), unit: '₽/л' })],
   ['ureaPricePerLiter', 'Цена мочевины', (o) => ({ value: number(o.ureaPricePerLiter), unit: '₽/л' })]

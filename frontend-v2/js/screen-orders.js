@@ -138,6 +138,7 @@
     if (order.cancelledAt) row.style.opacity = '.55';
     var sign = (order.totalProfit || 0) >= 0 ? '#1C1D1B' : '#8C2217';
     var allocated = order.tripCount > 0 ? allocatedTrips(order.id) : 0;
+    var mode = OrderEdit.deliveryModeOf(order);
     var canCancel = !order.cancelledAt && allocated === 0;
     var canDelete = Auth.isAtLeast('admin');
     // Исправление заказа (change order-edit) — вместо прежнего окна «дата/
@@ -149,6 +150,9 @@
       '<div class="stack" style="gap:2px;min-width:0">' +
         '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600">' + order.recipeName + '</span>' +
           (order.vatApplied ? '<span class="chip act" style="height:20px;font-size:11px">с НДС</span>' : '') +
+          // Режим доставки (change order-hired-delivery): найм и самовывоз — без рейсов.
+          (mode === 'hired' ? '<span class="chip act" style="height:20px;font-size:11px">Найм</span>' : '') +
+          (mode === 'pickup' ? '<span class="chip mute" style="height:20px;font-size:11px">Самовывоз</span>' : '') +
           (order.cancelledAt ? '<span class="chip mute" style="height:20px;font-size:11px">Отменён</span>' : '') +
           (editLines.length ? '<button type="button" class="chip warn o-edits-chip" style="height:20px;font-size:11px;border:0;cursor:pointer" aria-expanded="false" title="Журнал исправлений">испр.</button>' : '') +
         '</div>' +
@@ -234,11 +238,14 @@
         '<div class="spread" style="padding:6px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)"><b>Прибыль от бетона</b><span class="num" style="font-weight:600;color:' + mixSign + '">' + Format.fmt(order.mixProfit, 2) + ' · ' + Format.fmtNum(order.mixMarginPercent, 1, '%') + '</span></div>' +
         '<div class="grid-2">' +
           '<div class="stack g6"><b>Доставка — расход</b>' +
-            '<div class="spread"><span>Пробег (1 рейс)</span><span class="num">' + Format.fmtNum(order.roundTripKm, 0, 'км') + '</span></div>' +
-            '<div class="spread"><span>Топливо (1 рейс)</span><span class="num">' + Format.fmt(order.fuelCostPerTrip, 2) + '</span></div>' +
-            '<div class="spread"><span>Амортизация (1 рейс)</span><span class="num">' + Format.fmt(order.amortCostPerTrip, 2) + '</span></div>' +
-            '<div class="spread"><span>Доплата водителю (1 рейс)</span><span class="num">' + Format.fmt(order.surchargePerTrip, 2) + '</span></div>' +
-            '<div class="spread"><span>Рейсов</span><span class="num">' + Format.fmtNum(order.tripCount, 0) + '</span></div>' +
+            (mode === 'hired'
+              // Найм: сторонний перевозчик за ставку за м³, рейсов и ГСМ нет.
+              ? '<div class="spread"><span>Найм</span><span class="num">' + Format.fmt(order.hireRatePerM3, 2) + '/м³ × ' + Format.fmtNum(order.saleVolume, order.saleVolume % 1 ? 1 : 0, 'м³') + ' = ' + Format.fmt(order.deliveryCostTotal, 2) + '</span></div>'
+              : '<div class="spread"><span>Пробег (1 рейс)</span><span class="num">' + Format.fmtNum(order.roundTripKm, 0, 'км') + '</span></div>' +
+                '<div class="spread"><span>Топливо (1 рейс)</span><span class="num">' + Format.fmt(order.fuelCostPerTrip, 2) + '</span></div>' +
+                '<div class="spread"><span>Амортизация (1 рейс)</span><span class="num">' + Format.fmt(order.amortCostPerTrip, 2) + '</span></div>' +
+                '<div class="spread"><span>Доплата водителю (1 рейс)</span><span class="num">' + Format.fmt(order.surchargePerTrip, 2) + '</span></div>' +
+                '<div class="spread"><span>Рейсов</span><span class="num">' + Format.fmtNum(order.tripCount, 0) + '</span></div>') +
             '<div class="spread" style="font-weight:600"><span>Итого расход</span><span class="num">' + Format.fmt(order.deliveryCostTotal, 2) + '</span></div>' +
           '</div>' +
           '<div class="stack g6"><b>Доставка — доход</b>' +
@@ -297,6 +304,8 @@
   // раньше был обрезанный до 7 колонок вариант — по просьбе пользователя
   // ("экспорт... возьми из первой, она куда более информативна").
   function csvEscape(v) { var s = String(v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  var DELIVERY_MODE_LABELS = { own: 'Своя', pickup: 'Самовывоз', hired: 'Найм' };
+
   function csvNum(n) { return (Math.round((n || 0) * 100) / 100).toString().replace('.', ','); }
   function csvDate(iso) {
     var d = new Date(iso);
@@ -314,7 +323,9 @@
       'Себестоимость смеси (₽)', 'Цена (₽/м³)', 'Выручка со смеси (₽)', 'Прибыль от смеси (₽)', 'Рентабельность смеси (%)',
       'Пробег за рейс (км)', 'Топливо за рейс (₽)', 'Амортизация техники за рейс (₽)', 'Доплата водителю (₽)', 'Рейсов',
       'Расход на доставку (₽)', 'Доход от доставки (₽)', 'Прибыль от доставки (₽)', 'Рентабельность доставки (%)',
-      'Выручка всего (₽)', 'С НДС', 'в т.ч. НДС 22% (₽)', 'Чистая прибыль (₽)', 'Прибыль на 1м³ (₽)', 'Рентабельность сделки (%)', 'Расход материалов'
+      'Выручка всего (₽)', 'С НДС', 'в т.ч. НДС 22% (₽)', 'Чистая прибыль (₽)', 'Прибыль на 1м³ (₽)', 'Рентабельность сделки (%)', 'Расход материалов',
+      // change order-hired-delivery — в конец, чтобы не сдвигать прежние колонки.
+      'Доставка', 'Ставка найма, ₽/м³'
     ];
 
     var rows = orders.map(function (o) {
@@ -332,7 +343,8 @@
         csvNum(o.mixCost), csvNum(o.salePrice), csvNum(o.mixRevenue), csvNum(o.mixProfit), csvNum(o.mixMarginPercent),
         csvNum(o.roundTripKm), csvNum(o.fuelCostPerTrip), csvNum(o.amortCostPerTrip), csvNum(o.surchargePerTrip), csvNum(o.tripCount),
         csvNum(o.deliveryCostTotal), csvNum(o.deliveryRevenue), csvNum(o.deliveryProfit), csvNum(o.deliveryMarginPercent),
-        csvNum(o.totalRevenue), o.vatApplied ? 'да' : 'нет', csvNum(ndsAmount), csvNum(o.totalProfit), csvNum(o.profitPerM3), csvNum(o.totalMarginPercent), materialsText
+        csvNum(o.totalRevenue), o.vatApplied ? 'да' : 'нет', csvNum(ndsAmount), csvNum(o.totalProfit), csvNum(o.profitPerM3), csvNum(o.totalMarginPercent), materialsText,
+        DELIVERY_MODE_LABELS[OrderEdit.deliveryModeOf(o)], o.hireRatePerM3 != null ? csvNum(o.hireRatePerM3) : ''
       ];
     });
 

@@ -59,7 +59,11 @@ const ORDER_COLUMNS = [
   // Снимки ссылок на рецепт/миксер (change order-edit) — форма исправления
   // находит по ним рецепт и миксер; у старых заказов NULL, ищем по названию.
   ['recipe_id', 'recipeId'],
-  ['mixer_id', 'mixerId']
+  ['mixer_id', 'mixerId'],
+  // Режим доставки и ставка найма (change order-hired-delivery): own /
+  // pickup / hired; ставка — только у hired, у остальных NULL.
+  ['delivery_mode', 'deliveryMode'],
+  ['hire_rate_per_m3', 'hireRatePerM3']
 ];
 
 // Расход материалов по заказу (снимок: название/ед. на момент заказа, а не
@@ -83,7 +87,7 @@ function sanitizeMaterials(materials) {
 // update() ниже (change order-edit) — тот же снимок, посчитанный заново,
 // с журналом правок.
 function sanitize(body) {
-  return {
+  const f = {
     createdAt: str(body.createdAt, 'createdAt'),
     plantId: str(body.plantId, 'plantId'),
     plantName: str(body.plantName, 'plantName'),
@@ -139,12 +143,44 @@ function sanitize(body) {
     maxLoadM3: sanitizeMaxLoad(body.maxLoadM3),
     // Только для памяти клиента (clients.applyOrder), в orders не пишутся.
     // undefined у recipeId/mixerId — старое тело (закэшированный фронтенд):
-    // цена и миксер в память тогда не попадают. selfPickup без явного флага
-    // — по прежнему признаку самовывоза в заказе.
+    // цена и миксер в память тогда не попадают. Режим доставки без явного
+    // поля — по прежнему признаку самовывоза (см. sanitizeDeliveryMode).
     recipeId: body.recipeId ? String(body.recipeId) : undefined,
     mixerId: body.mixerId === undefined ? undefined : (body.mixerId ? String(body.mixerId) : null),
-    selfPickup: body.selfPickup !== undefined ? !!body.selfPickup : body.mixerName === 'Самовывоз'
+    deliveryMode: sanitizeDeliveryMode(body),
+    hireRatePerM3: null
   };
+  // Наёмный заказ (change order-hired-delivery): ставка обязательна, рейсов
+  // нет — иначе заказ попал бы в разнесение по путевым листам. Миксера и
+  // ограничения загрузки у него нет.
+  if (f.deliveryMode === 'hired') {
+    const rate = Number(body.hireRatePerM3);
+    if (!(rate > 0)) throw new HttpError(400, 'Укажите ставку найма');
+    if (f.tripCount !== 0) throw new HttpError(400, 'У заказа на наёмной технике не может быть рейсов');
+    f.hireRatePerM3 = rate;
+    f.mixerId = f.mixerId === undefined ? undefined : null;
+    f.maxLoadM3 = null;
+  }
+  // Для памяти клиента (clients.applyOrder) — самовывоз выводится из режима.
+  f.selfPickup = f.deliveryMode === 'pickup';
+  return f;
+}
+
+const DELIVERY_MODES = new Set(['own', 'pickup', 'hired']);
+const SELF_PICKUP = 'Самовывоз';
+const HIRED = 'Найм';
+
+// Явный режим из тела; у старого тела (закэшированный фронтенд) режима нет —
+// выводим из прежнего признака selfPickup или снимка mixerName.
+function sanitizeDeliveryMode(body) {
+  if (body.deliveryMode !== undefined && body.deliveryMode !== null) {
+    if (!DELIVERY_MODES.has(body.deliveryMode)) throw new HttpError(400, 'Неизвестный режим доставки');
+    return body.deliveryMode;
+  }
+  if (body.selfPickup !== undefined) return body.selfPickup ? 'pickup' : 'own';
+  if (body.mixerName === SELF_PICKUP) return 'pickup';
+  if (body.mixerName === HIRED) return 'hired';
+  return 'own';
 }
 
 function sanitizeMaxLoad(value) {
@@ -159,7 +195,7 @@ function sanitizeMaxLoad(value) {
 // (NaN — falsy, поэтому `order.address ? ... : ''` во фронтенде просто
 // молча скрывал адрес, а не показывал "NaN"). Заказы БЕЗ адреса — те же
 // самые '' → Number('')=0, тоже falsy — оттого баг был не видно на глаз.
-const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'client_id', 'client_name', 'client_type', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address', 'recipe_id', 'mixer_id']);
+const ORDER_TEXT_COLUMNS = new Set(['plant_id', 'plant_name', 'client_id', 'client_name', 'client_type', 'recipe_name', 'mixer_name', 'mixer_plate', 'driver_name', 'driver_license_number', 'address', 'recipe_id', 'mixer_id', 'delivery_mode']);
 
 function rowToOrder(row, materialRows) {
   const out = { id: row.id };
@@ -170,7 +206,7 @@ function rowToOrder(row, materialRows) {
     // 'YYYY-MM-DD' (см. types.setTypeParser в db.js) — просто пропускаем
     // как есть, Number(v) тут было бы неверно (Number(null)=0, а не "нет даты").
     else if (col === 'ship_date') out[field] = v || null;
-    else if (col === 'max_load_m3') out[field] = v == null ? null : Number(v);
+    else if (col === 'max_load_m3' || col === 'hire_rate_per_m3') out[field] = v == null ? null : Number(v);
     else if (col === 'neighbor_city' || col === 'vat_applied' || ORDER_TEXT_COLUMNS.has(col)) out[field] = v;
     else out[field] = Number(v);
   }
@@ -343,15 +379,14 @@ async function cancel(id) {
   }
 }
 
-const SELF_PICKUP = 'Самовывоз';
 const WORKER_WINDOW_HOURS = 24;
 
 const differs = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) > 0.005;
 
 // Поля, которые нельзя менять, пока по заказу есть путевые листы: от них
 // зависят материалы и число рейсов, а по рейсам уже списана доля брони
-// (waybill-entries.js: рейсы записи / orders.trip_count). Адрес, км и
-// цены — можно: путевой лист хранит свой снимок адреса и км.
+// (waybill-entries.js: рейсы записи / orders.trip_count); режим доставки —
+// тоже: найм и самовывоз без рейсов. Адрес, км и цены — можно: путевой лист хранит свой снимок адреса и км.
 function lockedFieldsChanged(row, f) {
   const recipeChanged = row.recipe_id && f.recipeId ? row.recipe_id !== f.recipeId : row.recipe_name !== f.recipeName;
   const mixerChanged = row.mixer_id && f.mixerId ? row.mixer_id !== f.mixerId : row.mixer_name !== f.mixerName;
@@ -359,7 +394,7 @@ function lockedFieldsChanged(row, f) {
   const loadChanged = (rowLoad == null) !== (f.maxLoadM3 == null) || (rowLoad != null && differs(rowLoad, f.maxLoadM3));
   return recipeChanged || mixerChanged || loadChanged ||
     differs(row.sale_volume, f.saleVolume) || differs(row.trip_count, f.tripCount) ||
-    (row.mixer_name === SELF_PICKUP) !== (f.mixerName === SELF_PICKUP);
+    row.delivery_mode !== f.deliveryMode;
 }
 
 // actor: { role: 'worker' | 'manager' | 'admin', plantId } — plantId только
