@@ -10,17 +10,19 @@ const crypto = require('crypto');
 // контейнера, через него супервизор качает подписку, если напрямую не вышло.
 const BASE_PORT = 10800;
 
-// Подписка — либо base64 (обычный формат v2rayN/Krepost), либо уже открытый
-// список ссылок. base64 бывает с переносами строк, без паддинга и в
-// URL-safe-алфавите — нормализуем всё это перед декодированием.
-function decodeSubscription(body) {
+// Подписка — либо base64 (обычный формат v2rayN), либо уже открытый текст:
+// список ссылок или JSON-массив готовых конфигов Xray (так отвечает Krepost —
+// выяснилось при раскатке). base64 бывает с переносами строк, без паддинга и
+// в URL-safe-алфавите — нормализуем всё это перед декодированием.
+function decodeText(body) {
   const raw = String(body || '').trim();
-  let text = raw;
-  if (!/:\/\//.test(raw)) {
-    const b64 = raw.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-    text = Buffer.from(b64, 'base64').toString('utf8');
-  }
-  return text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (/:\/\//.test(raw) || /^[[{]/.test(raw)) return raw;
+  const b64 = raw.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  return Buffer.from(b64, 'base64').toString('utf8').trim();
+}
+
+function decodeSubscription(body) {
+  return decodeText(body).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
 
 function serverId(uuid, address, port) {
@@ -68,19 +70,72 @@ function parseVless(uri) {
   };
 }
 
-// Строки подписки → { servers, skipped }. skipped — для лога: что именно не
-// взяли (схема ссылки, без самих ключей).
-function parseSubscription(body) {
+// Сервер из VLESS-outbound готового конфига Xray. Обе формы settings:
+// классическая vnext[0].users[0] и плоская (address/port/id, новые Xray).
+// settings/streamSettings берём как есть — провайдер знает свои параметры
+// лучше нашего разбора; убираем только sockopt.dialerProxy (ссылка на
+// соседний outbound вроде "fragment", которого в нашем конфиге нет).
+function serverFromOutbound(ob, remarks) {
+  if (!ob || String(ob.protocol).toLowerCase() !== 'vless' || !ob.settings) return null;
+  const st = ob.settings;
+  const vn = Array.isArray(st.vnext) && st.vnext[0];
+  const user = vn && Array.isArray(vn.users) ? vn.users[0] : null;
+  const address = vn ? vn.address : st.address;
+  const port = Number(vn ? vn.port : st.port);
+  const uuid = user ? user.id : st.id;
+  if (!address || !uuid || !Number.isInteger(port) || port <= 0) return null;
+  const streamSettings = JSON.parse(JSON.stringify(ob.streamSettings || {}));
+  if (streamSettings.sockopt) {
+    delete streamSettings.sockopt.dialerProxy;
+    if (!Object.keys(streamSettings.sockopt).length) delete streamSettings.sockopt;
+  }
+  return {
+    id: serverId(uuid, address, port),
+    name: String(remarks || '').trim() || address,
+    address,
+    port,
+    uuid,
+    raw: { settings: st, streamSettings }
+  };
+}
+
+function parseJsonSubscription(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) { return null; }
+  const configs = Array.isArray(data) ? data : [data];
   const servers = [];
   const skipped = [];
-  const seen = new Set();
-  for (const line of decodeSubscription(body)) {
-    const s = parseVless(line);
-    if (!s) { skipped.push(line.split('://')[0] + '://…'); continue; }
-    if (seen.has(s.id)) continue;
-    seen.add(s.id);
-    servers.push(s);
+  configs.forEach((cfg, i) => {
+    const obs = (cfg && Array.isArray(cfg.outbounds)) ? cfg.outbounds : [];
+    const vless = obs.map((ob) => serverFromOutbound(ob, cfg.remarks)).filter(Boolean);
+    if (!vless.length) skipped.push('конфиг #' + (i + 1) + ' (' + (obs.map((o) => o && o.protocol).filter(Boolean).join(', ') || 'без outbounds') + ')');
+    // В конфиге v2rayN один прокси-outbound (остальные — direct/block);
+    // если их несколько, берём все — у каждого свой порт.
+    vless.forEach((s) => servers.push(s));
+  });
+  return { servers, skipped };
+}
+
+// Подписка → { servers, skipped }. skipped — для лога: что именно не
+// взяли (схема ссылки или номер конфига, без самих ключей).
+function parseSubscription(body) {
+  const text = decodeText(body);
+  const parsed = /^[[{]/.test(text) ? parseJsonSubscription(text) : null;
+  let servers;
+  let skipped;
+  if (parsed) {
+    ({ servers, skipped } = parsed);
+  } else {
+    servers = [];
+    skipped = [];
+    for (const line of text.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) {
+      const s = parseVless(line);
+      if (!s) { skipped.push(line.split('://')[0].slice(0, 20) + '://…'); continue; }
+      servers.push(s);
+    }
   }
+  const seen = new Set();
+  servers = servers.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
   return { servers, skipped };
 }
 
@@ -110,14 +165,18 @@ function buildConfig(servers) {
   const rules = [{ type: 'field', inboundTag: ['in-sub'], outboundTag: 'out-0' }];
   servers.forEach((s, i) => {
     inbounds.push({ tag: 'in-' + i, listen: '0.0.0.0', port: BASE_PORT + 1 + i, protocol: 'socks', settings: { udp: true } });
-    const user = { id: s.uuid, encryption: 'none' };
-    if (s.flow) user.flow = s.flow;
-    outbounds.push({
-      tag: 'out-' + i,
-      protocol: 'vless',
-      settings: { vnext: [{ address: s.address, port: s.port, users: [user] }] },
-      streamSettings: streamSettings(s)
-    });
+    if (s.raw) {
+      outbounds.push({ tag: 'out-' + i, protocol: 'vless', settings: s.raw.settings, streamSettings: s.raw.streamSettings });
+    } else {
+      const user = { id: s.uuid, encryption: 'none' };
+      if (s.flow) user.flow = s.flow;
+      outbounds.push({
+        tag: 'out-' + i,
+        protocol: 'vless',
+        settings: { vnext: [{ address: s.address, port: s.port, users: [user] }] },
+        streamSettings: streamSettings(s)
+      });
+    }
     rules.push({ type: 'field', inboundTag: ['in-' + i], outboundTag: 'out-' + i });
   });
   return { log: { loglevel: 'warning' }, inbounds, outbounds, routing: { rules } };

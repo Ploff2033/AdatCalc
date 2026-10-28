@@ -53,6 +53,8 @@ CMD ["node", "/app/supervisor.js"]
   - `buildManifest(servers, now)`.
 - `xray/supervisor.js` — скачивание, расписание, запись файлов, процесс Xray.
 
+**JSON-подписка** (выяснилось при раскатке: Krepost на UA `v2rayN/6.0` отдаёт JSON-массив полных конфигов Xray, а не ссылки). `parseSubscription` распознаёт JSON (открытым текстом или в base64) и из каждого конфига берёт outbound с `protocol: vless`: `settings` (`vnext` или плоская форма) и `streamSettings` копируются как есть, кроме `sockopt.dialerProxy`, который ссылается на соседний outbound `fragment`, которого в нашем конфиге нет. Имя берётся из `remarks`.
+
 `parseVless` поддерживает транспорт `tcp` и безопасность `reality`/`tls`, как в нынешнем ручном конфиге. Ссылки с другим `type` (ws, grpc) переводятся в соответствующие `streamSettings`, если параметры есть. Если параметров не хватает, ссылка пропускается с записью в лог.
 
 Тесты лежат в `backend/test/xray-subscription.test.js`, `require('../../xray/subscription')`, потому что `npm test` смотрит только в `backend/test/**`.

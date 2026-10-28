@@ -85,3 +85,64 @@ test('Подписка не изменилась / провайдер смени
   assert.strictEqual(sub.planRefresh(prev, ten.slice().reverse()), 'changed');
   assert.strictEqual(sub.planRefresh(null, ten), 'changed', 'первый запуск');
 });
+
+// Krepost отдаёт не ссылки, а JSON-массив готовых конфигов Xray (формат
+// v2rayN «полный конфиг») — выяснилось при раскатке. Структура как в
+// реальном ответе, ключи вымышленные.
+function jsonConfig(i, extra) {
+  return Object.assign({
+    remarks: '🇳🇱 Сервер ' + i,
+    dns: { servers: ['https://1.1.1.1/dns-query', '1.1.1.1', '1.0.0.1'], queryStrategy: 'UseIPv4' },
+    inbounds: [{ tag: 'socks', port: 10808, listen: '127.0.0.1', protocol: 'socks' }],
+    outbounds: [
+      {
+        tag: 'proxy',
+        protocol: 'vless',
+        settings: { vnext: [{ address: 'srv' + i + '.example.net', port: 443, users: [{ id: '00000000-0000-4000-8000-00000000000' + (i % 10), encryption: 'none', flow: 'xtls-rprx-vision' }] }] },
+        streamSettings: {
+          network: 'tcp',
+          security: 'reality',
+          realitySettings: { serverName: 'srv' + i + '.example.net', fingerprint: 'firefox', publicKey: 'TESTpublicKey' + i, shortId: 'ab' + i },
+          sockopt: { dialerProxy: 'fragment' }
+        }
+      },
+      { tag: 'fragment', protocol: 'freedom', settings: { fragment: { packets: 'tlshello' } } },
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole' }
+    ],
+    routing: { rules: [] }
+  }, extra);
+}
+
+test('JSON-подписка (массив конфигов Xray): по серверу из каждого конфига', () => {
+  const body = JSON.stringify([1, 2, 3].map((i) => jsonConfig(i)).concat([
+    { remarks: 'Только direct', outbounds: [{ tag: 'direct', protocol: 'freedom' }] }
+  ]));
+  const { servers, skipped } = sub.parseSubscription(body);
+  assert.strictEqual(servers.length, 3);
+  assert.deepStrictEqual(servers.map((s) => s.name), ['🇳🇱 Сервер 1', '🇳🇱 Сервер 2', '🇳🇱 Сервер 3']);
+  assert.deepStrictEqual(skipped, ['конфиг #4 (freedom)']);
+  // То же самое, завёрнутое в base64.
+  assert.strictEqual(sub.parseSubscription(Buffer.from(body).toString('base64')).servers.length, 3);
+
+  const cfg = sub.buildConfig(servers);
+  assert.deepStrictEqual(cfg.outbounds[1], {
+    tag: 'out-1',
+    protocol: 'vless',
+    settings: { vnext: [{ address: 'srv2.example.net', port: 443, users: [{ id: '00000000-0000-4000-8000-000000000002', encryption: 'none', flow: 'xtls-rprx-vision' }] }] },
+    // dialerProxy указывал на соседний outbound "fragment", которого у нас нет, — убран.
+    streamSettings: { network: 'tcp', security: 'reality', realitySettings: { serverName: 'srv2.example.net', fingerprint: 'firefox', publicKey: 'TESTpublicKey2', shortId: 'ab2' } }
+  });
+  assert.strictEqual(cfg.inbounds.find((x) => x.tag === 'in-2').port, 10803);
+  const m = JSON.stringify(sub.buildManifest(servers, Date.now()));
+  assert.ok(!m.includes('TESTpublicKey') && !m.includes('00000000-0000-4000'));
+});
+
+test('JSON-подписка: плоская форма settings и одиночный объект', () => {
+  const flat = jsonConfig(5);
+  flat.outbounds[0].settings = { address: 'srv5.example.net', port: 8443, id: '00000000-0000-4000-8000-000000000005', encryption: 'none' };
+  const { servers } = sub.parseSubscription(JSON.stringify(flat));
+  assert.strictEqual(servers.length, 1);
+  assert.deepStrictEqual([servers[0].address, servers[0].port], ['srv5.example.net', 8443]);
+  assert.deepStrictEqual(sub.buildConfig(servers).outbounds[0].settings, flat.outbounds[0].settings);
+});

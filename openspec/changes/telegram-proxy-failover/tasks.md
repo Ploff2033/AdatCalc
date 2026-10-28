@@ -13,6 +13,8 @@
   - `streamSettings` для `reality`/`tls` и `tcp`, как в нынешнем ручном конфиге.
 - [x] 1.4 `buildManifest(servers, now, proxyHost)`: `refreshedAt` и `servers[{ id, name, address, proxyUrl }]`, без uuid и ключей.
 
+- [x] 1.5 JSON-подписка (массив конфигов Xray, как отдаёт Krepost): VLESS-outbound из каждого конфига, `remarks` → имя, без `sockopt.dialerProxy`.
+
 ## 2. Супервизор и образ (`xray/`)
 
 - [x] 2.1 `xray/supervisor.js`: запуск `xray run -c /state/config.json` дочерним процессом, перезапуск через 5 с при падении, `SIGTERM` и новый запуск при смене конфига.
@@ -78,6 +80,7 @@
   - в манифесте нет uuid и ключей;
   - имя из `#`, иначе адрес.
 - [x] 6.2 `buildConfig` на ссылке, эквивалентной нынешнему ручному конфигу: outbound совпадает по `flow`/`reality`/`publicKey`/`shortId`/`serverName`/`fingerprint`.
+- [x] 6.2a «Подписка из готовых конфигов Xray»: JSON-массив и base64 от него, плоская форма `settings`, конфиг без VLESS пропущен, `dialerProxy` убран.
 - [x] 6.3 «Подписка не изменилась» и «Провайдер сменил серверы»: сравнение по набору id, решение «только `refreshedAt`» против «пересборка» (логика выбора вынесена в чистую функцию).
 - [x] 6.4 `backend/test/telegram-delivery.test.js` (подмена `transport.post` по `proxyUrl`, манифест во временном файле) — поиск сервера:
   - «Текущий сервер умер»: 3 → 4, следующее сообщение сразу через 4;
