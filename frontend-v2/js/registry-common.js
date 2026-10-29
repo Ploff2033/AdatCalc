@@ -392,78 +392,6 @@
     });
   }
 
-  // ---------- копирование получателя ----------
-
-  // Кнопка «Скопировать» рядом с получателем — для бухгалтера и admin, чтобы
-  // не перепечатывать название в банк-клиент. Это <span role="button">, а не
-  // <button>: она живёт и внутри строки таблицы, которая сама <button>.
-  var COPY_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
-
-  function copyBtn(text, what) {
-    if (!text) return '';
-    return '<span class="rg-copy" role="button" tabindex="0" data-copy="' + esc(text) + '" title="Скопировать ' + esc(what || '') + '" aria-label="Скопировать ' + esc(what || '') + '">' + COPY_ICON + '</span>';
-  }
-
-  // Clipboard API есть только в «безопасном» контексте (https, localhost);
-  // если сервер открыт по http — запасной путь через скрытое поле и execCommand.
-  function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
-    }
-    return Promise.resolve(legacyCopy(text));
-  }
-
-  function legacyCopy(text) {
-    var ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
-    document.body.appendChild(ta);
-    ta.select();
-    ta.setSelectionRange(0, text.length);
-    var ok = false;
-    try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
-    ta.remove();
-    return ok;
-  }
-
-  function toast(text, kind) {
-    var el = document.getElementById('rg-toast');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'rg-toast';
-      el.setAttribute('role', 'status');
-      document.body.appendChild(el);
-    }
-    el.className = 'rg-toast' + (kind ? ' ' + kind : '');
-    el.textContent = text;
-    el.hidden = false;
-    clearTimeout(toast.t);
-    toast.t = setTimeout(function () { el.hidden = true; }, 2200);
-  }
-
-  // Один делегированный обработчик на документ, в фазе перехвата — чтобы клик
-  // по иконке не открывал карточку и не переключал отметку в режиме выбора.
-  function onCopy(e) {
-    var btn = e.target.closest && e.target.closest('[data-copy]');
-    if (!btn) return;
-    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    e.stopPropagation();
-    var text = btn.dataset.copy;
-    copyText(text).then(function (ok) {
-      if (ok) {
-        btn.classList.add('done');
-        setTimeout(function () { btn.classList.remove('done'); }, 1200);
-        toast('Скопировано: ' + text);
-      } else {
-        toast('Не удалось скопировать — выделите название вручную', 'bad');
-      }
-    });
-  }
-  document.addEventListener('click', onCopy, true);
-  document.addEventListener('keydown', onCopy, true);
-
   // ---------- пакетное решение (change reestr-bulk) ----------
 
   // Контроллер режима выбора — общий для телефона (mobile-registry.js) и ПК
@@ -946,9 +874,6 @@
     readForm: readForm,
     bindForm: bindForm,
     docTarget: docTarget,
-    createSelection: createSelection,
-    copyBtn: copyBtn,
-    copyText: copyText,
-    toast: toast
+    createSelection: createSelection
   };
 })();

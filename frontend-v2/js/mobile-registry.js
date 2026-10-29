@@ -87,7 +87,7 @@
       '<div class="spread" style="gap:10px"><span class="num" style="font-size:12px">' + check + '<span class="' + (s.overdue ? 'rg-overdue-text' : 'hint') + '">' + due + '</span>' +
         '<span class="hint"> · ' + esc(it.number) + ' · ' + esc(it.unitName) + '</span></span>' + R.statusChip(it) + '</div>' +
       '<div class="rgm-title"><span>' + esc(it.purpose) + '</span><span class="num">' + R.money(it.amount) + '</span></div>' +
-      '<span class="rgm-recipient">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') + '</span>' +
+      '<span class="rgm-recipient">' + esc(it.recipient) + '</span>' +
       '<span class="hint">' + esc(it.categoryName) + (it.applicant ? ' · ' + esc(it.applicant) : '') + '</span>' +
       (thumbs ? '<div class="rgm-thumbs">' + thumbs + '</div>' : '') +
       progress + comment + actions +
@@ -237,7 +237,7 @@
       '<section class="rgm-panel">' +
         '<div class="spread"><span class="num hint">' + esc(it.number) + ' · ' + R.tsDate(it.createdAt) + '</span>' + R.statusChip(it) + '</div>' +
         '<div class="rgm-title" style="font-size:16px"><span>' + esc(it.purpose) + '</span><span class="num" style="font-size:20px">' + R.money(it.amount) + '</span></div>' +
-        kv('Получатель', esc(it.recipient) + R.copyBtn(it.recipient, 'получателя')) +
+        kv('Получатель', esc(it.recipient)) +
         kv('Подразделение', esc(it.unitName)) +
         kv('Категория', esc(it.categoryName)) +
         kv('Заявитель', esc(it.applicant)) +
