@@ -5,14 +5,40 @@
   // макете Orders.dc.html.
   var ROW_COLS = '120px minmax(0,1fr) 140px 170px 70px 44px';
   var plantFilterValue = '';
+  // Отбор (change orders-filter-search): живёт до перезагрузки страницы —
+  // переживает переход между экранами и State.loadAll(), в браузере не хранится.
+  var DEFAULT_FILTER = { period: 'all', from: '', to: '', clientKey: '', query: '' };
+  var filter = Object.assign({}, DEFAULT_FILTER);
+  var clientOptions = { none: 0, items: [] }; // последний список клиентов (OrderFilter.apply)
+  var clientHl = 0;                            // подсвеченный пункт выпадающего списка
   var openMenuId = null;
+  var ICON_X = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   var HTML =
     '<div class="page-head">' +
       '<div class="page-title-group"><span class="cap" id="o-scope-label">Заказы</span><h1>Заказы</h1></div>' +
       '<div class="page-head-actions"><button class="btn ghost sm" id="o-export-btn">Экспорт в Excel</button><a href="#/main" class="btn pri sm">Новый заказ</a></div>' +
     '</div>' +
-    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-      '<select class="inp" id="o-plant-filter" style="width:200px" aria-label="Завод" hidden></select>' +
+    '<div class="stack" style="gap:6px">' +
+      '<div class="o-filters">' +
+        '<select class="inp" id="o-plant-filter" style="width:200px" aria-label="Завод" hidden></select>' +
+        '<select class="inp" id="o-period" style="width:170px" aria-label="Период">' +
+          '<option value="all">Всё время</option><option value="30d">30 дней</option><option value="month">Этот месяц</option><option value="custom">Выбрать даты…</option>' +
+        '</select>' +
+        '<span class="o-dates" id="o-dates" hidden>' +
+          '<label for="o-from">с</label><input type="date" class="inp" id="o-from">' +
+          '<label for="o-to">по</label><input type="date" class="inp" id="o-to">' +
+        '</span>' +
+        '<div class="o-field o-client">' +
+          '<input class="inp" id="o-client" placeholder="Все клиенты" autocomplete="off" spellcheck="false" role="combobox" aria-label="Клиент" aria-expanded="false" aria-controls="o-client-list" aria-autocomplete="list">' +
+          '<button type="button" class="o-clear" id="o-client-clear" aria-label="Очистить клиента" hidden>' + ICON_X + '</button>' +
+          '<div class="o-dd" id="o-client-list" role="listbox" hidden></div>' +
+        '</div>' +
+        '<div class="o-field o-search">' +
+          '<span class="o-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></span>' +
+          '<input class="inp" id="o-search" placeholder="Адрес, рецепт, объём, миксер…" autocomplete="off" spellcheck="false" aria-label="Поиск по заказам">' +
+          '<button type="button" class="o-clear" id="o-search-clear" aria-label="Очистить поиск" hidden>' + ICON_X + '</button>' +
+        '</div>' +
+      '</div>' +
       '<span class="hint" id="o-rent-hint"></span>' +
     '</div>' +
     '<div class="grid-4" id="o-kpi"></div>' +
@@ -20,6 +46,10 @@
       '<div class="row head" style="grid-template-columns:' + ROW_COLS + '"><div>Время</div><div>Смесь и маршрут</div><div class="r">К оплате</div><div class="r">Прибыль</div><div class="r">Рент.</div><div></div></div>' +
       '<div id="o-list"></div>' +
       '<p class="empty-state" id="o-empty" hidden>Заказов пока нет.</p>' +
+      '<div class="empty-state stack" id="o-nothing" style="align-items:center;gap:14px" hidden>' +
+        '<span style="font-size:16px;color:var(--ink-soft)">Нет заказов по выбранным условиям</span>' +
+        '<button type="button" class="btn ghost sm" id="o-reset">Сбросить фильтры</button>' +
+      '</div>' +
     '</section>';
 
   // Общее плавающее меню ⋯ — тот же приём и по той же причине, что и
@@ -108,9 +138,9 @@
   function timeLabel(iso) { return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
 
   function renderKpi(orders) {
-    var volume = orders.reduce(function (s, o) { return s + (o.saleVolume || 0); }, 0);
-    var pay = orders.reduce(function (s, o) { return s + (o.totalRevenue || 0); }, 0);
-    var profit = orders.reduce(function (s, o) { return s + (o.totalProfit || 0); }, 0);
+    // Те же суммы, что в заголовках дней (OrderFilter.totals).
+    var t = OrderFilter.totals(orders);
+    var volume = t.volume, pay = t.pay;
     var waiting = orders.filter(function (o) {
       var entries = (State.data.waybillEntries || []).filter(function (e) { return e.orderId === o.id; });
       var allocated = entries.reduce(function (s, e) { return s + e.tripCount; }, 0);
@@ -291,10 +321,105 @@
     plantFilterValue = select.value;
   }
 
-  function filteredOrders() {
-    var orders = (State.data.orders || []).slice();
-    if (plantFilterValue) orders = orders.filter(function (o) { return o.plantId === plantFilterValue; });
-    return orders;
+  // Завод + период + клиент + поиск (OrderFilter.apply). Попутно запоминает
+  // список клиентов и сбрасывает клиента, которого в нём больше нет.
+  function applyFilter() {
+    var res = OrderFilter.apply(State.data.orders || [], {
+      plantId: plantFilterValue, period: filter.period, from: filter.from, to: filter.to, clientKey: filter.clientKey, query: filter.query
+    }, { clients: State.data.clients, now: new Date() });
+    filter.clientKey = res.clientKey;
+    clientOptions = res.options;
+    return res;
+  }
+
+  function filteredOrders() { return applyFilter().orders; }
+
+  // --- Поле «Клиент»: ввод с выпадающими подсказками ---
+
+  function clientLabel(key) {
+    if (!key) return '';
+    if (key === 'none') return 'Без клиента';
+    var it = clientOptions.items.filter(function (i) { return i.key === key; })[0];
+    return it ? it.label : '';
+  }
+
+  // Пункты выпадающего списка: «Все клиенты», «Без клиента», затем клиенты,
+  // подходящие под набранный текст.
+  function clientDropdownItems(typed) {
+    return [{ key: '', label: 'Все клиенты', html: 'Все клиенты' }, { key: 'none', label: 'Без клиента', html: 'Без клиента', count: clientOptions.none }]
+      .concat(OrderFilter.matchOptions(clientOptions.items, typed).map(function (it) {
+        return { key: it.key, label: it.label, html: OrderFilter.highlight(it.label, typed), count: it.count };
+      }));
+  }
+
+  function renderClientDropdown() {
+    var input = document.getElementById('o-client');
+    var list = document.getElementById('o-client-list');
+    var items = clientDropdownItems(input.value);
+    if (clientHl >= items.length) clientHl = items.length - 1;
+    list.innerHTML = items.map(function (it, i) {
+      return (i === 2 ? '<hr>' : '') +
+        '<button type="button" role="option" tabindex="-1" class="o-dd-item' + (i === clientHl ? ' on' : '') + '" data-i="' + i + '" aria-selected="' + (it.key === filter.clientKey) + '">' +
+          '<span>' + it.html + '</span>' + (it.count != null ? '<span class="n">' + it.count + '</span>' : '') +
+        '</button>';
+    }).join('') + (items.length === 2 && input.value.trim() ? '<hr><span class="hint" style="padding:6px 12px;display:block">Клиентов не найдено</span>' : '');
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    Array.prototype.forEach.call(list.querySelectorAll('.o-dd-item'), function (btn) {
+      // mousedown, а не click: срабатывает раньше blur поля, который закрывает список.
+      btn.addEventListener('mousedown', function (e) { e.preventDefault(); chooseClient(items[+btn.dataset.i].key); });
+    });
+  }
+
+  function closeClientDropdown() {
+    var input = document.getElementById('o-client');
+    document.getElementById('o-client-list').hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    input.value = clientLabel(filter.clientKey); // недовыбранный текст ничего не отбирает
+  }
+
+  function chooseClient(key) {
+    filter.clientKey = key;
+    var input = document.getElementById('o-client');
+    closeClientDropdown();
+    input.blur();
+    render();
+  }
+
+  function onClientKey(e) {
+    var list = document.getElementById('o-client-list');
+    var count = clientDropdownItems(e.target.value).length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      clientHl = (clientHl + (e.key === 'ArrowDown' ? 1 : count - 1)) % count;
+      renderClientDropdown();
+    } else if (e.key === 'Enter' && !list.hidden) {
+      e.preventDefault();
+      chooseClient(clientDropdownItems(e.target.value)[clientHl].key);
+    } else if (e.key === 'Escape') {
+      e.target.blur();
+    }
+  }
+
+  // Значения элементов строки фильтров из состояния (после перехода между
+  // экранами экран строится заново, а выбор остаётся).
+  function syncFilterControls() {
+    document.getElementById('o-period').value = filter.period;
+    document.getElementById('o-dates').hidden = filter.period !== 'custom';
+    document.getElementById('o-from').value = filter.from;
+    document.getElementById('o-to').value = filter.to;
+    var client = document.getElementById('o-client');
+    if (document.activeElement !== client) client.value = clientLabel(filter.clientKey);
+    document.getElementById('o-client-clear').hidden = !filter.clientKey;
+    var search = document.getElementById('o-search');
+    if (search.value !== filter.query) search.value = filter.query;
+    document.getElementById('o-search-clear').hidden = !filter.query;
+  }
+
+  function resetFilters() {
+    plantFilterValue = '';
+    filter = Object.assign({}, DEFAULT_FILTER);
+    render();
   }
 
   // Экспорт — тот же полный 33-колоночный формат, что и в v1
@@ -353,7 +478,7 @@
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'zakazy-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = OrderFilter.csvFileName(OrderFilter.periodRange(filter.period, filter.from, filter.to, new Date()), new Date());
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -367,21 +492,29 @@
       ? 'Оранжевым — заказы с рентабельностью ниже ' + Format.fmtNum(threshold, 1, '%')
       : '';
     var orders = filteredOrders();
+    syncFilterControls();
     renderKpi(orders);
     var list = document.getElementById('o-list');
     list.innerHTML = '';
-    document.getElementById('o-empty').hidden = orders.length > 0;
-    var lastDay = null;
+    var noOrdersAtAll = !(State.data.orders || []).length;
+    document.getElementById('o-empty').hidden = !noOrdersAtAll;
+    document.getElementById('o-nothing').hidden = noOrdersAtAll || orders.length > 0;
+    // Заказы уже идут новыми сверху — группа дня = подряд идущие заказы.
+    var days = [];
     orders.forEach(function (order) {
       var key = dayKey(order.createdAt);
-      if (key !== lastDay) {
-        var sep = document.createElement('div');
-        sep.style.cssText = 'padding:8px 16px;background:var(--surface-3);font-weight:600;font-size:13px;border-bottom:1px solid var(--border)';
-        sep.textContent = dayLabel(order.createdAt);
-        list.appendChild(sep);
-        lastDay = key;
-      }
-      list.appendChild(buildOrderRow(order));
+      if (!days.length || days[days.length - 1].key !== key) days.push({ key: key, orders: [] });
+      days[days.length - 1].orders.push(order);
+    });
+    days.forEach(function (day) {
+      // Итоги дня — по заказам дня, попавшим в отбор, теми же суммами, что плитки.
+      var t = OrderFilter.totals(day.orders);
+      var sep = document.createElement('div');
+      sep.className = 'o-day';
+      sep.innerHTML = '<span>' + escapeHtml(dayLabel(day.orders[0].createdAt)) + '</span>' +
+        '<span class="num o-day-sum">' + OrderFilter.countLabel(t.count) + ' · ' + Format.fmtNum(t.volume, t.volume % 1 ? 1 : 0, 'м³') + ' · к оплате ' + Format.fmt(t.pay, 0) + '</span>';
+      list.appendChild(sep);
+      day.orders.forEach(function (order) { list.appendChild(buildOrderRow(order)); });
     });
   }
 
@@ -389,6 +522,38 @@
     document.getElementById('page-orders').innerHTML = HTML;
     document.getElementById('o-export-btn').addEventListener('click', exportToExcel);
     document.getElementById('o-plant-filter').addEventListener('change', function () { plantFilterValue = this.value; render(); });
+    document.getElementById('o-period').addEventListener('change', function () {
+      filter.period = this.value;
+      if (filter.period === 'custom') {
+        var d = OrderFilter.customDefaults(new Date());
+        filter.from = d.from;
+        filter.to = d.to;
+      }
+      render();
+    });
+    document.getElementById('o-from').addEventListener('change', function () { filter.from = this.value; render(); });
+    document.getElementById('o-to').addEventListener('change', function () { filter.to = this.value; render(); });
+
+    var client = document.getElementById('o-client');
+    client.addEventListener('focus', function () { client.select(); clientHl = 0; renderClientDropdown(); });
+    client.addEventListener('input', function () {
+      // Подсветка — на первом найденном клиенте, а если никого — на «Все клиенты».
+      clientHl = client.value.trim() && OrderFilter.matchOptions(clientOptions.items, client.value).length ? 2 : 0;
+      renderClientDropdown();
+    });
+    client.addEventListener('keydown', onClientKey);
+    client.addEventListener('blur', closeClientDropdown);
+    document.getElementById('o-client-clear').addEventListener('click', function () { chooseClient(''); });
+
+    // Поиск по мере ввода: перерисовываются список и плитки, само поле не
+    // пересоздаётся — фокус и курсор остаются на месте.
+    document.getElementById('o-search').addEventListener('input', function () { filter.query = this.value; render(); });
+    document.getElementById('o-search-clear').addEventListener('click', function () {
+      filter.query = '';
+      render();
+      document.getElementById('o-search').focus();
+    });
+    document.getElementById('o-reset').addEventListener('click', resetFilters);
     document.addEventListener('click', function () { if (openMenuId) closeAllMenus(); });
   }
 
