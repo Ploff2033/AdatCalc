@@ -268,7 +268,9 @@
     }
     var best = null;
     for (i = 0; i < lines.length; i++) {
-      if (/^\s*итого/i.test(lines[i]) && !/ндс/i.test(lines[i])) {
+      // Перед «Итого» OCR иногда ставит мусор («§ Итого», «: Итого») — допускаем
+      // любые не-буквы и не-цифры в начале строки.
+      if (/^[^А-Яа-яЁёA-Za-z0-9]*итого(?![а-я])/i.test(lines[i]) && !/ндс(?!\s*:?\s*\d)/i.test(lines[i].replace(/с\s+ндс/i, ''))) {
         sums = moneyInLine(lines[i]);
         if (sums.length) best = Math.max(best || 0, sums[sums.length - 1]);
       }
