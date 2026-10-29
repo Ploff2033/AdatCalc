@@ -37,6 +37,21 @@
     return word.replace(/[A-Za-z]/g, function (ch) { return LAT_TO_CYR[ch] || ch; });
   }
 
+  // Чистка типичных ошибок OCR — ТОЧЕЧНО, без трогания остальной латиницы
+  // (названия «FORA», «MegaFon», номера счетов RU203023711 остаются как есть):
+  // - форма организации из латиницы и цифр («OOO», «O0О», «AO», «ПAO») —
+  //   только когда сразу за ней кавычки названия;
+  // - «ИНН», прочитанное как «MHH» / «ИHH» / «WHH», — только перед цифрами ИНН.
+  function fixOrgForm(m, pre, form) {
+    return pre + form.replace(/[O0]/g, 'О').replace(/A/g, 'А').replace(/[3Z]/g, 'З');
+  }
+
+  function fixOcrLine(line) {
+    return line
+      .replace(/(^|[^A-Za-zА-Яа-яЁё0-9])([OО0]{3}|[OО0][AА][OО0]|П[AА][OО0]|[3ЗZ][AА][OО0]|[AА][OО0])(?=\s*["«„“])/g, fixOrgForm)
+      .replace(/(^|[^A-Za-zА-Яа-яЁё])(?:[MИWU][HН][HН])(?=\s*[:!.]?\s*(?:\/\s*КПП\s*:?\s*)?\d{10})/g, '$1ИНН');
+  }
+
   function normalize(text) {
     return String(text || '')
       .replace(/\r\n?/g, '\n')
@@ -46,7 +61,7 @@
       .split('\n')
       .map(function (line) {
         // Рамки таблиц, которые OCR читает как «|», «[», «]».
-        line = line.replace(/[|\[\]¦]/g, ' ');
+        line = fixOcrLine(line.replace(/[|\[\]¦]/g, ' '));
         return line.split(' ').map(fixMixedWord).join(' ').replace(/ {2,}/g, ' ').trim();
       })
       .join('\n');
@@ -157,7 +172,7 @@
 
   // ---------- разбор текста ----------
 
-  var INN_RE = /ИНН(?:\s*\/\s*КПП)?\s*:?\s*(\d{12}|\d{10})(?!\d)/gi;
+  var INN_RE = /ИНН(?:\s*\/\s*КПП)?\s*[:!.]?\s*(\d{12}|\d{10})(?!\d)/gi;
   var BUYER_RE = /(покупатель|плательщик|заказчик|организация)\s*(?:\([^)]*\))?\s*:?/i;
   var SELLER_RE = /(поставщик|исполнитель|получатель|продавец)/i;
 
@@ -200,7 +215,9 @@
     candidates.sort(function (a, b) { return b.score - a.score || a.line - b.line; });
     var best = candidates[0];
     // Название — ближайшее к строке ИНН, не покупатель и не наше юрлицо.
-    var name = null;
+    // Самозанятый / физлицо: «Гражданин(ка) [РФ | Российской Федерации]» и
+    // ФИО — часто на следующей строке (акты с самозанятыми).
+    var name = citizenNear(lines, best.line);
     for (var d = 0; d <= 3 && !name; d++) {
       [best.line - d, best.line + d].forEach(function (j) {
         if (name || j < 0 || j >= lines.length) return;
@@ -209,6 +226,18 @@
       });
     }
     return { inn: best.inn, name: name };
+  }
+
+  function citizenNear(lines, at) {
+    var FIO = /([А-Я][а-я]+)\s+([А-Я][а-я]+)\s+([А-Я][а-я]+(?:вич|вна|ична|ич|оглы|кызы))/;
+    for (var i = Math.max(0, at - 14); i <= Math.min(lines.length - 1, at + 2); i++) {
+      var m = /граждан(ин|ка)/i.exec(lines[i]);
+      if (!m) continue;
+      var w = lines.slice(i, i + 3).join(' ').slice(m.index);
+      var f = FIO.exec(w.replace(/граждан(ин|ка)\s+(?:РФ|Российской\s+Федерации)?/i, ''));
+      if (f) return 'Граждан' + m[1] + ' ' + f[1] + ' ' + f[2] + ' ' + f[3];
+    }
+    return null;
   }
 
   function findInvoice(text) {

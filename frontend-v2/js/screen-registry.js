@@ -10,8 +10,12 @@
   var R = window.Registry;
   var esc = R.esc;
 
-  var COLS = '118px minmax(0,1fr) minmax(0,1.7fr) 112px 118px 150px 112px 112px 118px';
-  var HEAD_CELLS = '<div>№ · срок</div><div>Заявитель</div><div>Получатель · цель</div><div>Категория</div><div class="r">Сумма</div><div>Статус</div><div class="r">Оплачено</div><div class="r">К оплате</div><div class="r">Не оплачено</div>';
+  // Получателю — самая широкая колонка: длинные названия («Индивидуальный
+  // предприниматель …») переносятся по словам, а не режутся.
+  // «№ · срок» и заявитель с подразделением — в одной колонке, чтобы
+  // освободить место получателю (самая широкая колонка, перенос по словам).
+  var COLS = '120px minmax(260px,1fr) 92px 104px 124px 96px 96px 104px';
+  var HEAD_CELLS = '<div>№ · заявитель</div><div>Получатель · цель</div><div>Категория</div><div class="r">Сумма</div><div>Статус</div><div class="r">Оплачено</div><div class="r">К оплате</div><div class="r">Не оплачено</div>';
 
   // Пакетное решение (change reestr-bulk): в режиме выбора слева колонка
   // отметок, внизу панель (Registry.createSelection, общий с телефоном).
@@ -148,9 +152,9 @@
     }
     var picked = sel.isOn() && sel.has(it.id);
     return '<button type="button" class="row rg-row' + (s.overdue ? ' overdue' : '') + (picked ? ' picked' : '') + '" data-id="' + esc(it.id) + '" style="grid-template-columns:' + cols() + '">' + mark +
-      '<div class="stack" style="gap:1px"><span class="num" style="font-weight:600">' + esc(it.number) + '</span>' + dueCell(it) + '</div>' +
-      '<div class="stack" style="gap:1px;min-width:0"><span class="rg-ellipsis">' + (esc(it.applicant) || '<span class="hint">—</span>') + '</span><span class="hint rg-ellipsis">' + esc(it.unitName) + '</span></div>' +
-      '<div class="stack" style="gap:1px;min-width:0"><span class="rg-ellipsis" style="font-weight:600">' + esc(it.recipient) +
+      '<div class="stack" style="gap:1px;min-width:0"><span class="num" style="font-weight:600">' + esc(it.number) + '</span>' + dueCell(it) +
+        '<span class="hint rg-ellipsis" title="' + esc((it.applicant ? it.applicant + ' · ' : '') + it.unitName) + '">' + (it.applicant ? esc(it.applicant) + ' · ' : '') + esc(it.unitName) + '</span></div>' +
+      '<div class="stack" style="gap:1px;min-width:0"><span class="rg-recipient">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') +
         (fileCount ? ' <span class="rg-filecount" title="Файлов: ' + fileCount + '">' + fileCount + '</span>' : '') + '</span>' +
         '<span class="hint rg-ellipsis">' + esc(it.purpose) + '</span></div>' +
       '<div class="rg-ellipsis">' + esc(it.categoryName) + '</div>' +
@@ -189,7 +193,7 @@
         return a;
       }, { amount: 0, paid: 0, toPay: 0, unpaid: 0 });
       html += '<div class="row rg-total" style="grid-template-columns:' + cols() + '">' + (sel.isOn() ? '<div></div>' : '') +
-        '<div>Итого</div><div class="hint">' + zayavok(items.length) + '</div><div></div><div></div>' +
+        '<div class="stack" style="gap:1px"><span>Итого</span><span class="hint">' + zayavok(items.length) + '</span></div><div></div><div></div>' +
         '<div class="r num">' + R.money(sum.amount) + '</div><div></div>' +
         '<div class="r num">' + R.money(sum.paid) + '</div><div class="r num">' + R.money(sum.toPay) + '</div>' +
         '<div class="r num">' + R.money(sum.unpaid) + '</div></div>';
@@ -546,7 +550,7 @@
     var el = document.getElementById('rg-drawer');
     el.innerHTML =
       '<div class="drawer-head"><div class="stack" style="gap:2px"><span class="cap">' + esc(it.number) + ' · создана ' + R.tsDate(it.createdAt) + '</span>' +
-        '<h2 id="rg-drawer-title" class="rg-ellipsis">' + esc(it.recipient) + '</h2></div>' +
+        '<h2 id="rg-drawer-title" class="rg-recipient-title">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') + '</h2></div>' +
         '<button type="button" class="btn ghost icon" id="rg-close" aria-label="Закрыть">✕</button></div>' +
       '<div class="drawer-body">' +
         decisionHtml(it) +

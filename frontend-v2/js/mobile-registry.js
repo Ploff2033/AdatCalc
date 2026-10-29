@@ -90,7 +90,8 @@
       '<div class="spread" style="gap:10px"><span class="num" style="font-size:12px">' + check + '<span class="' + (s.overdue ? 'rg-overdue-text' : 'hint') + '">' + due + '</span>' +
         '<span class="hint"> · ' + esc(it.number) + ' · ' + esc(it.unitName) + '</span></span>' + R.statusChip(it) + '</div>' +
       '<div class="rgm-title"><span>' + esc(it.purpose) + '</span><span class="num">' + R.money(it.amount) + '</span></div>' +
-      '<span class="hint">' + esc(it.recipient) + ' · ' + esc(it.categoryName) + (it.applicant ? ' · ' + esc(it.applicant) : '') + '</span>' +
+      '<span class="rgm-recipient">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') + '</span>' +
+      '<span class="hint">' + esc(it.categoryName) + (it.applicant ? ' · ' + esc(it.applicant) : '') + '</span>' +
       (thumbs ? '<div class="rgm-thumbs">' + thumbs + '</div>' : '') +
       progress + comment + actions +
     '</article>';
@@ -220,7 +221,7 @@
       '<section class="rgm-panel">' +
         '<div class="spread"><span class="num hint">' + esc(it.number) + ' · ' + R.tsDate(it.createdAt) + '</span>' + R.statusChip(it) + '</div>' +
         '<div class="rgm-title" style="font-size:16px"><span>' + esc(it.purpose) + '</span><span class="num" style="font-size:20px">' + R.money(it.amount) + '</span></div>' +
-        kv('Получатель', esc(it.recipient)) +
+        kv('Получатель', esc(it.recipient) + R.copyBtn(it.recipient, 'получателя')) +
         kv('Подразделение', esc(it.unitName)) +
         kv('Категория', esc(it.categoryName)) +
         kv('Заявитель', esc(it.applicant)) +
@@ -316,7 +317,7 @@
     var cancel = function () { clearTimeout(timer); timer = null; start = null; };
     body.addEventListener('pointerdown', function (e) {
       suppressNextClick = false;
-      if (e.button > 0 || e.target.closest('a, button, select, input, label')) return;
+      if (e.button > 0 || e.target.closest('a, button, select, input, label, [data-copy]')) return;
       var card = e.target.closest('.rgm-card');
       if (!card || !data) return;
       var item = data.items.find(function (x) { return x.id === card.dataset.id; });
