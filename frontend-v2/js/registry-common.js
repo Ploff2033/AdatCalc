@@ -105,11 +105,13 @@
   // Цвета по решению (просьба пользователя): одобрено — зелёный, отклонено —
   // красный, отложено — жёлтый. "Ожидает решения" — оранжевый (требует
   // действия), чтобы не сливаться с жёлтым "Отложена". Частичная оплата —
-  // синий: решение "одобрено", но деньги ещё в процессе.
-  var STATUS_CHIP = { pending: 'act', approved: 'ok', partial: 'part', paid: 'ok', rejected: 'bad', postponed: 'warn' };
+  // синий: решение "одобрено", но деньги ещё в процессе. «Платёжка готова» —
+  // фиолетовый (change reestr-payment-order): ждёт оплаты в банке.
+  var STATUS_CHIP = { ready: 'ready', pending: 'act', approved: 'ok', partial: 'part', paid: 'ok', rejected: 'bad', postponed: 'warn' };
   var DECISION_CHIP = { approved: 'ok', rejected: 'bad', postponed: 'warn' };
   var STATUS_OPTIONS = [
     { id: '', label: 'все' },
+    { id: 'ready', label: 'Платёжка готова' },
     { id: 'pending', label: 'Ожидает решения' },
     { id: 'approved', label: 'Одобрена' },
     { id: 'partial', label: 'Частично оплачена' },
@@ -117,7 +119,14 @@
     { id: 'paid', label: 'Оплачена' },
     { id: 'rejected', label: 'Отклонена' }
   ];
-  var GROUP_LABELS = ['Ожидает решения', 'Одобрена / Частично оплачена', 'Отложена', 'Закрытые'];
+  // Группы списка — номера те же, что в backend/registry-calc.js::GROUP_OF_STATUS
+  // (порядок показа). Только через имена: перенумерация не должна тихо
+  // ломать экраны.
+  var GROUP = { READY: 0, PENDING: 1, APPROVED: 2, POSTPONED: 3, CLOSED: 4 };
+  var GROUP_LABELS = ['Платёжка готова', 'Ожидает решения', 'Одобрена / Частично оплачена', 'Отложена', 'Закрытые'];
+  // Группы, из которых выбирают пачкой: решения — «Ожидает» и «Отложена»,
+  // «Платёжка готова» — из «Одобрена / Частично».
+  var BULK_GROUPS = [GROUP.PENDING, GROUP.APPROVED, GROUP.POSTPONED];
   var FILE_KINDS = [
     { id: 'invoice', label: 'Счёт' },
     { id: 'contract', label: 'Договор' },
@@ -142,6 +151,22 @@
     var label = item.state.statusLabel;
     if (item.state.status === 'paid' && item.lastPaidOn) label = 'Оплачена ' + ddmm(item.lastPaidOn);
     return '<span class="chip ' + STATUS_CHIP[item.state.status] + '">' + esc(label) + '</span>';
+  }
+
+  // Сколько платёжка ждёт оплаты: «готова сегодня 10:40», «готова вчера
+  // 18:05», «готова 2 дн.» — по календарным дням Москвы.
+  var MSK = 'Europe/Moscow';
+  function mskDay(d) { return d.toLocaleDateString('en-CA', { timeZone: MSK }); }
+  function readyAge(item, now) {
+    if (!item || !item.paymentOrderAt) return '';
+    var at = new Date(item.paymentOrderAt);
+    if (isNaN(at)) return '';
+    var n = now || new Date();
+    var days = Math.round((Date.parse(mskDay(n)) - Date.parse(mskDay(at))) / 86400000);
+    var time = at.toLocaleTimeString('ru-RU', { timeZone: MSK, hour: '2-digit', minute: '2-digit' });
+    if (days <= 0) return 'готова сегодня ' + time;
+    if (days === 1) return 'готова вчера ' + time;
+    return 'готова ' + days + ' дн.';
   }
 
   // Период по дате создания: '' — всё время (по умолчанию: иначе старые
@@ -451,9 +476,22 @@
     var busy = false;
 
     var changed = function () { if (o.onChange) o.onChange(); };
-    var selectable = function (it) { return it && (it.state.status === 'pending' || it.state.status === 'postponed'); };
+    // Два вида пачки (change reestr-payment-order): решение — из «Ожидает» и
+    // «Отложена», «Платёжка готова» — из «Одобрена / Частично». Смешивать
+    // нельзя: выбор из другого вида сбрасывает прежние отметки.
+    var kindOf = function (it) {
+      if (!it) return null;
+      var st = it.state.status;
+      if (st === 'pending' || st === 'postponed') return 'decision';
+      if (st === 'approved' || st === 'partial') return 'ready';
+      return null;
+    };
+    var kind = null;
+    var selectable = function (it) { return kindOf(it) !== null; };
     var list = function () { return Object.keys(picked).map(function (id) { return picked[id]; }); };
-    var sumKop = function () { return list().reduce(function (s, it) { return s + Math.round(it.amount * 100); }, 0); };
+    var itemKop = function (it) { return Math.round((kind === 'ready' ? it.state.unpaid : it.amount) * 100); };
+    var sumKop = function () { return list().reduce(function (s, it) { return s + itemKop(it); }, 0); };
+    var switchKind = function (k) { if (kind !== k) { picked = {}; kind = k; } };
 
     var sel = {
       isOn: function () { return on; },
@@ -461,10 +499,12 @@
       has: function (id) { return Boolean(picked[id]); },
       count: function () { return list().length; },
       sumKop: sumKop,
-      enter: function () { on = true; picked = {}; changed(); },
-      exit: function () { if (!on) return; on = false; picked = {}; changed(); },
+      kind: function () { return kind; },
+      enter: function () { on = true; picked = {}; kind = null; changed(); },
+      exit: function () { if (!on) return; on = false; picked = {}; kind = null; changed(); },
       toggle: function (it) {
         if (!on || !selectable(it)) return false;
+        switchKind(kindOf(it));
         if (picked[it.id]) delete picked[it.id]; else picked[it.id] = it;
         changed();
         return true;
@@ -472,6 +512,7 @@
       // Все выбираемые заявки группы: если все уже отмечены — снять.
       toggleGroup: function (items) {
         var pickable = items.filter(selectable);
+        if (pickable.length) switchKind(kindOf(pickable[0]));
         var all = pickable.length && pickable.every(function (it) { return picked[it.id]; });
         pickable.forEach(function (it) { if (all) delete picked[it.id]; else picked[it.id] = it; });
         changed();
@@ -488,8 +529,10 @@
           '<span class="rg-bulkbar-info">Выбрано <b>' + n + '</b>' + (n ? ' · <b class="num">' + rub(sumKop() / 100) + '</b>' : '') + '</span>' +
           '<div class="rg-bulkbar-actions">' +
             '<button type="button" class="btn ghost" data-bulk="cancel">Отмена</button>' +
-            '<button type="button" class="btn ghost" data-bulk="postponed"' + dis + '>Отложить</button>' +
-            '<button type="button" class="btn pri" data-bulk="approved"' + dis + '>' + (busy ? 'Применяем…' : 'Одобрить') + '</button>' +
+            (kind === 'ready'
+              ? '<button type="button" class="btn pri rg-ready-btn" data-bulk="payment_ready"' + dis + '>' + (busy ? 'Применяем…' : 'Платёжка готова') + '</button>'
+              : '<button type="button" class="btn ghost" data-bulk="postponed"' + dis + '>Отложить</button>' +
+                '<button type="button" class="btn pri" data-bulk="approved"' + dis + '>' + (busy ? 'Применяем…' : 'Одобрить') + '</button>') +
           '</div></div>';
       },
       // Клики по панели — делегированно из экрана: true, если обработан.
@@ -503,7 +546,7 @@
       confirmAndApply: async function (decision) {
         var items = list();
         if (!items.length || busy) return;
-        var ok = await confirmBulk(decision, items, sumKop());
+        var ok = await confirmBulk(decision, items, sumKop(), itemKop);
         if (!ok) return;
         busy = true;
         changed();
@@ -512,6 +555,7 @@
           busy = false;
           on = false;
           picked = {};
+          kind = null;
           showBulkResult(decision, res, items.length);
           changed();
           if (o.onApplied) o.onApplied(res);
@@ -534,25 +578,30 @@
 
   // Подтверждение со списком (лист снизу на телефоне, диалог на ПК — CSS).
   // Не window.confirm: нужен список «№ · получатель · сумма» и крупные кнопки.
-  function confirmBulk(decision, items, kop) {
+  function confirmBulk(decision, items, kop, itemKop) {
     return new Promise(function (resolve) {
       var el = document.createElement('div');
       el.className = 'rg-modal';
       el.setAttribute('role', 'dialog');
       el.setAttribute('aria-modal', 'true');
+      var ready = decision === 'payment_ready';
       var title = decision === 'approved'
         ? 'Одобрить ' + items.length + ' ' + zayavokWord(items.length) + ' на ' + rub(kop / 100) + '?'
-        : 'Отложить ' + items.length + ' ' + zayavokWord(items.length) + '?';
+        : ready
+          ? '«Платёжка готова» для ' + items.length + ' ' + (items.length === 1 ? 'заявки' : 'заявок') + ' на ' + rub(kop / 100) + '?'
+          : 'Отложить ' + items.length + ' ' + zayavokWord(items.length) + '?';
+      var yes = decision === 'approved' ? 'Одобрить' : ready ? 'Платёжка готова' : 'Отложить';
       el.innerHTML =
         '<div class="rg-modal-sheet">' +
           '<h2>' + esc(title) + '</h2>' +
           (decision === 'approved' ? '<p class="hint" style="margin:0">Каждая заявка — на свою полную сумму. Уменьшить «К оплате» можно в карточке.</p>' : '') +
+          (ready ? '<p class="hint" style="margin:0">Платёжка — на остаток «Не оплачено» каждой заявки. Учредителю уйдёт одно сообщение.</p>' : '') +
           '<ul class="rg-modal-list">' + items.map(function (it) {
-            return '<li><span class="num hint">' + esc(it.number) + '</span><span class="rg-ellipsis">' + esc(it.recipient) + '</span><b class="num">' + money(it.amount) + '</b></li>';
+            return '<li><span class="num hint">' + esc(it.number) + '</span><span class="rg-ellipsis">' + esc(it.recipient) + '</span><b class="num">' + money(itemKop ? itemKop(it) / 100 : it.amount) + '</b></li>';
           }).join('') + '</ul>' +
           '<div class="rg-modal-actions">' +
             '<button type="button" class="btn ghost" data-m="no">Отмена</button>' +
-            '<button type="button" class="btn ' + (decision === 'approved' ? 'pri' : '') + '" data-m="yes">' + (decision === 'approved' ? 'Одобрить' : 'Отложить') + '</button>' +
+            '<button type="button" class="btn ' + (decision === 'postponed' ? '' : 'pri') + '" data-m="yes">' + yes + '</button>' +
           '</div>' +
         '</div>';
       var done = function (v) {
@@ -582,7 +631,7 @@
     var el = document.createElement('div');
     el.id = 'rg-bulk-result';
     el.setAttribute('role', 'status');
-    var verb = decision === 'approved' ? 'Одобрено' : 'Отложено';
+    var verb = decision === 'approved' ? 'Одобрено' : decision === 'payment_ready' ? 'Отмечено' : 'Отложено';
     var body;
     if (errorText) {
       el.className = 'rg-bulk-result bad';
@@ -597,6 +646,12 @@
     el.querySelector('button').addEventListener('click', function () { el.remove(); });
     document.body.appendChild(el);
     if (!errorText && !(res.skipped || []).length) setTimeout(function () { el.remove(); }, 4000);
+  }
+
+  // «Отменить платёжку»: причина по желанию. null — передумали.
+  function askCancelReason() {
+    var v = window.prompt('Отменить платёжку? Причина (необязательно) — уйдёт бухгалтеру:', '');
+    return v === null ? null : v.trim();
   }
 
   // ---------- экспорт в Excel (спека payment-registry/export) ----------
@@ -869,7 +924,9 @@
     localDateStr: localDateStr,
     fileSize: fileSize,
     STATUS_OPTIONS: STATUS_OPTIONS,
+    GROUP: GROUP,
     GROUP_LABELS: GROUP_LABELS,
+    BULK_GROUPS: BULK_GROUPS,
     FILE_KINDS: FILE_KINDS,
     PERIODS: PERIODS,
     statusChip: statusChip,
@@ -879,6 +936,8 @@
     isImage: isImage,
     prepareUpload: prepareUpload,
     exportXlsx: exportXlsx,
+    readyAge: readyAge,
+    askCancelReason: askCancelReason,
     openPhoto: openPhoto,
     closePhoto: closePhoto,
     thumb: thumb,

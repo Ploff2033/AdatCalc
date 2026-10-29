@@ -159,7 +159,8 @@
         '<span class="hint rg-ellipsis">' + esc(it.purpose) + '</span></div>' +
       '<div class="rg-ellipsis">' + esc(it.categoryName) + '</div>' +
       '<div class="r num" style="font-weight:600">' + R.money(it.amount) + '</div>' +
-      '<div class="stack" style="gap:2px;align-items:flex-start;min-width:0">' + R.statusChip(it) + comment + '</div>' +
+      '<div class="stack" style="gap:2px;align-items:flex-start;min-width:0">' + R.statusChip(it) +
+        (s.status === 'ready' ? '<span class="rg-ready-age">' + esc(R.readyAge(it)) + '</span>' : '') + comment + '</div>' +
       '<div class="r num">' + (s.paid ? R.money(s.paid) + (it.lastPaidOn ? '<div class="hint">' + R.ddmm(it.lastPaidOn) + '</div>' : '') : '<span class="hint">—</span>') + '</div>' +
       '<div class="r num">' + (s.toPay === null ? '<span class="hint">—</span>' : R.money(s.toPay)) + '</div>' +
       '<div class="r num" style="font-weight:600' + (s.overdue ? ';color:var(--bad-fg)' : '') + '">' + R.money(s.unpaid) + '</div>' +
@@ -177,13 +178,13 @@
         var g = data.totals.groups[currentGroup];
         var bulkBtn = '';
         var gi = items.filter(function (x) { return x.state.group === currentGroup; });
-        if ((currentGroup === 0 || currentGroup === 2) && gi.some(sel.selectable)) {
+        if (R.BULK_GROUPS.indexOf(currentGroup) !== -1 && gi.some(sel.selectable)) {
           bulkBtn = sel.isOn()
             ? '<button type="button" class="btn ghost sm" data-bulk-group="' + currentGroup + '">' + (sel.groupAllPicked(gi) ? 'Снять все' : 'Выбрать все') + '</button>'
             : '<button type="button" class="btn ghost sm" data-bulk-enter="1">Выбрать</button>';
         }
         html += '<div class="rg-group"><span>' + R.GROUP_LABELS[currentGroup] + ' · ' + g.count + '</span>' +
-          '<span class="rg-group-right"><span class="num">' + (currentGroup === 3 ? '' : 'не оплачено ' + R.money(g.sum)) + '</span>' + bulkBtn + '</span></div>';
+          '<span class="rg-group-right"><span class="num">' + (currentGroup === R.GROUP.CLOSED ? '' : 'не оплачено ' + R.money(g.sum)) + '</span>' + bulkBtn + '</span></div>';
       }
       html += rowHtml(it);
     });
@@ -534,15 +535,32 @@
         '<span' + (s.unpaid > 0 && s.overdue ? ' class="rg-overdue-text"' : '') + '>Не оплачено <b class="num">' + R.rub(s.unpaid) + '</b></span></div>' +
       '<div class="bar"><i style="width:' + pct + '%;background:#2F7A52"></i></div>' +
       (rows || '<p class="hint" style="margin:0">Оплат пока нет.</p>') +
-      (s.unpaid > 0
-        ? '<form id="rg-pay-form" class="rg-pay-add">' +
-            '<div class="field"><label for="rg-pay-date">Дата оплаты</label><input id="rg-pay-date" type="date" class="inp" max="' + esc(data ? data.today : R.localDateStr()) + '" value="' + esc(data ? data.today : R.localDateStr()) + '"></div>' +
-            '<div class="field"><label for="rg-pay-amount">Сумма, ₽</label><input id="rg-pay-amount" class="inp num" inputmode="decimal"></div>' +
-            '<button type="submit" class="btn" style="align-self:end">+ Оплата</button>' +
-          '</form>' : '') +
+      payActionHtml(it) +
       '<p class="banner" id="rg-pay-error" hidden></p>' +
       '<input type="file" id="rg-pay-file-input" accept="image/jpeg,image/png,image/webp,application/pdf" hidden>' +
     '</div>';
+  }
+
+  // Одно место под действие (change reestr-payment-order): у «Одобрена» /
+  // «Частично» — кнопка «Платёжка готова», у «Платёжка готова» — форма
+  // «+ Оплата» и «Отменить платёжку». Одна платёжка — одна оплата.
+  function payActionHtml(it) {
+    var s = it.state;
+    if (!(s.unpaid > 0)) return '';
+    if (s.status !== 'ready') {
+      return '<div class="rg-po-block">' +
+        (it.paymentOrderCancelNote ? '<p class="hint" style="margin:0">Платёжка отменена: ' + esc(it.paymentOrderCancelNote) + '</p>' : '') +
+        '<button type="button" class="btn pri rg-ready-btn" id="rg-po-mark" style="width:100%;height:44px">Платёжка готова</button></div>';
+    }
+    var today = esc(data ? data.today : R.localDateStr());
+    return '<div class="rg-po-block">' +
+      '<p class="hint" style="margin:0">' + R.statusChip(it) + ' <span class="rg-ready-age">' + esc(R.readyAge(it)) + '</span> — внесите оплату, когда деньги ушли.</p>' +
+      '<form id="rg-pay-form" class="rg-pay-add">' +
+        '<div class="field"><label for="rg-pay-date">Дата оплаты</label><input id="rg-pay-date" type="date" class="inp" max="' + today + '" value="' + today + '"></div>' +
+        '<div class="field"><label for="rg-pay-amount">Сумма, ₽</label><input id="rg-pay-amount" class="inp num" inputmode="decimal"></div>' +
+        '<button type="submit" class="btn" style="align-self:end">+ Оплата</button>' +
+      '</form>' +
+      '<button type="button" class="btn ghost sm rg-po-cancel" id="rg-po-cancel" style="align-self:flex-start">Отменить платёжку</button></div>';
   }
 
   function renderCard() {
@@ -589,6 +607,20 @@
       drawer.decisionDraft = null;
       return R.api.post('/requests/' + encodeURIComponent(it.id) + '/decision', body);
     }));
+
+    // платёжка
+    var poMark = document.getElementById('rg-po-mark');
+    if (poMark) poMark.addEventListener('click', act('rg-pay-error', function () {
+      return R.api.post('/requests/' + encodeURIComponent(it.id) + '/payment-order');
+    }));
+    var poCancel = document.getElementById('rg-po-cancel');
+    if (poCancel) poCancel.addEventListener('click', function (e) {
+      var note = R.askCancelReason();
+      if (note === null) return;
+      act('rg-pay-error', function () {
+        return R.api.post('/requests/' + encodeURIComponent(it.id) + '/payment-order/cancel', { note: note });
+      })(e);
+    });
 
     // оплаты
     var payForm = document.getElementById('rg-pay-form');

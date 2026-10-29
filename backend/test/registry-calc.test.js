@@ -136,3 +136,50 @@ test('Итоги: оплата вне периода не попадает в О
   const t = calc.computeTotals(items, { from: '2026-10-01', to: '2026-10-31' });
   assert.deepStrictEqual(t.paid, { sum: 0, count: 0 });
 });
+
+// ---------- «Платёжка готова» (change reestr-payment-order) ----------
+
+test('Платёжка готова: одобрено + отметка + остаток > 0', () => {
+  const r = req({ amount: '95450', decision: 'approved', approved_amount: '95450', payment_order_at: '2026-10-29T07:40:00Z' });
+  const s = calc.computeState(r, [], TODAY);
+  assert.strictEqual(s.status, 'ready');
+  assert.strictEqual(s.statusLabel, 'Платёжка готова');
+  assert.strictEqual(s.unpaid, 95450);
+  assert.strictEqual(s.group, 0);
+});
+
+test('Отметка без остатка не делает «Платёжка готова» — «Оплачена»', () => {
+  const r = req({ amount: '1000', decision: 'approved', approved_amount: '1000', payment_order_at: '2026-10-29T07:40:00Z' });
+  assert.strictEqual(calc.computeState(r, [{ amount: '1000' }], TODAY).status, 'paid');
+});
+
+test('Отметка у неодобренной заявки статус не меняет', () => {
+  const r = req({ decision: 'postponed', payment_order_at: '2026-10-29T07:40:00Z' });
+  assert.strictEqual(calc.computeState(r, [], TODAY).status, 'postponed');
+});
+
+test('Порядок групп: Платёжка готова, Ожидает, Одобрена/Частично, Отложена; в «готова» — дольше ждущие выше', () => {
+  const list = [
+    item(1, { decision: 'postponed' }),
+    item(2, {}),
+    item(3, { decision: 'approved', approved_amount: '63800' }),
+    item(4, { decision: 'approved', approved_amount: '63800', payment_order_at: '2026-10-29T07:00:00Z' }),
+    item(5, { decision: 'approved', approved_amount: '63800', payment_order_at: '2026-10-27T07:00:00Z' })
+  ];
+  list.forEach((x) => { x.state = calc.computeState(x, x.payments, TODAY); });
+  list.sort(calc.compareForList);
+  assert.deepStrictEqual(list.map((x) => x.seq), [5, 4, 2, 3, 1]);
+  assert.deepStrictEqual(list.map((x) => x.state.group), [0, 0, 1, 2, 3]);
+});
+
+test('Плитка «К оплате» включает «Платёжка готова»: 186 000 + 34 000 = 220 000', () => {
+  const items = [
+    item(1, { amount: '186000', decision: 'approved', approved_amount: '186000' }),
+    item(2, { amount: '84000', decision: 'approved', approved_amount: '84000', payment_order_at: '2026-10-29T07:00:00Z' }, [{ amount: '50000', paid_on: '2026-10-04' }])
+  ];
+  items.forEach((x) => { x.state = calc.computeState(x, x.payments, TODAY); });
+  assert.strictEqual(items[1].state.status, 'ready');
+  const t = calc.computeTotals(items, null);
+  assert.deepStrictEqual(t.toPay, { sum: 220000, count: 2 });
+  assert.deepStrictEqual(t.groups[0], { sum: 34000, count: 1 });
+});

@@ -355,7 +355,7 @@ test('Менеджер не видит статус', async (t) => {
 
 test('Заказ при перебое: операция не ждёт поиска, служебных сообщений нет', async (t) => {
   if (!(await requireDb(t))) return;
-  await db.pool.query("UPDATE config SET telegram_registry_chat_id = 'registry-chat' WHERE id = 1");
+  await db.pool.query("UPDATE config SET telegram_registry_chat_id = 'registry-chat', telegram_registry_buh_chat_id = 'registry-chat' WHERE id = 1");
   const req = await registry.create({ unitId: await fx.unit('Стройка'), categoryId: await fx.category('Материалы'), recipient: 'ООО "ПРОМХИМ"', purpose: 'Фанера', amount: 63800, dueDate: '2026-10-20' });
   await flush();
   sent = [];
@@ -369,6 +369,6 @@ test('Заказ при перебое: операция не ждёт поис�
   await new Promise((r) => setTimeout(r, 600));
   assert.strictEqual(sent.length, 1, 'ровно одно сообщение — само решение, без служебных');
   assert.strictEqual(sent[0].proxyUrl, url(4));
-  assert.match(sent[0].text, /Решение по №/);
+  assert.match(sent[0].text, /Можно делать платёжку: №/);
   assert.ok(!sent[0].text.includes('Задержано'));
 });

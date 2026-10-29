@@ -128,4 +128,12 @@ async function waybillEntry(orderId, drv, veh, o) {
   return id;
 }
 
-module.exports = { unit, category, rawRequest, plant, recipe, mixer, client, orderBody, order, material, driver, waybillEntry };
+// Оплата по правилу «платёжка → оплата» (change reestr-payment-order):
+// отметить «Платёжка готова», если ещё не отмечена, затем внести оплату.
+async function pay(id, body) {
+  const registry = require('../../handlers/registry');
+  if ((await registry.get(id)).state.status !== 'ready') await registry.markPaymentOrder(id);
+  return registry.addPayment(id, body);
+}
+
+module.exports = { pay, unit, category, rawRequest, plant, recipe, mixer, client, orderBody, order, material, driver, waybillEntry };

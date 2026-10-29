@@ -48,9 +48,13 @@
       var m = /^#\/registry\/(.+)$/.exec(location.hash);
       var param = '';
       if (m) { try { param = decodeURIComponent(m[1]); } catch (err) { param = ''; } }
-      MobileRegistryScreen.show(param, page);
+      // RegistryScreen сам выбирает: на телефоне — мобильный реестр, на ПК —
+      // десктопная таблица (change reestr-payment-order).
+      RegistryScreen.show(param);
     };
     window.addEventListener('hashchange', showFromHash);
+    // Повернули планшет / растянули окно через порог 860 px — перерисовать.
+    window.matchMedia('(max-width: 860px)').addEventListener('change', function () { showFromHash(); });
     showFromHash();
   }
 

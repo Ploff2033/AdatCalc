@@ -573,19 +573,25 @@
         '<input class="inp num" id="s-rg-owner-link" readonly style="background:var(--surface-3);color:var(--muted)">' +
         '<button type="button" class="btn ghost sm" id="s-rg-owner-copy" style="height:40px">Копировать</button>' +
         '<button type="button" class="btn ghost sm" id="s-rg-owner-reissue" style="height:40px">Перевыпустить</button></div></div>' +
-      '<div class="field"><label for="s-rg-chat">ID Telegram-чата реестра оплат (бот — из раздела «Уведомления»; пусто — без уведомлений)</label>' +
-        '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px">' +
-        '<input class="inp num" id="s-rg-chat">' +
-        '<button type="button" class="btn ghost sm" id="s-rg-chat-save" style="height:40px">Сохранить</button>' +
-        '<button type="button" class="btn ghost sm" id="s-rg-chat-test" style="height:40px">Отправить тестовое</button></div>' +
+      // Адресаты уведомлений (change reestr-payment-order): «Учредитель» —
+      // прежние чат и тема реестра, «Бухгалтер» — новый. Тема (Topic) — если
+      // чат это супергруппа с темами: среднее число в ссылке
+      // t.me/c/<чат>/<ID темы>/<ID сообщения>. @username — упоминание первой
+      // строкой, чтобы пришёл пуш даже в общем чате.
+      '<p class="hint" style="margin:0">Уведомления реестра — бот из раздела «Уведомления». Пустой ID чата — адресату ничего не отправляется.</p>' +
+      '<div class="grid-2" style="align-items:start">' +
+        ['owner', 'buh'].map(function (who) {
+          var label = who === 'owner' ? 'Учредитель' : 'Бухгалтер';
+          return '<div class="stack g8 s-rg-aud" data-aud="' + who + '"><b>' + label + '</b>' +
+            '<div class="field"><label for="s-rg-' + who + '-chat">ID Telegram-чата</label><input class="inp num" id="s-rg-' + who + '-chat"></div>' +
+            '<div class="field"><label for="s-rg-' + who + '-thread">ID темы (необязательно)</label><input class="inp num" id="s-rg-' + who + '-thread"></div>' +
+            '<div class="field"><label for="s-rg-' + who + '-user">@username для упоминания (необязательно)</label><input class="inp" id="s-rg-' + who + '-user" placeholder="@username"></div>' +
+            '<button type="button" class="btn ghost sm" data-rg-test="' + who + '" style="height:40px;align-self:flex-start">Отправить тестовое</button></div>';
+        }).join('') +
+      '</div>' +
+      '<div class="stack g6"><b>События</b><div class="stack g6" id="s-rg-events"></div></div>' +
+      '<div style="display:flex;gap:8px;align-items:center"><button type="button" class="btn ghost sm" id="s-rg-chat-save" style="height:40px">Сохранить уведомления</button>' +
         '<p class="hint" id="s-rg-chat-status" style="margin:0"></p></div>' +
-      // Тема (Topic) реестра — если чат реестра это та же супергруппа, что
-      // и заказы/остатки (см. раздел «Уведомления в Telegram» выше), сюда
-      // вписывается ID её темы тем же способом (среднее число в ссылке
-      // t.me/c/<чат>/<ID темы>/<ID сообщения>). Пусто — без темы, общая
-      // лента указанного чата.
-      '<div class="field"><label for="s-rg-thread">ID темы реестра в этом чате (необязательно, если чат — супергруппа с темами)</label>' +
-        '<input class="inp num" id="s-rg-thread"></div>' +
       '<div class="grid-2" style="align-items:start">' +
         '<div class="stack g8" data-dict="categories"><b>Категории расходов</b><div class="stack g6 s-rg-list"></div>' +
           '<form class="s-rg-add" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px"><input class="inp" placeholder="Новая категория" aria-label="Новая категория"><button class="btn ghost sm" style="height:40px">Добавить</button></form></div>' +
@@ -605,10 +611,17 @@
       var st = await Registry.api.get('/settings');
       ownerLink = location.origin + '/v2/?owner=' + encodeURIComponent(st.ownerToken);
       document.getElementById('s-rg-owner-link').value = ownerLink;
-      var chat = document.getElementById('s-rg-chat');
-      if (document.activeElement !== chat) chat.value = st.telegramRegistryChatId;
-      var thread = document.getElementById('s-rg-thread');
-      if (document.activeElement !== thread) thread.value = st.telegramRegistryThreadId;
+      var fill = function (id, v) { var el = document.getElementById(id); if (document.activeElement !== el) el.value = v || ''; };
+      fill('s-rg-owner-chat', st.telegramRegistryChatId);
+      fill('s-rg-owner-thread', st.telegramRegistryThreadId);
+      fill('s-rg-owner-user', st.telegramRegistryOwnerUsername ? '@' + st.telegramRegistryOwnerUsername : '');
+      fill('s-rg-buh-chat', st.telegramRegistryBuhChatId);
+      fill('s-rg-buh-thread', st.telegramRegistryBuhThreadId);
+      fill('s-rg-buh-user', st.telegramRegistryBuhUsername ? '@' + st.telegramRegistryBuhUsername : '');
+      document.getElementById('s-rg-events').innerHTML = (st.events || []).map(function (ev) {
+        return '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-ev="' + esc(ev.key) + '"' + (ev.on ? ' checked' : '') + '>' +
+          '<span>' + esc(ev.label) + ' <span class="hint">→ ' + (ev.to === 'owner' ? 'Учредитель' : 'Бухгалтер') + '</span></span></label>';
+      }).join('');
     };
     var renderDict = async function (kind) {
       var box = section.querySelector('[data-dict="' + kind + '"] .s-rg-list');
@@ -636,32 +649,43 @@
       catch (err) { setError(err); }
     });
     var chatStatus = function (text) { document.getElementById('s-rg-chat-status').textContent = text; };
+    var notifyBody = function () {
+      var v = function (id) { return document.getElementById(id).value.trim(); };
+      var events = {};
+      Array.prototype.forEach.call(document.querySelectorAll('#s-rg-events [data-ev]'), function (c) { events[c.dataset.ev] = c.checked; });
+      return {
+        telegramRegistryChatId: v('s-rg-owner-chat'),
+        telegramRegistryThreadId: v('s-rg-owner-thread'),
+        telegramRegistryOwnerUsername: v('s-rg-owner-user'),
+        telegramRegistryBuhChatId: v('s-rg-buh-chat'),
+        telegramRegistryBuhThreadId: v('s-rg-buh-thread'),
+        telegramRegistryBuhUsername: v('s-rg-buh-user'),
+        events: events
+      };
+    };
     document.getElementById('s-rg-chat-save').addEventListener('click', async function () {
       try {
-        await Registry.api.put('/settings', {
-          telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim(),
-          telegramRegistryThreadId: document.getElementById('s-rg-thread').value.trim()
-        });
+        await Registry.api.put('/settings', notifyBody());
+        await loadSettings();
         chatStatus('Сохранено.');
       }
       catch (err) { chatStatus(err.message); }
     });
-    document.getElementById('s-rg-chat-test').addEventListener('click', async function (e) {
-      var btn = e.target;
-      btn.disabled = true;
-      chatStatus('Отправляем…');
-      try {
-        await Registry.api.post('/telegram-test', {
-          telegramRegistryChatId: document.getElementById('s-rg-chat').value.trim(),
-          telegramRegistryThreadId: document.getElementById('s-rg-thread').value.trim()
-        });
-        chatStatus('Тестовое сообщение отправлено — проверьте чат.');
-      } catch (err) {
-        chatStatus(err.message);
-      } finally {
-        btn.disabled = false;
-        loadTelegramStatus();
-      }
+    Array.prototype.forEach.call(section.querySelectorAll('[data-rg-test]'), function (btn) {
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        chatStatus('Отправляем…');
+        try {
+          // Тест сохраняет то, что сейчас в полях, и шлёт выбранному адресату.
+          await Registry.api.post('/telegram-test', Object.assign(notifyBody(), { to: btn.dataset.rgTest }));
+          chatStatus('Тестовое сообщение отправлено — проверьте чат.');
+        } catch (err) {
+          chatStatus(err.message);
+        } finally {
+          btn.disabled = false;
+          loadTelegramStatus();
+        }
+      });
     });
     Array.prototype.forEach.call(section.querySelectorAll('.s-rg-add'), function (form) {
       form.addEventListener('submit', async function (e) {

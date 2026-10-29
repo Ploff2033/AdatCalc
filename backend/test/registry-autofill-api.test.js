@@ -113,14 +113,14 @@ test('Тот же номер у другого поставщика — не д�
   assert.deepStrictEqual(res.duplicates, []);
 });
 
-test('lookup: только admin', async (t) => {
+test('lookup: admin и учредитель, manager — нет', async (t) => {
   if (!(await requireDb(t))) return;
   const admin = await cookieFor('admin');
   const manager = await cookieFor('manager');
   const owner = await registry.getOwnerToken();
   assert.strictEqual((await call('GET', '/api/registry/lookup?inn=0916011226', { cookie: admin })).status, 200);
   assert.strictEqual((await call('GET', '/api/registry/lookup?inn=0916011226', { cookie: manager })).status, 403);
-  assert.strictEqual((await call('GET', '/api/registry/lookup?inn=0916011226', { owner })).status, 403);
+  assert.strictEqual((await call('GET', '/api/registry/lookup?inn=0916011226', { owner })).status, 200);
 });
 
 test('Миграция повторно — без ошибок, у старых заявок поля NULL', async (t) => {

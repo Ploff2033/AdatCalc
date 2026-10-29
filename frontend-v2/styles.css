@@ -395,6 +395,12 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
 
 /* ---------- реестр оплат (screen-registry.js / mobile-registry.js, макеты Payments*) ---------- */
 .chip.part { background: #E1E7F0; color: #28406A; }
+/* «Платёжка готова» (change reestr-payment-order) — фиолетовый */
+.chip.ready { background: #EDE5F7; color: #5B2D91; }
+.rg-ready-age { font-size: 12px; color: #5B2D91; white-space: nowrap; }
+.btn.rg-ready-btn, .btn.pri.rg-ready-btn { background: #6E3BAE; border-color: #6E3BAE; color: #fff; }
+.rg-po-block { display: flex; flex-direction: column; gap: 8px; }
+.rg-po-cancel { color: var(--bad-fg) !important; }
 .rg-filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .rg-filter { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .rg-filter .inp { width: 180px; }
@@ -499,8 +505,11 @@ body.rg-noscroll { overflow: hidden; }
 
 /* режим учредителя (app.js::bootOwner): только реестр, без сайдбара и меню */
 body.owner-mode .sidebar, body.owner-mode .bottom-nav.nav, body.owner-mode .bottom-nav { display: none !important; }
-body.owner-mode .main-area { max-width: 720px; margin: 0 auto; width: 100%; }
-body.owner-mode .page { padding: 0; gap: 0; }
+/* на ПК по ссылке — полный десктопный реестр (change reestr-payment-order) */
+@media (max-width: 860px) {
+  body.owner-mode .main-area { max-width: 720px; margin: 0 auto; width: 100%; }
+  body.owner-mode .page { padding: 0; gap: 0; }
+}
 
 @media (max-width: 860px) {
   body[data-route="registry"] .page { padding: 0; gap: 0; }

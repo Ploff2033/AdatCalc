@@ -6,6 +6,7 @@ const calc = require('../registry-calc');
 const files = require('../registry-files');
 const dictionaries = require('./registry-dictionaries');
 const telegram = require('../telegram');
+const notifyRoute = require('../registry-notify');
 
 // Реестр оплат (change reestr-oplat): заявки, решения учредителя, оплаты,
 // файлы. Статус заявки не хранится — каждый ответ пересчитывает его через
@@ -142,6 +143,8 @@ async function loadRequests(where, params) {
       // Спека "Правка и удаление": карточка показывает, что заявку меняли
       // после решения (истории нет — только этот признак и даты).
       editedAfterDecision: Boolean(r.decided_at && r.updated_at > r.decided_at),
+      paymentOrderAt: r.payment_order_at,
+      paymentOrderCancelNote: r.payment_order_cancel_note,
       state,
       lastPaidOn: payments.length ? payments[payments.length - 1].paid_on : null,
       payments: payments.map((p) => {
@@ -158,6 +161,7 @@ function calcView(item) {
   return {
     seq: item.seq,
     due_date: item.dueDate,
+    payment_order_at: item.paymentOrderAt ? new Date(item.paymentOrderAt).toISOString() : null,
     amount: item.amount,
     state: item.state,
     payments: item.payments.map((p) => ({ amount: p.amount, paid_on: p.paidOn }))
@@ -252,25 +256,73 @@ function zayavok(n) {
 
 // Одно сообщение на пачку (change reestr-bulk): до 15 строк, дальше «…и ещё N».
 const BULK_LINES = 15;
+// Сводное сообщение на пачку. action: approved | postponed | payment_ready.
 async function messageBulk(info, origin) {
   const h = telegram.escapeHtml;
-  const { decision, applied } = info;
-  const sum = applied.reduce((s, r) => s + calc.toKop(r.amount), 0) / 100;
-  const head = decision === 'approved'
-    ? '✅ <b>Одобрено пачкой: ' + zayavok(applied.length) + ' на ' + rub(sum) + '</b>'
-    : '⏸ <b>Отложено пачкой: ' + zayavok(applied.length) + '</b>';
-  const lines = [head].concat(applied.slice(0, BULK_LINES).map((r) => '№' + h(r.number) + ' · ' + h(r.recipient) + ' · ' + rub(r.amount)));
+  const { action, applied } = info;
+  const sum = applied.reduce((s, r) => s + calc.toKop(r.unpaid !== undefined ? r.unpaid : r.amount), 0) / 100;
+  const head = action === 'approved'
+    ? '❗️❗️❗️ <b>Можно делать платёжки: ' + zayavok(applied.length) + ' на ' + rub(sum) + '</b>'
+    : action === 'payment_ready'
+      ? '✅ <b>Платёжки готовы — проведите оплату: ' + zayavok(applied.length) + ' на ' + rub(sum) + '</b>'
+      : '⏸ <b>Отложено пачкой: ' + zayavok(applied.length) + '</b>';
+  const lines = [head].concat(applied.slice(0, BULK_LINES).map((r) => '№' + h(r.number) + ' · ' + h(r.recipient) + ' · ' + rub(r.unpaid !== undefined ? r.unpaid : r.amount)));
   if (applied.length > BULK_LINES) lines.push('…и ещё ' + (applied.length - BULK_LINES));
   lines.push('<a href="' + h(await ownerLink('', origin)) + '">Открыть реестр</a>');
   return lines.join('\n');
 }
 
+// Адресные призывы (change reestr-payment-order, спека notify-routing):
+// получатель — отдельной строкой, чтобы бухгалтеру было удобно скопировать.
+async function messageApproved(r, origin) {
+  const h = telegram.escapeHtml;
+  const lines = [
+    '❗️❗️❗️ <b>Можно делать платёжку: №' + h(r.number) + '</b>',
+    h(r.recipient),
+    'К оплате: ' + rub(r.state.unpaid) + (r.approvedAmount < r.amount ? ' (из ' + rub(r.amount) + ')' : ''),
+    'Цель: ' + h(r.purpose)
+  ];
+  if (r.basis) lines.push('Основание: ' + h(r.basis));
+  lines.push('<a href="' + h(await ownerLink(r.number, origin)) + '">Открыть заявку</a>');
+  return lines.join('\n');
+}
+
+async function messageReady(r, origin) {
+  const h = telegram.escapeHtml;
+  return [
+    '✅ <b>Платёжка готова — проведите оплату: №' + h(r.number) + '</b>',
+    h(r.recipient),
+    'Сумма: ' + rub(r.state.unpaid),
+    'Цель: ' + h(r.purpose),
+    '<a href="' + h(await ownerLink(r.number, origin)) + '">Открыть заявку</a>'
+  ].join('\n');
+}
+
+async function messageCancel(r, origin) {
+  const h = telegram.escapeHtml;
+  const lines = ['<b>Платёжка по №' + h(r.number) + ' отменена</b>', h(r.recipient) + ' · ' + rub(r.state.unpaid)];
+  if (r.paymentOrderCancelNote) lines.push('Причина: ' + h(r.paymentOrderCancelNote));
+  lines.push('<a href="' + h(await ownerLink(r.number, origin)) + '">Открыть заявку</a>');
+  return lines.join('\n');
+}
+
+async function messagePaid(info, origin) {
+  const h = telegram.escapeHtml;
+  const r = info.request;
+  return [
+    '<b>Оплачено №' + h(r.number) + ': ' + rub(info.amount) + '</b>',
+    h(r.recipient),
+    r.state.unpaid > 0 ? 'Осталось оплатить: ' + rub(r.state.unpaid) : 'Заявка оплачена полностью',
+    '<a href="' + h(await ownerLink(r.number, origin)) + '">Открыть заявку</a>'
+  ].join('\n');
+}
+
 // Без await у вызывающего: сбой Telegram не должен ни задерживать, ни
 // отменять операцию (спека "Сбой отправки не мешает операции").
-function notify(buildMessage, r, origin) {
-  buildMessage(r, origin)
-    .then((msg) => telegram.notifyRegistry(msg))
-    .catch((err) => console.error('Реестр оплат: не удалось подготовить уведомление: ' + err.message));
+// event — ключ из registry-notify.js::EVENTS: адресат и переключатель там.
+// ids — заявки сообщения (для реакции ✍ «сделано», см. registry-notify.js).
+function notify(event, buildMessage, r, origin, ids) {
+  notifyRoute.fire(event, () => buildMessage(r, origin), ids);
 }
 
 // ---------- заявки ----------
@@ -300,7 +352,7 @@ async function create(body, ctx) {
     [id, seq, number, unitId, categoryId, applicant, basis, recipient, purpose, amount, dueDate, recipientInn, invoiceNumber]
   );
   const created = await get(id);
-  notify(messageNew, created, ctx && ctx.origin);
+  notify('new_request', messageNew, created, ctx && ctx.origin);
   return created;
 }
 
@@ -357,6 +409,9 @@ async function update(id, body) {
     }
     let approved = cur.approved_amount;
     if (approved !== null && calc.toKop(approved) > amountKop) approved = next.amount;
+    if (approved !== null && calc.toKop(approved) <= paidKop(pays)) {
+      await client.query('UPDATE pay_requests SET payment_order_at = NULL WHERE id = $1', [id]);
+    }
     await client.query(
       `UPDATE pay_requests SET unit_id=$1, category_id=$2, recipient=$3, purpose=$4, amount=$5, applicant=$6,
          basis=$7, due_date=$8, approved_amount=$9, recipient_inn=$10, invoice_number=$11, updated_at=now() WHERE id=$12`,
@@ -398,9 +453,13 @@ async function applyDecision(client, cur, pays, decision, opts) {
     throw new HttpError(409, 'По заявке уже есть оплаты — сначала удалите оплаты');
   }
   const comment = o.comment === undefined ? cur.decision_comment : o.comment;
+  // Отметка «Платёжка готова» живёт, только пока заявка одобрена и есть
+  // что платить: «отложить» / «отклонить» или «К оплате» = оплаченному её снимают.
+  const keepOrder = decision === 'approved' && calc.toKop(approved) > paid;
   await client.query(
-    'UPDATE pay_requests SET decision=$1, approved_amount=$2, decision_comment=$3, decided_at=now() WHERE id=$4',
-    [decision, approved, comment, cur.id]
+    'UPDATE pay_requests SET decision=$1, approved_amount=$2, decision_comment=$3, decided_at=now(),' +
+      ' payment_order_at = CASE WHEN $5 THEN payment_order_at ELSE NULL END WHERE id=$4',
+    [decision, approved, comment, cur.id, keepOrder]
   );
 }
 
@@ -413,7 +472,9 @@ async function decide(id, body, ctx) {
   const comment = text(b.comment, 'Комментарий', false, 1000);
   await withLockedRequest(id, (client, cur, pays) => applyDecision(client, cur, pays, b.decision, { approvedAmount: b.approvedAmount, comment }));
   const result = await get(id);
-  notify(messageDecision, result, ctx && ctx.origin);
+  if (b.decision === 'approved') notify('approved', messageApproved, result, ctx && ctx.origin, [id]);
+  else notify('rejected_postponed', messageDecision, result, ctx && ctx.origin);
+  notifyRoute.syncReactionsLater([id]);
   return result;
 }
 
@@ -423,7 +484,14 @@ async function decide(id, body, ctx) {
 // применяются (частичное применение — решение интервью). Одно сводное
 // уведомление вместо сообщения на каждую заявку.
 const BULK_MAX = 100;
+const READY_SKIP_REASON = {
+  pending: 'нет решения «одобрить»',
+  postponed: 'нет решения «одобрить»',
+  rejected: 'заявка отклонена',
+  paid: 'уже оплачена'
+};
 const SKIP_REASON = {
+  ready: 'уже одобрена',
   approved: 'уже одобрена',
   partial: 'уже частично оплачена',
   paid: 'уже оплачена',
@@ -432,8 +500,8 @@ const SKIP_REASON = {
 
 async function decideMany(body, ctx) {
   const b = body || {};
-  if (!['approved', 'postponed'].includes(b.decision)) {
-    throw new HttpError(400, 'Пачкой можно только одобрить или отложить');
+  if (!['approved', 'postponed', 'payment_ready'].includes(b.decision)) {
+    throw new HttpError(400, 'Пачкой можно только одобрить, отложить или отметить «Платёжка готова»');
   }
   if (!Array.isArray(b.ids) || !b.ids.length) throw new HttpError(400, 'Не выбрано ни одной заявки');
   const ids = Array.from(new Set(b.ids.map(String)));
@@ -448,6 +516,12 @@ async function decideMany(body, ctx) {
       const outcome = await withLockedRequest(id, async (client, cur, pays) => {
         number = cur.number;
         const st = calc.computeState(cur, pays, today).status;
+        if (b.decision === 'payment_ready') {
+          if (st === 'ready') return 'unchanged';
+          if (st !== 'approved' && st !== 'partial') return READY_SKIP_REASON[st] || 'нельзя отметить';
+          await client.query('UPDATE pay_requests SET payment_order_at = now(), payment_order_cancel_note = \'\' WHERE id = $1', [id]);
+          return 'applied';
+        }
         if (st === 'postponed' && b.decision === 'postponed') return 'unchanged';
         if (st !== 'pending' && st !== 'postponed') return SKIP_REASON[st] || 'нельзя изменить';
         await applyDecision(client, cur, pays, b.decision, {});
@@ -455,7 +529,7 @@ async function decideMany(body, ctx) {
       });
       if (outcome === 'applied' || outcome === 'unchanged') {
         const r = await get(id);
-        applied.push({ id: r.id, number: r.number, recipient: r.recipient, amount: r.amount, changed: outcome === 'applied' });
+        applied.push({ id: r.id, number: r.number, recipient: r.recipient, amount: r.amount, unpaid: r.state.unpaid, changed: outcome === 'applied' });
       } else {
         skipped.push({ id, number, reason: outcome });
       }
@@ -469,13 +543,18 @@ async function decideMany(body, ctx) {
     }
   }
   const changed = applied.filter((x) => x.changed);
-  if (changed.length) notify(messageBulk, { decision: b.decision, applied: changed }, ctx && ctx.origin);
-  return { applied: applied.map(({ changed: _c, ...rest }) => rest), skipped };
+  if (changed.length) {
+    const event = b.decision === 'postponed' ? 'rejected_postponed' : b.decision;
+    const ids = changed.map((x) => x.id);
+    notify(event, messageBulk, { action: b.decision, applied: changed }, ctx && ctx.origin, ids);
+    notifyRoute.syncReactionsLater(ids);
+  }
+  return { applied: applied.map(({ changed: _c, unpaid: _u, ...rest }) => rest), skipped };
 }
 
 // ---------- оплаты ----------
 
-async function addPayment(id, body) {
+async function addPayment(id, body, ctx) {
   const b = body || {};
   const amount = money(b.amount, 'Сумма оплаты');
   const paidOn = date(b.paidOn, 'Дата оплаты', true);
@@ -483,16 +562,57 @@ async function addPayment(id, body) {
   let paymentId;
   await withLockedRequest(id, async (client, cur, pays) => {
     const state = calc.computeState(cur, pays, calc.todayMoscow());
-    if (state.status !== 'approved' && state.status !== 'partial') {
-      throw new HttpError(409, 'Оплату можно внести только по одобренной заявке (сейчас: ' + state.statusLabel + ')');
+    // Порядок «платёжка → оплата» (change reestr-payment-order): без отметки
+    // «Платёжка готова» оплату не вносим.
+    if (state.status === 'approved' || state.status === 'partial') {
+      throw new HttpError(409, 'Сначала отметьте, что платёжка готова');
+    }
+    if (state.status !== 'ready') {
+      throw new HttpError(409, 'Оплату можно внести только по заявке «Платёжка готова» (сейчас: ' + state.statusLabel + ')');
     }
     if (calc.toKop(amount) > calc.toKop(state.unpaid)) {
       throw new HttpError(409, 'Оплата больше остатка «Не оплачено» (' + rub(state.unpaid) + ') — сначала увеличьте «К оплате»');
     }
     paymentId = db.genId('ppay');
     await client.query('INSERT INTO pay_payments (id, request_id, paid_on, amount) VALUES ($1,$2,$3,$4)', [paymentId, id, paidOn, amount]);
+    // Одна платёжка — одна оплата: отметка снимается, следующая часть — через
+    // новую «Платёжка готова».
+    await client.query('UPDATE pay_requests SET payment_order_at = NULL WHERE id = $1', [id]);
   });
-  return get(id);
+  const result = await get(id);
+  notify('paid', messagePaid, { request: result, amount }, ctx && ctx.origin);
+  notifyRoute.syncReactionsLater([id]);
+  return result;
+}
+
+// ---------- «Платёжка готова» ----------
+
+async function markPaymentOrder(id, ctx) {
+  await withLockedRequest(id, async (client, cur, pays) => {
+    const st = calc.computeState(cur, pays, calc.todayMoscow());
+    if (st.status === 'ready') throw new HttpError(409, 'Платёжка уже отмечена готовой');
+    if (st.status !== 'approved' && st.status !== 'partial') {
+      throw new HttpError(409, '«Платёжка готова» — только для одобренной заявки с остатком к оплате (сейчас: ' + st.statusLabel + ')');
+    }
+    await client.query("UPDATE pay_requests SET payment_order_at = now(), payment_order_cancel_note = '' WHERE id = $1", [id]);
+  });
+  const result = await get(id);
+  notify('payment_ready', messageReady, result, ctx && ctx.origin, [id]);
+  notifyRoute.syncReactionsLater([id]);
+  return result;
+}
+
+async function cancelPaymentOrder(id, body, ctx) {
+  const note = text(body && body.note, 'Причина', false, 500);
+  await withLockedRequest(id, async (client, cur, pays) => {
+    const st = calc.computeState(cur, pays, calc.todayMoscow());
+    if (st.status !== 'ready') throw new HttpError(409, 'Платёжка не отмечена готовой (сейчас: ' + st.statusLabel + ')');
+    await client.query('UPDATE pay_requests SET payment_order_at = NULL, payment_order_cancel_note = $2 WHERE id = $1', [id, note]);
+  });
+  const result = await get(id);
+  notify('payment_cancel', messageCancel, result, ctx && ctx.origin);
+  notifyRoute.syncReactionsLater([id]);
+  return result;
 }
 
 async function removePayment(paymentId) {
@@ -505,6 +625,7 @@ async function removePayment(paymentId) {
     return f.map((x) => x.stored_name);
   });
   await Promise.all(stored.map(files.remove));
+  notifyRoute.syncReactionsLater([requestId]);
   return get(requestId);
 }
 
@@ -649,28 +770,68 @@ async function reissueOwnerToken() {
   return getSettings();
 }
 
+// Адресаты «Учредитель» (прежние telegram_registry_chat_id / _thread_id) и
+// «Бухгалтер» с @username, плюс переключатели событий — registry-notify.js.
 async function getSettings() {
-  const { rows } = await db.pool.query('SELECT owner_token, telegram_registry_chat_id, telegram_registry_thread_id FROM config WHERE id = 1');
-  const row = rows[0] || {};
+  const { rows } = await db.pool.query('SELECT owner_token FROM config WHERE id = 1');
+  const st = await notifyRoute.settings();
   return {
-    ownerToken: row.owner_token || '',
-    telegramRegistryChatId: row.telegram_registry_chat_id || '',
-    // Тема (Topic) реестра в той же супергруппе, что и заказы/остатки — см.
+    ownerToken: (rows[0] && rows[0].owner_token) || '',
+    telegramRegistryChatId: st.owner.chatId,
+    // Тема (Topic) в той же супергруппе, что и заказы/остатки — см.
     // schema.sql. Пусто — сообщение идёт в общую ленту чата без темы.
-    telegramRegistryThreadId: row.telegram_registry_thread_id || ''
+    telegramRegistryThreadId: st.owner.threadId,
+    telegramRegistryOwnerUsername: st.owner.username,
+    telegramRegistryBuhChatId: st.buh.chatId,
+    telegramRegistryBuhThreadId: st.buh.threadId,
+    telegramRegistryBuhUsername: st.buh.username,
+    events: Object.keys(notifyRoute.EVENTS).map((key) => ({
+      key,
+      to: notifyRoute.EVENTS[key].to,
+      label: notifyRoute.EVENTS[key].label,
+      on: st.events[key]
+    }))
   };
 }
 
+const SETTINGS_FIELDS = [
+  ['telegramRegistryChatId', 'telegram_registry_chat_id', 'ID чата учредителя'],
+  ['telegramRegistryThreadId', 'telegram_registry_thread_id', 'ID темы учредителя'],
+  ['telegramRegistryOwnerUsername', 'telegram_registry_owner_username', '@username учредителя'],
+  ['telegramRegistryBuhChatId', 'telegram_registry_buh_chat_id', 'ID чата бухгалтера'],
+  ['telegramRegistryBuhThreadId', 'telegram_registry_buh_thread_id', 'ID темы бухгалтера'],
+  ['telegramRegistryBuhUsername', 'telegram_registry_buh_username', '@username бухгалтера']
+];
+
 async function updateSettings(body) {
-  if (body && body.telegramRegistryChatId !== undefined) {
-    const chat = text(body.telegramRegistryChatId, 'ID чата реестра', false, 64);
-    await db.pool.query('UPDATE config SET telegram_registry_chat_id = $1 WHERE id = 1', [chat || null]);
+  const b = body || {};
+  for (const [key, col, label] of SETTINGS_FIELDS) {
+    if (b[key] === undefined) continue;
+    let v = text(b[key], label, false, 64);
+    if (/Username$/.test(key)) v = notifyRoute.cleanUsername(v);
+    await db.pool.query('UPDATE config SET ' + col + ' = $1 WHERE id = 1', [v || null]);
   }
-  if (body && body.telegramRegistryThreadId !== undefined) {
-    const thread = text(body.telegramRegistryThreadId, 'ID темы реестра', false, 64);
-    await db.pool.query('UPDATE config SET telegram_registry_thread_id = $1 WHERE id = 1', [thread || null]);
+  if (b.events !== undefined) {
+    if (!b.events || typeof b.events !== 'object' || Array.isArray(b.events)) throw new HttpError(400, 'События уведомлений — объект { событие: true/false }');
+    const st = await notifyRoute.settings();
+    const next = Object.assign({}, st.events);
+    for (const [k, v] of Object.entries(b.events)) {
+      if (!notifyRoute.EVENTS[k]) throw new HttpError(400, 'Неизвестное событие: ' + k);
+      next[k] = v === true;
+    }
+    await db.pool.query('UPDATE config SET telegram_registry_events = $1 WHERE id = 1', [JSON.stringify(next)]);
   }
   return getSettings();
+}
+
+// Тестовое сообщение адресату (owner | buh) — ждёт результат, ошибка на экран.
+async function sendTestTo(to) {
+  const who = to === 'buh' ? 'buh' : 'owner';
+  const st = await notifyRoute.settings();
+  const a = st[who];
+  const head = a.username ? '@' + a.username + '\n' : '';
+  if (!a.chatId) throw new Error('ID чата адресата «' + notifyRoute.AUDIENCES[who] + '» не задан');
+  return telegram.sendRegistryTestTo({ chatId: a.chatId, threadId: a.threadId }, notifyRoute.AUDIENCES[who], head);
 }
 
 module.exports = {
@@ -682,6 +843,8 @@ module.exports = {
   remove,
   decide,
   decideMany,
+  markPaymentOrder,
+  cancelPaymentOrder,
   addPayment,
   removePayment,
   addRequestFile,
@@ -693,5 +856,6 @@ module.exports = {
   checkOwnerToken,
   reissueOwnerToken,
   getSettings,
+  sendTestTo,
   updateSettings
 };
