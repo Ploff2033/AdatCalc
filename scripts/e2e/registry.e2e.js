@@ -91,10 +91,14 @@ fs.writeFileSync(PNG_FILE, png(400, 300));
   // одобрить часть
   await page.fill('#rg-dec-amount', '50000');
   await page.click('#rg-dec-save');
+  // оплата — только после «Платёжка готова» (change reestr-payment-order)
+  await page.click('#rg-po-mark');
   await page.waitForSelector('#rg-pay-form');
   await page.fill('#rg-pay-amount', '20000');
   await page.click('#rg-pay-form button[type=submit]');
   await page.waitForSelector('.rg-pay');
+  await page.click('#rg-po-mark');
+  await page.waitForSelector('#rg-pay-form');
   // переплата
   await page.fill('#rg-pay-amount', '40000');
   await page.click('#rg-pay-form button[type=submit]');

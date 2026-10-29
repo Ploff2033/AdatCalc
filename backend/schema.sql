@@ -990,3 +990,38 @@ CREATE TABLE IF NOT EXISTS telegram_outbox (
   attempts INT NOT NULL DEFAULT 0,
   last_error TEXT
 );
+
+-- ==================== Реестр оплат: «Платёжка готова» (change reestr-payment-order) ====================
+-- Отметка «Платёжка готова» — момент, когда бухгалтер отправил платёжку в
+-- банк; NULL — платёжки нет. Статус по-прежнему вычисляется
+-- (registry-calc.js::computeState): одобрено + «Не оплачено» > 0 + отметка =
+-- «Платёжка готова». Снимается после внесения оплаты (одна платёжка — одна
+-- оплата), при отмене, при «отложить»/«отклонить». cancel_note — причина
+-- последней отмены (для уведомления бухгалтеру).
+ALTER TABLE pay_requests ADD COLUMN IF NOT EXISTS payment_order_at TIMESTAMPTZ;
+ALTER TABLE pay_requests ADD COLUMN IF NOT EXISTS payment_order_cancel_note TEXT NOT NULL DEFAULT '';
+
+-- Адресные уведомления реестра: адресат «Учредитель» — прежние
+-- telegram_registry_chat_id / _thread_id (миграция не нужна), «Бухгалтер» —
+-- новые колонки; @username — упоминание адресата в начале сообщения;
+-- events — JSON {событие: true/false}, NULL — по умолчанию (registry-notify.js).
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_owner_username TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_buh_chat_id TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_buh_thread_id TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_buh_username TEXT;
+ALTER TABLE config ADD COLUMN IF NOT EXISTS telegram_registry_events TEXT;
+
+-- Сообщения реестра, на которые бот ставит реакцию ✍, когда дело сделано
+-- (change reestr-payment-order): «Можно делать платёжку» — когда по всем
+-- заявкам сообщения платёжка готова; «Платёжка готова» — когда внесена
+-- оплата. reacted — реакция сейчас стоит.
+CREATE TABLE IF NOT EXISTS pay_notify_messages (
+  id BIGSERIAL PRIMARY KEY,
+  event TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  message_id BIGINT NOT NULL,
+  request_ids TEXT[] NOT NULL,
+  reacted BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pay_notify_messages_requests ON pay_notify_messages USING GIN (request_ids);

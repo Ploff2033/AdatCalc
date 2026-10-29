@@ -6,6 +6,7 @@
 // 0.1 + 0.2 не давало расхождений в сравнениях "оплата не больше остатка".
 
 const STATUS_LABELS = {
+  ready: 'Платёжка готова',
   pending: 'Ожидает решения',
   approved: 'Одобрена',
   partial: 'Частично оплачена',
@@ -16,7 +17,11 @@ const STATUS_LABELS = {
 
 // Порядок групп в списке (спека "Порядок списка"): ждут решения →
 // одобрены/частично → отложены; закрытые (оплачена/отклонена) — отдельно.
-const GROUP_OF_STATUS = { pending: 0, approved: 1, partial: 1, postponed: 2, paid: 3, rejected: 3 };
+// Группы — по порядку показа (change reestr-payment-order): «Платёжка
+// готова» в самом верху. Номера используются и на фронте (GROUP_LABELS,
+// totals.groups, пакетный выбор) — менять согласованно.
+const GROUP_OF_STATUS = { ready: 0, pending: 1, approved: 2, partial: 2, postponed: 3, paid: 4, rejected: 4 };
+const CLOSED_GROUP = 4;
 const CLOSED_STATUSES = ['paid', 'rejected'];
 
 function toKop(value) {
@@ -53,9 +58,11 @@ function computeState(request, payments, today) {
   if (request.decision === 'approved') {
     toPayKop = toKop(request.approved_amount);
     unpaidKop = toPayKop - paidKop;
-    if (paidKop === 0) status = 'approved';
-    else if (paidKop < toPayKop) status = 'partial';
-    else status = 'paid';
+    if (paidKop >= toPayKop) status = 'paid';
+    // Отметка «Платёжка готова» действует, только пока есть что платить.
+    else if (request.payment_order_at) status = 'ready';
+    else if (paidKop === 0) status = 'approved';
+    else status = 'partial';
   } else if (request.decision === 'rejected') {
     status = 'rejected';
     unpaidKop = 0;
@@ -81,10 +88,17 @@ function computeState(request, payments, today) {
 
 // Сравнение для списка: группа, внутри — срок (ближайший первым, без срока
 // в конце), при равенстве — по номеру. Закрытые — свежие сверху.
-// a/b: { seq, due_date, state }.
+// «Платёжка готова» — дольше ждущие выше. a/b: { seq, due_date,
+// payment_order_at, state }.
 function compareForList(a, b) {
   if (a.state.group !== b.state.group) return a.state.group - b.state.group;
-  if (a.state.group === 3) return b.seq - a.seq;
+  if (a.state.group === CLOSED_GROUP) return b.seq - a.seq;
+  if (a.state.group === 0) {
+    const pa = String(a.payment_order_at || '');
+    const pb = String(b.payment_order_at || '');
+    if (pa !== pb) return pa < pb ? -1 : 1;
+    return a.seq - b.seq;
+  }
   const da = a.due_date || null;
   const dbb = b.due_date || null;
   if (da !== dbb) {
@@ -111,7 +125,7 @@ function computeTotals(items, period) {
     toPay: { sum: 0, count: 0 },
     overdue: { sum: 0, count: 0 },
     paid: { sum: 0, count: 0 },
-    groups: { 0: { sum: 0, count: 0 }, 1: { sum: 0, count: 0 }, 2: { sum: 0, count: 0 }, 3: { sum: 0, count: 0 } }
+    groups: { 0: { sum: 0, count: 0 }, 1: { sum: 0, count: 0 }, 2: { sum: 0, count: 0 }, 3: { sum: 0, count: 0 }, 4: { sum: 0, count: 0 } }
   };
   items.forEach((item) => {
     const s = item.state;
@@ -120,7 +134,7 @@ function computeTotals(items, period) {
       t.pending.sum += toKop(item.amount);
       t.pending.count++;
     }
-    if (s.status === 'approved' || s.status === 'partial') {
+    if (s.status === 'approved' || s.status === 'partial' || s.status === 'ready') {
       t.toPay.sum += unpaidKop;
       t.toPay.count++;
     }

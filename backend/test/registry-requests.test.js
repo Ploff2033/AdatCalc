@@ -129,14 +129,14 @@ test('Отложить без причины; из Отложена в Одоб�
 test('Урезать К оплате ниже оплаченного — отказ', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 4000000, 1500000);
-  await registry.addPayment(a.id, { amount: 1000000, paidOn: TODAY });
+  await fx.pay(a.id, { amount: 1000000, paidOn: TODAY });
   await assert.rejects(registry.decide(a.id, { decision: 'approved', approvedAmount: 800000 }), { status: 409 });
 });
 
 test('Отклонить (и отложить) частично оплаченную — отказ', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 84000, 84000);
-  await registry.addPayment(a.id, { amount: 50000, paidOn: TODAY });
+  await fx.pay(a.id, { amount: 50000, paidOn: TODAY });
   await assert.rejects(registry.decide(a.id, { decision: 'rejected' }), (e) => e.status === 409 && /удалите оплаты/.test(e.message));
   await assert.rejects(registry.decide(a.id, { decision: 'postponed' }), { status: 409 });
 });
@@ -144,7 +144,7 @@ test('Отклонить (и отложить) частично оплаченн
 test('Увеличение К оплате у оплаченной: Частично, Не оплачено 500 000', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 4000000, 1500000);
-  await registry.addPayment(a.id, { amount: 1500000, paidOn: TODAY });
+  await fx.pay(a.id, { amount: 1500000, paidOn: TODAY });
   assert.strictEqual((await registry.get(a.id)).state.status, 'paid');
   const x = await registry.decide(a.id, { decision: 'approved', approvedAmount: 2000000 });
   assert.strictEqual(x.state.status, 'partial');
@@ -154,11 +154,11 @@ test('Увеличение К оплате у оплаченной: Частич
 test('Первая частичная и закрывающая оплаты', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 4000000, 1500000);
-  const p1 = await registry.addPayment(a.id, { amount: 1000000, paidOn: TODAY });
+  const p1 = await fx.pay(a.id, { amount: 1000000, paidOn: TODAY });
   assert.strictEqual(p1.state.status, 'partial');
   assert.strictEqual(p1.state.paid, 1000000);
   assert.strictEqual(p1.state.unpaid, 500000);
-  const p2 = await registry.addPayment(a.id, { amount: 500000, paidOn: TODAY });
+  const p2 = await fx.pay(a.id, { amount: 500000, paidOn: TODAY });
   assert.strictEqual(p2.state.status, 'paid');
   assert.strictEqual(p2.state.unpaid, 0);
   assert.strictEqual(p2.lastPaidOn, TODAY);
@@ -167,8 +167,8 @@ test('Первая частичная и закрывающая оплаты', a
 test('Переплата — отказ с подсказкой поднять К оплате', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 4000000, 1500000);
-  await registry.addPayment(a.id, { amount: 1000000, paidOn: TODAY });
-  await assert.rejects(registry.addPayment(a.id, { amount: 600000, paidOn: TODAY }), (e) => e.status === 409 && /увеличьте/.test(e.message));
+  await fx.pay(a.id, { amount: 1000000, paidOn: TODAY });
+  await assert.rejects(fx.pay(a.id, { amount: 600000, paidOn: TODAY }), (e) => e.status === 409 && /увеличьте/.test(e.message));
 });
 
 test('Оплата без одобрения — отказ (ожидает, отложена, отклонена)', async (t) => {
@@ -186,14 +186,14 @@ test('Дата оплаты из будущего — отказ', async (t) => 
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 63800);
   const tomorrow = new Date(Date.parse(TODAY + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
-  await assert.rejects(registry.addPayment(a.id, { amount: 100, paidOn: tomorrow }), { status: 400 });
+  await assert.rejects(fx.pay(a.id, { amount: 100, paidOn: tomorrow }), { status: 400 });
 });
 
 test('Пересчёт после удаления оплаты: 84 000 − 50 000 = 34 000, Частично', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 84000, 84000);
-  await registry.addPayment(a.id, { amount: 50000, paidOn: TODAY });
-  const full = await registry.addPayment(a.id, { amount: 34000, paidOn: TODAY });
+  await fx.pay(a.id, { amount: 50000, paidOn: TODAY });
+  const full = await fx.pay(a.id, { amount: 34000, paidOn: TODAY });
   assert.strictEqual(full.state.status, 'paid');
   const last = full.payments.find((p) => p.amount === 34000);
   const after = await registry.removePayment(last.id);
@@ -221,14 +221,14 @@ test('Уменьшение суммы ниже К оплате — К оплат
 test('Уменьшение суммы ниже оплаченного — отказ', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 84000);
-  await registry.addPayment(a.id, { amount: 50000, paidOn: TODAY });
+  await fx.pay(a.id, { amount: 50000, paidOn: TODAY });
   await assert.rejects(registry.update(a.id, { amount: 40000 }), { status: 409 });
 });
 
 test('Удаление заявки с оплатой — отказ; без оплат — удаляется', async (t) => {
   if (!(await requireDb(t))) return;
   const a = await approved(await base(), 84000);
-  await registry.addPayment(a.id, { amount: 1000, paidOn: TODAY });
+  await fx.pay(a.id, { amount: 1000, paidOn: TODAY });
   await assert.rejects(registry.remove(a.id), (e) => e.status === 409 && /удалите оплаты/.test(e.message));
   const r = await registry.create(body({ unitId: a.unitId, categoryId: a.categoryId }));
   await registry.remove(r.id);
@@ -276,7 +276,7 @@ test('Оплата не попадает в ДДС и не запускает с
     const count = async () => (await db.pool.query('SELECT count(*)::int AS n FROM cash_entries')).rows[0].n;
     const before = await count();
     const a = await approved(await base(), 63800);
-    await registry.addPayment(a.id, { amount: 63800, paidOn: TODAY });
+    await fx.pay(a.id, { amount: 63800, paidOn: TODAY });
     await registry.update(a.id, { purpose: 'другое' });
     assert.strictEqual(await count(), before);
     assert.strictEqual(synced, 0);

@@ -18,7 +18,8 @@ test.beforeEach(async () => {
   sent = [];
   if (await ready()) {
     await resetRegistry();
-    await db.pool.query("UPDATE config SET telegram_bot_token = 'bot-test', telegram_registry_chat_id = 'registry-chat' WHERE id = 1");
+    await db.pool.query("UPDATE config SET telegram_bot_token = 'bot-test', telegram_registry_chat_id = 'registry-chat', telegram_registry_buh_chat_id = 'registry-chat' WHERE id = 1");
+    await db.pool.query("UPDATE config SET telegram_registry_events = '{\"rejected_postponed\":true}' WHERE id = 1");
   }
 });
 
@@ -95,7 +96,7 @@ test('Оплаченная и отклонённая — пропуск с пр�
   const d = await base();
   const paid = await make(d, 1000);
   await registry.decide(paid.id, { decision: 'approved' });
-  await registry.addPayment(paid.id, { amount: 1000, paidOn: calc.todayMoscow() });
+  await fx.pay(paid.id, { amount: 1000, paidOn: calc.todayMoscow() });
   const rej = await make(d, 2000);
   await registry.decide(rej.id, { decision: 'rejected' });
   const res = await registry.decideMany({ ids: [paid.id, rej.id], decision: 'postponed' });
@@ -159,7 +160,7 @@ test('Пачка из трёх — одно сообщение с суммой �
   await registry.decideMany({ ids: rs.map((r) => r.id), decision: 'approved' });
   await flush();
   assert.strictEqual(sent.length, 1);
-  assert.match(sent[0], /Одобрено пачкой: 3 заявки на 520\s000 ₽/);
+  assert.match(sent[0], /Можно делать платёжки: 3 заявки на 520\s000 ₽/);
   for (const r of rs) assert.ok(sent[0].includes('№' + r.number), r.number);
   assert.match(sent[0], /#\/registry"/);
   assert.ok(!/Решение по №/.test(sent.join('\n')));
@@ -192,7 +193,7 @@ test('Ничего не применилось — сообщения нет', a
   assert.deepStrictEqual(sent, []);
 });
 
-test('Одиночное решение — по-прежнему своё «Решение по №…»', async (t) => {
+test('Одиночное одобрение — своё «Можно делать платёжку: №…»', async (t) => {
   if (!(await requireDb(t))) return;
   const d = await base();
   const r = await make(d, 1000);
@@ -200,5 +201,5 @@ test('Одиночное решение — по-прежнему своё «Р�
   await registry.decide(r.id, { decision: 'approved' });
   await flush();
   assert.strictEqual(sent.length, 1);
-  assert.match(sent[0], new RegExp('Решение по №' + r.number + ': одобрено'));
+  assert.match(sent[0], new RegExp('Можно делать платёжку: №' + r.number));
 });

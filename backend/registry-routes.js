@@ -2,13 +2,15 @@ const HttpError = require('./http-error');
 const registry = require('./handlers/registry');
 const dictionaries = require('./handlers/registry-dictionaries');
 const files = require('./registry-files');
-const telegram = require('./telegram');
 
 // Маршруты реестра оплат. У них своя модель доступа (registryRoles вместо
 // role): admin по сессии или учредитель ("owner") по заголовку
 // X-Owner-Token — псевдороль только для этих маршрутов, в общую иерархию
 // manager/admin (ROLE_RANK в router.js) не встраивается. manager и
-// работники по ссылкам заводов сюда не допускаются вовсе. Сам резолв —
+// работники по ссылкам заводов сюда не допускаются вовсе. В самом реестре
+// права admin и учредителя равны (change reestr-payment-order); за admin
+// остаются только Настройки: справочники (запись), уведомления, перевыпуск
+// ссылки, тестовое сообщение. Сам резолв —
 // resolveRegistryRole() ниже, вызывается из router.js::handleRequest.
 const ADMIN = ['admin'];
 const ADMIN_OWNER = ['admin', 'owner'];
@@ -50,19 +52,19 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
     {
       method: 'POST',
       pattern: /^\/api\/registry\/requests$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res) => sendJson(res, 201, await registry.create(await readBody(req), { origin: originOf(req) }))
     },
     {
       method: 'PUT',
       pattern: /^\/api\/registry\/requests\/([^/]+)$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m) => sendJson(res, 200, await registry.update(id(m), await readBody(req)))
     },
     {
       method: 'DELETE',
       pattern: /^\/api\/registry\/requests\/([^/]+)$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m) => {
         await registry.remove(id(m));
         sendJson(res, 204);
@@ -83,17 +85,31 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
       handler: async (req, res) => sendJson(res, 200, await registry.decideMany(await readBody(req), { origin: originOf(req) }))
     },
 
+    // «Платёжка готова» и её отмена (change reestr-payment-order).
+    {
+      method: 'POST',
+      pattern: /^\/api\/registry\/requests\/([^/]+)\/payment-order$/,
+      registryRoles: ADMIN_OWNER,
+      handler: async (req, res, m) => sendJson(res, 200, await registry.markPaymentOrder(id(m), { origin: originOf(req) }))
+    },
+    {
+      method: 'POST',
+      pattern: /^\/api\/registry\/requests\/([^/]+)\/payment-order\/cancel$/,
+      registryRoles: ADMIN_OWNER,
+      handler: async (req, res, m) => sendJson(res, 200, await registry.cancelPaymentOrder(id(m), await readBody(req), { origin: originOf(req) }))
+    },
+
     // --- оплаты ---
     {
       method: 'POST',
       pattern: /^\/api\/registry\/requests\/([^/]+)\/payments$/,
-      registryRoles: ADMIN,
-      handler: async (req, res, m) => sendJson(res, 201, await registry.addPayment(id(m), await readBody(req)))
+      registryRoles: ADMIN_OWNER,
+      handler: async (req, res, m) => sendJson(res, 201, await registry.addPayment(id(m), await readBody(req), { origin: originOf(req) }))
     },
     {
       method: 'DELETE',
       pattern: /^\/api\/registry\/payments\/([^/]+)$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m) => sendJson(res, 200, await registry.removePayment(id(m)))
     },
 
@@ -101,7 +117,7 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
     {
       method: 'POST',
       pattern: /^\/api\/registry\/requests\/([^/]+)\/files$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m, role, query) => {
         const buf = await files.readRaw(req);
         sendJson(res, 201, await registry.addRequestFile(id(m), buf, { kind: query.kind, name: query.name }));
@@ -110,7 +126,7 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
     {
       method: 'POST',
       pattern: /^\/api\/registry\/payments\/([^/]+)\/file$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m, role, query) => {
         const buf = await files.readRaw(req);
         sendJson(res, 201, await registry.setPaymentFile(id(m), buf, { name: query.name }));
@@ -119,7 +135,7 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
     {
       method: 'DELETE',
       pattern: /^\/api\/registry\/files\/([^/]+)$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m) => sendJson(res, 200, await registry.removeFile(id(m)))
     },
 
@@ -128,13 +144,13 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
     {
       method: 'GET',
       pattern: /^\/api\/registry\/lookup$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m, role, query) => sendJson(res, 200, await registry.lookup(query))
     },
     {
       method: 'GET',
       pattern: /^\/api\/registry\/suggest$/,
-      registryRoles: ADMIN,
+      registryRoles: ADMIN_OWNER,
       handler: async (req, res, m, role, query) => sendJson(res, 200, await registry.suggest(query.field, query.q))
     },
 
@@ -204,9 +220,11 @@ module.exports = function registryRoutes({ readBody, sendJson }) {
       registryRoles: ADMIN,
       handler: async (req, res) => {
         const body = await readBody(req);
-        if (body.telegramRegistryChatId !== undefined || body.telegramRegistryThreadId !== undefined) await registry.updateSettings(body);
+        // Несохранённые поля формы сначала сохраняем — тест идёт ровно туда,
+        // что сейчас на экране. to: owner (по умолчанию) | buh.
+        await registry.updateSettings(body);
         try {
-          await telegram.sendRegistryTest();
+          await registry.sendTestTo(body.to);
         } catch (err) {
           throw new HttpError(502, 'Не удалось отправить сообщение: ' + err.message);
         }

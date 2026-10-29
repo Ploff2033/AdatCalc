@@ -395,6 +395,12 @@ nav.nav a.muted { color: var(--sidebar-muted-2); }
 
 /* ---------- реестр оплат (screen-registry.js / mobile-registry.js, макеты Payments*) ---------- */
 .chip.part { background: #E1E7F0; color: #28406A; }
+/* «Платёжка готова» (change reestr-payment-order) — фиолетовый */
+.chip.ready { background: #EDE5F7; color: #5B2D91; }
+.rg-ready-age { font-size: 12px; color: #5B2D91; white-space: nowrap; }
+.btn.rg-ready-btn, .btn.pri.rg-ready-btn { background: #6E3BAE; border-color: #6E3BAE; color: #fff; }
+.rg-po-block { display: flex; flex-direction: column; gap: 8px; }
+.rg-po-cancel { color: var(--bad-fg) !important; }
 .rg-filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .rg-filter { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .rg-filter .inp { width: 180px; }
@@ -499,8 +505,11 @@ body.rg-noscroll { overflow: hidden; }
 
 /* режим учредителя (app.js::bootOwner): только реестр, без сайдбара и меню */
 body.owner-mode .sidebar, body.owner-mode .bottom-nav.nav, body.owner-mode .bottom-nav { display: none !important; }
-body.owner-mode .main-area { max-width: 720px; margin: 0 auto; width: 100%; }
-body.owner-mode .page { padding: 0; gap: 0; }
+/* на ПК по ссылке — полный десктопный реестр (change reestr-payment-order) */
+@media (max-width: 860px) {
+  body.owner-mode .main-area { max-width: 720px; margin: 0 auto; width: 100%; }
+  body.owner-mode .page { padding: 0; gap: 0; }
+}
 
 @media (max-width: 860px) {
   body[data-route="registry"] .page { padding: 0; gap: 0; }
@@ -684,3 +693,25 @@ body.owner-mode .rgm-bulkbar-wrap { max-width: 720px; margin: 0 auto; }
 .o-dd-item .n { font-size: 12px; color: #6B6E66; font-variant-numeric: tabular-nums; }
 .o-day { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface-3); font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--border); }
 .o-day-sum { font-size: 12px; font-weight: 400; color: var(--ink-soft); white-space: nowrap; }
+
+/* ---------- реестр: длинный получатель и «Скопировать» ---------- */
+/* Название получателя не обрезается — переносится на следующую строку. */
+.rg-recipient { font-weight: 600; white-space: normal; overflow-wrap: break-word; line-height: 1.3; }
+.rg-recipient-title { white-space: normal; overflow-wrap: break-word; line-height: 1.25; }
+.rgm-recipient { font-weight: 500; color: var(--ink-soft); overflow-wrap: break-word; line-height: 1.35; }
+.rg-copy {
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; margin-left: 4px;
+  vertical-align: -9px; border-radius: 6px; color: var(--muted); cursor: pointer; flex: none;
+}
+.rg-copy:hover { background: var(--surface-3); color: var(--ink); }
+.rg-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rg-copy.done { color: var(--ok-fg); background: var(--ok-bg); }
+.rg-recipient-title .rg-copy { vertical-align: -6px; }
+/* На телефоне — крупнее, под палец. */
+@media (max-width: 860px) { .rg-copy { width: 36px; height: 36px; vertical-align: -12px; } }
+.rg-toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 90;
+  max-width: min(520px, calc(100vw - 24px)); padding: 10px 14px; border-radius: 8px; background: var(--sidebar-bg); color: #fff;
+  font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rg-toast.bad { background: var(--bad-fg); }

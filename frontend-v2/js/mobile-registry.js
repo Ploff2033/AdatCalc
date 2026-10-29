@@ -43,10 +43,6 @@
     return ((data && data.items) || []).filter(function (it) { return it.state.group === group; });
   }
 
-  function canPay() {
-    return !R.isOwnerMode() && window.Auth && Auth.isAtLeast('admin');
-  }
-
   function go(number) {
     location.hash = number ? '#/registry/' + encodeURIComponent(number) : '#/registry';
   }
@@ -83,6 +79,7 @@
         '</div>' : '';
     var comment = it.decisionComment && (it.decision === 'rejected' || it.decision === 'postponed' || s.status === 'partial')
       ? '<span class="hint">' + esc(it.decisionComment) + '</span>' : '';
+    if (s.status === 'ready') comment = '<span class="rg-ready-age">Платёжка ' + esc(R.readyAge(it)) + ' · к оплате <b class="num">' + R.money(s.unpaid) + '</b></span>' + comment;
     var check = picking
       ? '<span class="rgm-check' + (sel.has(it.id) ? ' on' : '') + '" role="checkbox" aria-checked="' + sel.has(it.id) + '" aria-label="Выбрать ' + esc(it.number) + '"></span>'
       : '';
@@ -90,7 +87,8 @@
       '<div class="spread" style="gap:10px"><span class="num" style="font-size:12px">' + check + '<span class="' + (s.overdue ? 'rg-overdue-text' : 'hint') + '">' + due + '</span>' +
         '<span class="hint"> · ' + esc(it.number) + ' · ' + esc(it.unitName) + '</span></span>' + R.statusChip(it) + '</div>' +
       '<div class="rgm-title"><span>' + esc(it.purpose) + '</span><span class="num">' + R.money(it.amount) + '</span></div>' +
-      '<span class="hint">' + esc(it.recipient) + ' · ' + esc(it.categoryName) + (it.applicant ? ' · ' + esc(it.applicant) : '') + '</span>' +
+      '<span class="rgm-recipient">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') + '</span>' +
+      '<span class="hint">' + esc(it.categoryName) + (it.applicant ? ' · ' + esc(it.applicant) : '') + '</span>' +
       (thumbs ? '<div class="rgm-thumbs">' + thumbs + '</div>' : '') +
       progress + comment + actions +
     '</article>';
@@ -123,13 +121,13 @@
         group = it.state.group;
         var g = t.groups[group];
         var bulkBtn = '';
-        if ((group === 0 || group === 2) && groupItems(group).some(sel.selectable)) {
+        if (R.BULK_GROUPS.indexOf(group) !== -1 && groupItems(group).some(sel.selectable)) {
           bulkBtn = sel.isOn()
             ? '<button type="button" class="btn ghost sm rgm-sep-btn" data-bulk-group="' + group + '">' + (sel.groupAllPicked(groupItems(group)) ? 'Снять все' : 'Выбрать все') + '</button>'
             : '<button type="button" class="btn ghost sm rgm-sep-btn" data-bulk-enter="1">Выбрать</button>';
         }
         html += '<div class="rgm-sep"><span>' + R.GROUP_LABELS[group] + ' · ' + g.count + '</span>' +
-          '<span class="rgm-sep-right">' + (group === 3 ? '' : '<span class="num">' + R.rub(g.sum) + '</span>') + bulkBtn + '</span></div>';
+          '<span class="rgm-sep-right">' + (group === R.GROUP.CLOSED ? '' : '<span class="num">' + R.rub(g.sum) + '</span>') + bulkBtn + '</span></div>';
       }
       html += cardHtml(it);
     });
@@ -189,6 +187,29 @@
     return '<div class="rgm-kv"><span>' + label + '</span><span>' + value + '</span></div>';
   }
 
+  // Одно место под действие (change reestr-payment-order): «Платёжка готова»
+  // ↔ форма «+ Оплата» с «Отменить платёжку».
+  function payActionHtml(it) {
+    var s = it.state;
+    if (!(s.unpaid > 0)) return '';
+    if (s.status !== 'ready') {
+      return (it.paymentOrderCancelNote ? '<p class="hint" style="margin:0">Платёжка отменена: ' + esc(it.paymentOrderCancelNote) + '</p>' : '') +
+        '<button type="button" class="btn pri rg-ready-btn" id="rgm-po-mark" style="width:100%;height:48px">Платёжка готова</button>';
+    }
+    return '<p class="hint" style="margin:0">' + R.statusChip(it) + ' <span class="rg-ready-age">' + esc(R.readyAge(it)) + '</span></p>' +
+      '<form id="rgm-pay-form" class="stack g8">' +
+        '<div class="grid-2" style="grid-template-columns:1fr 1fr"><div class="field"><label for="rgm-pay-date">Дата оплаты</label><input id="rgm-pay-date" type="date" class="inp" style="height:44px" max="' + esc(data.today) + '" value="' + esc(data.today) + '"></div>' +
+        '<div class="field"><label for="rgm-pay-amount">Сумма, ₽</label><input id="rgm-pay-amount" class="inp num" inputmode="decimal" style="height:44px"></div></div>' +
+        '<button type="submit" class="btn">+ Оплата</button></form>' +
+      '<button type="button" class="btn ghost sm rg-po-cancel" id="rgm-po-cancel" style="align-self:flex-start">Отменить платёжку</button>';
+  }
+
+  function payError(err) {
+    var el = document.getElementById('rgm-pay-error');
+    el.textContent = err.message;
+    el.hidden = false;
+  }
+
   function renderCard(it) {
     inCard = true;
     renderBar();
@@ -206,13 +227,9 @@
         '<div class="rgm-kv"><span>Не оплачено</span><b class="num"' + (s.overdue ? ' style="color:var(--bad-fg)"' : '') + '>' + R.rub(s.unpaid) + '</b></div>' +
         it.payments.map(function (p) {
           return '<div class="rgm-kv"><span class="num">' + R.ddmmyyyy(p.paidOn) + (p.file ? ' · <a href="' + esc(p.file.url) + '"' + R.docTarget() + '>платёжка</a>' : '') + '</span>' +
-            '<span class="num">' + R.rub(p.amount) + (canPay() ? ' <button type="button" class="btn ghost icon rgm-del-pay" data-id="' + esc(p.id) + '" aria-label="Удалить оплату">✕</button>' : '') + '</span></div>';
+            '<span class="num">' + R.rub(p.amount) + ' <button type="button" class="btn ghost icon rgm-del-pay" data-id="' + esc(p.id) + '" aria-label="Удалить оплату">✕</button></span></div>';
         }).join('') +
-        (canPay() && s.unpaid > 0
-          ? '<form id="rgm-pay-form" class="stack g8">' +
-              '<div class="grid-2" style="grid-template-columns:1fr 1fr"><div class="field"><label for="rgm-pay-date">Дата оплаты</label><input id="rgm-pay-date" type="date" class="inp" style="height:44px" max="' + esc(data.today) + '" value="' + esc(data.today) + '"></div>' +
-              '<div class="field"><label for="rgm-pay-amount">Сумма, ₽</label><input id="rgm-pay-amount" class="inp num" inputmode="decimal" style="height:44px"></div></div>' +
-              '<button type="submit" class="btn">+ Оплата</button></form>' : '') +
+        payActionHtml(it) +
         '<p class="banner" id="rgm-pay-error" hidden></p></section>';
     }
     document.getElementById('rgm-body').innerHTML =
@@ -220,7 +237,7 @@
       '<section class="rgm-panel">' +
         '<div class="spread"><span class="num hint">' + esc(it.number) + ' · ' + R.tsDate(it.createdAt) + '</span>' + R.statusChip(it) + '</div>' +
         '<div class="rgm-title" style="font-size:16px"><span>' + esc(it.purpose) + '</span><span class="num" style="font-size:20px">' + R.money(it.amount) + '</span></div>' +
-        kv('Получатель', esc(it.recipient)) +
+        kv('Получатель', esc(it.recipient) + R.copyBtn(it.recipient, 'получателя')) +
         kv('Подразделение', esc(it.unitName)) +
         kv('Категория', esc(it.categoryName)) +
         kv('Заявитель', esc(it.applicant)) +
@@ -258,6 +275,19 @@
           b.disabled = false;
         }
       });
+    });
+    var poMark = document.getElementById('rgm-po-mark');
+    if (poMark) poMark.addEventListener('click', async function () {
+      poMark.disabled = true;
+      try { renderCard(await R.api.post('/requests/' + encodeURIComponent(it.id) + '/payment-order')); }
+      catch (err) { payError(err); poMark.disabled = false; }
+    });
+    var poCancel = document.getElementById('rgm-po-cancel');
+    if (poCancel) poCancel.addEventListener('click', async function () {
+      var note = R.askCancelReason();
+      if (note === null) return;
+      try { renderCard(await R.api.post('/requests/' + encodeURIComponent(it.id) + '/payment-order/cancel', { note: note })); }
+      catch (err) { payError(err); }
     });
     var payForm = document.getElementById('rgm-pay-form');
     if (payForm) {
@@ -316,7 +346,7 @@
     var cancel = function () { clearTimeout(timer); timer = null; start = null; };
     body.addEventListener('pointerdown', function (e) {
       suppressNextClick = false;
-      if (e.button > 0 || e.target.closest('a, button, select, input, label')) return;
+      if (e.button > 0 || e.target.closest('a, button, select, input, label, [data-copy]')) return;
       var card = e.target.closest('.rgm-card');
       if (!card || !data) return;
       var item = data.items.find(function (x) { return x.id === card.dataset.id; });

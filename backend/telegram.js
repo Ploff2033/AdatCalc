@@ -78,11 +78,13 @@ function describeError(err) {
   return parts.length ? parts.join(' ') : String(err);
 }
 
-function sendOnce(botToken, payload, agent, onDone) {
+// method — метод Bot API (sendMessage, setMessageReaction); onDone(err, result)
+// — result из ответа Telegram (у sendMessage там message_id).
+function sendOnce(botToken, payload, agent, onDone, method) {
   const req = https.request(
     {
       hostname: 'api.telegram.org',
-      path: '/bot' + botToken + '/sendMessage',
+      path: '/bot' + botToken + '/' + (method || 'sendMessage'),
       method: 'POST',
       agent,
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
@@ -98,7 +100,11 @@ function sendOnce(botToken, payload, agent, onDone) {
           const err = new Error('HTTP ' + res.statusCode + ': ' + body);
           err.telegramStatus = res.statusCode;
           onDone(err);
-        } else onDone(null);
+        } else {
+          let result = null;
+          try { result = JSON.parse(body).result; } catch (e) { /* тело не JSON — результата нет */ }
+          onDone(null, result);
+        }
       });
     }
   );
@@ -115,9 +121,9 @@ function sendOnce(botToken, payload, agent, onDone) {
 // чтобы просто один раз не повезло и тихо промолчать. maxAttempts — 3 в
 // ручном режиме, 1 в пуле (там при сбое переходим на другой сервер, см.
 // deliverViaPool). Ошибку самого Telegram (4xx) не повторяем.
-function sendWithRetry(botToken, payload, agent, attempt, maxAttempts, resolve, reject) {
-  sendOnce(botToken, payload, agent, (err) => {
-    if (!err) { if (resolve) resolve(); return; }
+function sendWithRetry(botToken, payload, agent, attempt, maxAttempts, resolve, reject, method) {
+  sendOnce(botToken, payload, agent, (err, result) => {
+    if (!err) { if (resolve) resolve(result); return; }
     if (attempt >= maxAttempts || isTelegramError(err)) {
       var described = describeError(err);
       console.error('Telegram: ошибка отправки после ' + attempt + ' попыток (' + described + ')');
@@ -132,8 +138,8 @@ function sendWithRetry(botToken, payload, agent, attempt, maxAttempts, resolve, 
       if (reject) reject(Object.assign(new Error(described), err.telegramStatus ? { telegramStatus: err.telegramStatus } : {}));
       return;
     }
-    setTimeout(() => sendWithRetry(botToken, payload, agent, attempt + 1, maxAttempts, resolve, reject), RETRY_DELAY_MS);
-  });
+    setTimeout(() => sendWithRetry(botToken, payload, agent, attempt + 1, maxAttempts, resolve, reject, method), RETRY_DELAY_MS);
+  }, method);
 }
 
 // Сам HTTP-вызов к Telegram — через объект, чтобы тесты могли подменить его и
@@ -147,9 +153,22 @@ const transport = {
       { chat_id: chatId, text, parse_mode: 'HTML' },
       threadId ? { message_thread_id: Number(threadId) } : {}
     ));
-    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, attempts || MAX_ATTEMPTS, resolve, reject));
+    // Резолвится message_id отправленного сообщения (реакции реестра оплат).
+    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, attempts || MAX_ATTEMPTS,
+      (result) => resolve(result && result.message_id), reject));
+  },
+  // Любой другой метод Bot API (setMessageReaction) — те же прокси и повторы.
+  call(botToken, method, params, proxyUrl, attempts) {
+    const payload = JSON.stringify(params);
+    return new Promise((resolve, reject) => sendWithRetry(botToken, payload, proxyAgentFor(proxyUrl), 1, attempts || MAX_ATTEMPTS, resolve, reject, method));
   }
 };
+
+// msg.method задан — вызов метода с msg.params вместо sendMessage.
+function postWith(msg, proxyUrl, attempts) {
+  if (msg.method) return transport.call(msg.botToken, msg.method, msg.params, proxyUrl, attempts);
+  return transport.post(msg.botToken, msg.chatId, msg.text, proxyUrl, msg.threadId, attempts);
+}
 
 // Ответ от самого Telegram с ошибкой клиента (неверный токен/чат/тема, 429) —
 // прокси тут ни при чём: сервер не ищем, в очередь не ставим.
@@ -209,7 +228,7 @@ function markCurrent(server) {
 }
 
 function postVia(server, msg) {
-  return transport.post(msg.botToken, msg.chatId, msg.text, server.proxyUrl, msg.threadId, 1);
+  return postWith(msg, server.proxyUrl, 1);
 }
 
 function shortReason(err) {
@@ -224,15 +243,16 @@ async function searchFrom(servers, failedIdx, firstErr, msg) {
   let lastErr = firstErr;
   for (let k = 1; k < servers.length; k++) {
     const s = servers[(failedIdx + k) % servers.length];
+    let res;
     try {
-      await postVia(s, msg);
+      res = await postVia(s, msg);
     } catch (err) {
       if (!isTelegramError(err)) { lastErr = err; continue; }
       switchTo(s, failed, firstErr);
       throw err;
     }
     switchTo(s, failed, firstErr);
-    return;
+    return res;
   }
   throw new AllProxiesFailed(lastErr, servers.length);
 }
@@ -259,16 +279,16 @@ async function deliverViaPool(servers, msg) {
   if (pool.searching) await pool.searching.catch(() => {});
   let idx = currentIndex(servers);
   try {
-    await postVia(servers[idx], msg);
+    const res = await postVia(servers[idx], msg);
     markCurrent(servers[idx]);
-    return;
+    return res;
   } catch (err) {
     if (isTelegramError(err)) { markCurrent(servers[idx]); throw err; }
     if (pool.searching) {
       await pool.searching.catch(() => {});
       const now = currentIndex(servers);
       if (now !== idx) {
-        try { await postVia(servers[now], msg); return; } catch (err2) {
+        try { return await postVia(servers[now], msg); } catch (err2) {
           if (isTelegramError(err2)) throw err2;
           idx = now;
           err = err2;
@@ -285,7 +305,7 @@ async function deliver(msg) {
   const manifest = readManifest();
   if (manifest) return deliverViaPool(manifest.servers, msg);
   const { proxyUrl } = await getCredentials();
-  return transport.post(msg.botToken, msg.chatId, msg.text, proxyUrl, msg.threadId);
+  return postWith(msg, proxyUrl);
 }
 
 // ---- Очередь недоставленных (telegram_outbox) ----
@@ -301,7 +321,7 @@ async function enqueue(msg, err) {
 // Telegram — только в лог (повтор её не исправит).
 async function deliverOrQueue(msg, label) {
   try {
-    await deliver(msg);
+    return await deliver(msg);
   } catch (err) {
     if (isTelegramError(err)) {
       console.error('Telegram' + label + ': ' + describeError(err));
@@ -424,6 +444,42 @@ function notifyRegistry(text) {
     });
 }
 
+// Адресная отправка реестра (change reestr-payment-order, registry-notify.js):
+// чат и тема — конкретного адресата («Учредитель» / «Бухгалтер»), бот и
+// прокси — общие. Та же доставка с очередью, что у notifyRegistry.
+function notifyRegistryTo(to, text) {
+  return getCredentials()
+    .then(({ botToken }) => {
+      if (!botToken || !to || !to.chatId) return;
+      return deliverOrQueue({ botToken, chatId: to.chatId, threadId: to.threadId || '', text }, ' (реестр оплат)');
+    })
+    .catch((err) => {
+      console.error('Telegram (реестр оплат): ' + describeError(err));
+    });
+}
+
+// Реакция бота на своё сообщение реестра (emoji — из стандартного набора
+// Telegram; null — снять). Без очереди: не дошло — в лог, бросает ошибку,
+// вызывающий не помечает реакцию поставленной.
+async function setRegistryReaction(chatId, messageId, emoji) {
+  const { botToken } = await getCredentials();
+  if (!botToken) return false;
+  await deliver({
+    botToken,
+    method: 'setMessageReaction',
+    params: { chat_id: chatId, message_id: Number(messageId), reaction: emoji ? [{ type: 'emoji', emoji }] : [] }
+  });
+  return true;
+}
+
+// Тестовое сообщение конкретному адресату — ждёт результат, ошибка на экран.
+async function sendRegistryTestTo(to, label, head) {
+  const { botToken } = await getCredentials();
+  if (!botToken) throw new Error('Токен бота не задан (раздел «Уведомления в Telegram»)');
+  if (!to || !to.chatId) throw new Error('ID чата адресата «' + label + '» не задан');
+  return deliver({ botToken, chatId: to.chatId, threadId: to.threadId || '', text: (head || '') + '✅ Тестовое сообщение реестра оплат AdatBeton Calc для адресата «' + label + '».' });
+}
+
 // Кнопка "Отправить тестовое" в разделе реестра Настроек — ждёт результат,
 // с тем же поиском сервера, но без очереди: ошибка сразу на экран.
 async function sendRegistryTest() {
@@ -515,4 +571,4 @@ function resetPoolForTests() {
   manifestCache = { key: null, data: null };
 }
 
-module.exports = { notifyOrderCreated, notifyOrderEdited, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, escapeHtml, transport, drainOutbox, status, resetPoolForTests };
+module.exports = { notifyOrderCreated, notifyOrderEdited, notifyStockDeficit, sendTest, notifyRegistry, sendRegistryTest, notifyRegistryTo, sendRegistryTestTo, setRegistryReaction, escapeHtml, transport, drainOutbox, status, resetPoolForTests };

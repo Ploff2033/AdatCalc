@@ -81,32 +81,42 @@ test('PUBLIC_BASE_URL важнее заголовков запроса', async (
   }
 });
 
-test('Одобрение части: «одобрено 50 000 ₽ из 63 800 ₽»', async (t) => {
+async function setBuhChat(id) {
+  await db.pool.query('UPDATE config SET telegram_registry_buh_chat_id = $1 WHERE id = 1', [id]);
+}
+
+test('Одобрение части уходит бухгалтеру: «Можно делать платёжку», получатель отдельной строкой', async (t) => {
   if (!(await requireDb(t))) return;
   const r = await create();
   await setRegistryChat('registry-chat');
+  await setBuhChat('buh-chat');
   await registry.decide(r.id, { decision: 'approved', approvedAmount: 50000 }, { origin: 'https://calc.example' });
   await flush();
   assert.strictEqual(sent.length, 1);
-  assert.match(sent[0].text, new RegExp('Решение по №' + r.number + ': одобрено 50\\s000 ₽ из 63\\s800 ₽'));
+  assert.strictEqual(sent[0].chatId, 'buh-chat');
+  assert.match(sent[0].text, new RegExp('❗️❗️❗️ <b>Можно делать платёжку: №' + r.number + '</b>\\nООО "ПРОМХИМ"\\n'));
+  assert.match(sent[0].text, /К оплате: 50\s000 ₽ \(из 63\s800 ₽\)/);
 });
 
-test('Отклонение с комментарием попадает в сообщение', async (t) => {
+test('Отклонение с комментарием попадает в сообщение (событие включено)', async (t) => {
   if (!(await requireDb(t))) return;
   const r = await create();
-  await setRegistryChat('registry-chat');
+  await setBuhChat('buh-chat');
+  await db.pool.query(`UPDATE config SET telegram_registry_events = '{"rejected_postponed":true}' WHERE id = 1`);
   await registry.decide(r.id, { decision: 'rejected', comment: 'Есть <на> складе' });
   await flush();
   assert.match(sent[0].text, /отклонено/);
   assert.match(sent[0].text, /Есть &lt;на&gt; складе/);
 });
 
-test('Оплаты и правки не уведомляют', async (t) => {
+test('Оплаты (событие выключено по умолчанию) и правки не уведомляют', async (t) => {
   if (!(await requireDb(t))) return;
   const r = await create();
   await registry.decide(r.id, { decision: 'approved' });
+  await registry.markPaymentOrder(r.id);
   await flush();
   await setRegistryChat('registry-chat');
+  await setBuhChat('buh-chat');
   await registry.addPayment(r.id, { amount: 1000, paidOn: calc.todayMoscow() });
   await registry.update(r.id, { purpose: 'другое' });
   const pay = (await registry.get(r.id)).payments[0];
@@ -145,7 +155,7 @@ test('Настройки и «Отправить тестовое» через A
   const admin = await cookieFor('admin');
   const empty = await call('POST', '/api/registry/telegram-test', { cookie: admin, json: {} });
   assert.strictEqual(empty.status, 502);
-  assert.match(empty.data.error, /ID чата реестра/);
+  assert.match(empty.data.error, /ID чата адресата «Учредитель»/);
   const ok = await call('POST', '/api/registry/telegram-test', { cookie: admin, json: { telegramRegistryChatId: '-100123' } });
   assert.strictEqual(ok.status, 200);
   assert.deepStrictEqual(sent.map((s) => s.chatId), ['-100123']);

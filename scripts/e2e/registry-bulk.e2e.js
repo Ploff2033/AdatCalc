@@ -63,26 +63,29 @@ const ok = (msg) => console.log(String(++step).padStart(2) + '. ✓ ' + msg);
   watch(o, 'owner');
   await o.goto(BASE + '/v2/?owner=' + owner);
   await o.waitForSelector('.rgm-card');
-  assert.strictEqual(await o.locator('.rgm-sep [data-bulk-enter]').count(), 2, '«Выбрать» в «Ожидает решения» и «Отложена»');
+  assert.strictEqual(await o.locator('.rgm-sep [data-bulk-enter]').count(), 3, '«Выбрать» в «Ожидает решения», «Одобрена / Частично» и «Отложена»');
   assert.strictEqual(await o.locator('.rgm-bulkbar-wrap .rg-bulkbar').count(), 0);
-  ok('вне режима: кнопки «Выбрать» в двух группах, панели нет, одиночные кнопки на карточках есть');
+  ok('вне режима: кнопки «Выбрать» в трёх группах, панели нет, одиночные кнопки на карточках есть');
 
   await o.locator('.rgm-sep [data-bulk-enter]').first().click();
   await o.waitForSelector('.rg-bulkbar');
   assert.strictEqual(await o.locator('.rgm-card [data-act]').count(), 0, 'кнопки одиночного решения скрыты');
-  assert.strictEqual(await o.locator('.rgm-card.pickable').count(), 6, '5 ожидающих + 1 отложенная');
+  assert.strictEqual(await o.locator('.rgm-card.pickable').count(), 7, '5 ожидающих + 1 отложенная + 1 одобренная');
   assert.ok(await o.locator('[data-bulk="approved"]').isDisabled());
-  ok('режим выбора: 6 заявок с отметками, кнопки решения скрыты, «Одобрить» недоступна при 0 выбранных');
+  ok('режим выбора: 7 заявок с отметками, кнопки решения скрыты, «Одобрить» недоступна при 0 выбранных');
 
   const card = (r) => o.locator('.rgm-card[data-id="' + r.id + '"]');
+  // Одобренная выбирается под «Платёжка готова» (change reestr-payment-order);
+  // выбор из другой группы сбрасывает прежние отметки.
   await card(appr).click();
-  await o.waitForSelector('#rgm-dec-amount');
-  ok('тап по одобренной — открывается её карточка, отметка не ставится');
-  await o.goBack();
-  await o.waitForSelector('.rgm-card');
-  assert.ok(await o.locator('.rg-bulkbar').count(), 'режим сохранился после возврата');
+  assert.strictEqual(await o.locator('[data-bulk="payment_ready"]').count(), 1);
+  assert.strictEqual(await o.locator('[data-bulk="approved"]').count(), 0);
+  await card(r1).click();
+  assert.strictEqual(await card(appr).locator('.rgm-check.on').count(), 0, 'отметка одобренной сброшена');
+  assert.strictEqual(await o.locator('[data-bulk="approved"]').count(), 1);
+  ok('одобренная — на панели «Платёжка готова»; выбор ожидающей сбрасывает её отметку');
 
-  for (const r of [r1, r2, r3]) await card(r).click();
+  for (const r of [r2, r3]) await card(r).click();
   const info = await o.textContent('.rg-bulkbar-info');
   assert.match(info.replace(/\s/g, ' '), /Выбрано 3 · 520 000,00 ₽/);
   ok('выбраны 3 → на панели «' + info.replace(/\s+/g, ' ').trim() + '»');
@@ -129,7 +132,7 @@ const ok = (msg) => console.log(String(++step).padStart(2) + '. ✓ ' + msg);
 
   // «Выбрать все» в группе «Ожидает решения» и «Отложить»
   await o.locator('.rgm-sep [data-bulk-enter]').first().click();
-  await o.locator('.rgm-sep [data-bulk-group="0"]').click();
+  await o.locator('.rgm-sep [data-bulk-group="1"]').click();
   assert.match(await o.textContent('.rg-bulkbar-info'), /Выбрано 1/);
   assert.strictEqual(await card(post).locator('.rgm-check.on').count(), 0, 'отложенная не отмечается из чужой группы');
   await o.click('[data-bulk="postponed"]');

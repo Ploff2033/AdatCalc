@@ -169,3 +169,37 @@ test('Скан с искажённой шапкой таблицы (реальн
   assert.strictEqual(r.fields.amount, 3500000);
   assert.strictEqual(r.fields.basis, 'Счёт № 21 от 21.10.2026; договор № 1785 от 09.02.2026');
 });
+
+// ---------- чистка типичных ошибок OCR (не трогая остальную латиницу) ----------
+
+test('Форма организации из латиницы и цифр перед кавычками → ООО/АО', () => {
+  for (const form of ['OOO', 'O0О', 'О00', '0OO']) {
+    const t = P.parseText('Поставщик ' + form + ' "ФОРА", ИНН 0916011226\nВсего к оплате: 95 450,00');
+    assert.strictEqual(t.recipient, 'ООО «ФОРА»', form);
+  }
+  assert.strictEqual(P.parseText('Поставщик AO "Альфа", ИНН 7700000002\nИтого: 1 000,00').recipient, 'АО «Альфа»');
+  assert.strictEqual(P.parseText('Поставщик ПAO "МегаФон", ИНН 7812014560\nИтого: 1 000,00').recipient, 'ПАО «МегаФон»');
+});
+
+test('Латиница в названии и номерах не трогается', () => {
+  const t = P.parseText('Получатель ООО "FORA LOGISTICS", ИНН 0916011226\nСчет на оплату № RU203023711-OOO7 от 01.10.2026\nИтого: 1 000,00');
+  assert.strictEqual(t.recipient, 'ООО «FORA LOGISTICS»');
+  assert.strictEqual(t.invoiceNumber, 'RU203023711-OOO7');
+  assert.strictEqual(P.normalize('OOO и AO без кавычек'), 'OOO и AO без кавычек');
+});
+
+test('«MHH» перед цифрами → ИНН; «ИНН!» с пунктуацией', () => {
+  assert.strictEqual(P.parseText('Поставщик ООО "ФОРА", MHH 0916011226\nИтого: 1 000,00').recipientInn, '0916011226');
+  assert.strictEqual(P.parseText('Исполнитель ИП Иванов И. И. ИНН! 260612345678\nИтого: 1 000,00').recipientInn, '260612345678');
+  assert.strictEqual(P.normalize('MHH компания'), 'MHH компания');
+});
+
+test('Получатель-гражданин (акт с самозанятым): ФИО на следующей строке', () => {
+  const t = P.parseText('ЗАКАЗЧИК ИСПОЛНИТЕЛЬ\nООО "АДАТ ГРУПП" Гражданин Российской Федерации\nИНН: 2628063503 Иванов Иван Иванович,\nИНН: 091600000017\nИтого: 1 000,00');
+  assert.strictEqual(t.recipient, 'Гражданин Иванов Иван Иванович');
+  assert.strictEqual(t.recipientInn, '091600000017');
+});
+
+test('Мусор перед «Итого» не мешает найти сумму', () => {
+  assert.strictEqual(P.parseText('Поставщик ООО "Промхим", ИНН 2635000000\n§ Итого: 67 040,00').amountKop, 6704000);
+});

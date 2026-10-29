@@ -10,8 +10,12 @@
   var R = window.Registry;
   var esc = R.esc;
 
-  var COLS = '118px minmax(0,1fr) minmax(0,1.7fr) 112px 118px 150px 112px 112px 118px';
-  var HEAD_CELLS = '<div>№ · срок</div><div>Заявитель</div><div>Получатель · цель</div><div>Категория</div><div class="r">Сумма</div><div>Статус</div><div class="r">Оплачено</div><div class="r">К оплате</div><div class="r">Не оплачено</div>';
+  // Получателю — самая широкая колонка: длинные названия («Индивидуальный
+  // предприниматель …») переносятся по словам, а не режутся.
+  // «№ · срок» и заявитель с подразделением — в одной колонке, чтобы
+  // освободить место получателю (самая широкая колонка, перенос по словам).
+  var COLS = '120px minmax(260px,1fr) 92px 104px 124px 96px 96px 104px';
+  var HEAD_CELLS = '<div>№ · заявитель</div><div>Получатель · цель</div><div>Категория</div><div class="r">Сумма</div><div>Статус</div><div class="r">Оплачено</div><div class="r">К оплате</div><div class="r">Не оплачено</div>';
 
   // Пакетное решение (change reestr-bulk): в режиме выбора слева колонка
   // отметок, внизу панель (Registry.createSelection, общий с телефоном).
@@ -148,14 +152,15 @@
     }
     var picked = sel.isOn() && sel.has(it.id);
     return '<button type="button" class="row rg-row' + (s.overdue ? ' overdue' : '') + (picked ? ' picked' : '') + '" data-id="' + esc(it.id) + '" style="grid-template-columns:' + cols() + '">' + mark +
-      '<div class="stack" style="gap:1px"><span class="num" style="font-weight:600">' + esc(it.number) + '</span>' + dueCell(it) + '</div>' +
-      '<div class="stack" style="gap:1px;min-width:0"><span class="rg-ellipsis">' + (esc(it.applicant) || '<span class="hint">—</span>') + '</span><span class="hint rg-ellipsis">' + esc(it.unitName) + '</span></div>' +
-      '<div class="stack" style="gap:1px;min-width:0"><span class="rg-ellipsis" style="font-weight:600">' + esc(it.recipient) +
+      '<div class="stack" style="gap:1px;min-width:0"><span class="num" style="font-weight:600">' + esc(it.number) + '</span>' + dueCell(it) +
+        '<span class="hint rg-ellipsis" title="' + esc((it.applicant ? it.applicant + ' · ' : '') + it.unitName) + '">' + (it.applicant ? esc(it.applicant) + ' · ' : '') + esc(it.unitName) + '</span></div>' +
+      '<div class="stack" style="gap:1px;min-width:0"><span class="rg-recipient">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') +
         (fileCount ? ' <span class="rg-filecount" title="Файлов: ' + fileCount + '">' + fileCount + '</span>' : '') + '</span>' +
         '<span class="hint rg-ellipsis">' + esc(it.purpose) + '</span></div>' +
       '<div class="rg-ellipsis">' + esc(it.categoryName) + '</div>' +
       '<div class="r num" style="font-weight:600">' + R.money(it.amount) + '</div>' +
-      '<div class="stack" style="gap:2px;align-items:flex-start;min-width:0">' + R.statusChip(it) + comment + '</div>' +
+      '<div class="stack" style="gap:2px;align-items:flex-start;min-width:0">' + R.statusChip(it) +
+        (s.status === 'ready' ? '<span class="rg-ready-age">' + esc(R.readyAge(it)) + '</span>' : '') + comment + '</div>' +
       '<div class="r num">' + (s.paid ? R.money(s.paid) + (it.lastPaidOn ? '<div class="hint">' + R.ddmm(it.lastPaidOn) + '</div>' : '') : '<span class="hint">—</span>') + '</div>' +
       '<div class="r num">' + (s.toPay === null ? '<span class="hint">—</span>' : R.money(s.toPay)) + '</div>' +
       '<div class="r num" style="font-weight:600' + (s.overdue ? ';color:var(--bad-fg)' : '') + '">' + R.money(s.unpaid) + '</div>' +
@@ -173,13 +178,13 @@
         var g = data.totals.groups[currentGroup];
         var bulkBtn = '';
         var gi = items.filter(function (x) { return x.state.group === currentGroup; });
-        if ((currentGroup === 0 || currentGroup === 2) && gi.some(sel.selectable)) {
+        if (R.BULK_GROUPS.indexOf(currentGroup) !== -1 && gi.some(sel.selectable)) {
           bulkBtn = sel.isOn()
             ? '<button type="button" class="btn ghost sm" data-bulk-group="' + currentGroup + '">' + (sel.groupAllPicked(gi) ? 'Снять все' : 'Выбрать все') + '</button>'
             : '<button type="button" class="btn ghost sm" data-bulk-enter="1">Выбрать</button>';
         }
         html += '<div class="rg-group"><span>' + R.GROUP_LABELS[currentGroup] + ' · ' + g.count + '</span>' +
-          '<span class="rg-group-right"><span class="num">' + (currentGroup === 3 ? '' : 'не оплачено ' + R.money(g.sum)) + '</span>' + bulkBtn + '</span></div>';
+          '<span class="rg-group-right"><span class="num">' + (currentGroup === R.GROUP.CLOSED ? '' : 'не оплачено ' + R.money(g.sum)) + '</span>' + bulkBtn + '</span></div>';
       }
       html += rowHtml(it);
     });
@@ -189,7 +194,7 @@
         return a;
       }, { amount: 0, paid: 0, toPay: 0, unpaid: 0 });
       html += '<div class="row rg-total" style="grid-template-columns:' + cols() + '">' + (sel.isOn() ? '<div></div>' : '') +
-        '<div>Итого</div><div class="hint">' + zayavok(items.length) + '</div><div></div><div></div>' +
+        '<div class="stack" style="gap:1px"><span>Итого</span><span class="hint">' + zayavok(items.length) + '</span></div><div></div><div></div>' +
         '<div class="r num">' + R.money(sum.amount) + '</div><div></div>' +
         '<div class="r num">' + R.money(sum.paid) + '</div><div class="r num">' + R.money(sum.toPay) + '</div>' +
         '<div class="r num">' + R.money(sum.unpaid) + '</div></div>';
@@ -530,15 +535,32 @@
         '<span' + (s.unpaid > 0 && s.overdue ? ' class="rg-overdue-text"' : '') + '>Не оплачено <b class="num">' + R.rub(s.unpaid) + '</b></span></div>' +
       '<div class="bar"><i style="width:' + pct + '%;background:#2F7A52"></i></div>' +
       (rows || '<p class="hint" style="margin:0">Оплат пока нет.</p>') +
-      (s.unpaid > 0
-        ? '<form id="rg-pay-form" class="rg-pay-add">' +
-            '<div class="field"><label for="rg-pay-date">Дата оплаты</label><input id="rg-pay-date" type="date" class="inp" max="' + esc(data ? data.today : R.localDateStr()) + '" value="' + esc(data ? data.today : R.localDateStr()) + '"></div>' +
-            '<div class="field"><label for="rg-pay-amount">Сумма, ₽</label><input id="rg-pay-amount" class="inp num" inputmode="decimal"></div>' +
-            '<button type="submit" class="btn" style="align-self:end">+ Оплата</button>' +
-          '</form>' : '') +
+      payActionHtml(it) +
       '<p class="banner" id="rg-pay-error" hidden></p>' +
       '<input type="file" id="rg-pay-file-input" accept="image/jpeg,image/png,image/webp,application/pdf" hidden>' +
     '</div>';
+  }
+
+  // Одно место под действие (change reestr-payment-order): у «Одобрена» /
+  // «Частично» — кнопка «Платёжка готова», у «Платёжка готова» — форма
+  // «+ Оплата» и «Отменить платёжку». Одна платёжка — одна оплата.
+  function payActionHtml(it) {
+    var s = it.state;
+    if (!(s.unpaid > 0)) return '';
+    if (s.status !== 'ready') {
+      return '<div class="rg-po-block">' +
+        (it.paymentOrderCancelNote ? '<p class="hint" style="margin:0">Платёжка отменена: ' + esc(it.paymentOrderCancelNote) + '</p>' : '') +
+        '<button type="button" class="btn pri rg-ready-btn" id="rg-po-mark" style="width:100%;height:44px">Платёжка готова</button></div>';
+    }
+    var today = esc(data ? data.today : R.localDateStr());
+    return '<div class="rg-po-block">' +
+      '<p class="hint" style="margin:0">' + R.statusChip(it) + ' <span class="rg-ready-age">' + esc(R.readyAge(it)) + '</span> — внесите оплату, когда деньги ушли.</p>' +
+      '<form id="rg-pay-form" class="rg-pay-add">' +
+        '<div class="field"><label for="rg-pay-date">Дата оплаты</label><input id="rg-pay-date" type="date" class="inp" max="' + today + '" value="' + today + '"></div>' +
+        '<div class="field"><label for="rg-pay-amount">Сумма, ₽</label><input id="rg-pay-amount" class="inp num" inputmode="decimal"></div>' +
+        '<button type="submit" class="btn" style="align-self:end">+ Оплата</button>' +
+      '</form>' +
+      '<button type="button" class="btn ghost sm rg-po-cancel" id="rg-po-cancel" style="align-self:flex-start">Отменить платёжку</button></div>';
   }
 
   function renderCard() {
@@ -546,7 +568,7 @@
     var el = document.getElementById('rg-drawer');
     el.innerHTML =
       '<div class="drawer-head"><div class="stack" style="gap:2px"><span class="cap">' + esc(it.number) + ' · создана ' + R.tsDate(it.createdAt) + '</span>' +
-        '<h2 id="rg-drawer-title" class="rg-ellipsis">' + esc(it.recipient) + '</h2></div>' +
+        '<h2 id="rg-drawer-title" class="rg-recipient-title">' + esc(it.recipient) + R.copyBtn(it.recipient, 'получателя') + '</h2></div>' +
         '<button type="button" class="btn ghost icon" id="rg-close" aria-label="Закрыть">✕</button></div>' +
       '<div class="drawer-body">' +
         decisionHtml(it) +
@@ -585,6 +607,20 @@
       drawer.decisionDraft = null;
       return R.api.post('/requests/' + encodeURIComponent(it.id) + '/decision', body);
     }));
+
+    // платёжка
+    var poMark = document.getElementById('rg-po-mark');
+    if (poMark) poMark.addEventListener('click', act('rg-pay-error', function () {
+      return R.api.post('/requests/' + encodeURIComponent(it.id) + '/payment-order');
+    }));
+    var poCancel = document.getElementById('rg-po-cancel');
+    if (poCancel) poCancel.addEventListener('click', function (e) {
+      var note = R.askCancelReason();
+      if (note === null) return;
+      act('rg-pay-error', function () {
+        return R.api.post('/requests/' + encodeURIComponent(it.id) + '/payment-order/cancel', { note: note });
+      })(e);
+    });
 
     // оплаты
     var payForm = document.getElementById('rg-pay-form');

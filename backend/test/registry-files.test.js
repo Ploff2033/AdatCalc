@@ -96,7 +96,7 @@ test('Оплата с платёжкой; новая платёжка замен
   const admin = await cookieFor('admin');
   const id = await newRequest();
   await registry.decide(id, { decision: 'approved' });
-  const withPay = await registry.addPayment(id, { amount: 500, paidOn: calc.todayMoscow() });
+  const withPay = await fx.pay(id, { amount: 500, paidOn: calc.todayMoscow() });
   const payId = withPay.payments[0].id;
   const r1 = await call('POST', '/api/registry/payments/' + payId + '/file?name=pp1.pdf', { cookie: admin, raw: PDF(1000) });
   assert.strictEqual(r1.status, 201);
@@ -134,7 +134,7 @@ test('Удаление оплаты удаляет и её платёжку', as
   const admin = await cookieFor('admin');
   const id = await newRequest();
   await registry.decide(id, { decision: 'approved' });
-  const payId = (await registry.addPayment(id, { amount: 500, paidOn: calc.todayMoscow() })).payments[0].id;
+  const payId = (await fx.pay(id, { amount: 500, paidOn: calc.todayMoscow() })).payments[0].id;
   const file = (await call('POST', '/api/registry/payments/' + payId + '/file', { cookie: admin, raw: JPG })).data.payments[0].file;
   await call('DELETE', '/api/registry/payments/' + payId, { cookie: admin });
   assert.strictEqual((await call('GET', file.url)).status, 404);
@@ -146,11 +146,14 @@ test('Подбор ссылки: произвольное имя → 404', async
   assert.strictEqual((await call('GET', '/uploads/registry/')).status, 404);
 });
 
-test('Учредитель не может загружать и удалять файлы', async (t) => {
+test('Новая заявка по ссылке учредителя: файл прикрепляется и удаляется', async (t) => {
   if (!(await requireDb(t))) return;
   const owner = await registry.getOwnerToken();
   const id = await newRequest();
-  assert.strictEqual((await call('POST', '/api/registry/requests/' + id + '/files', { owner, raw: JPG })).status, 403);
+  const up = await call('POST', '/api/registry/requests/' + id + '/files', { owner, raw: JPG });
+  assert.strictEqual(up.status, 201, JSON.stringify(up.data));
+  const fileId = up.data.files[0].id;
+  assert.strictEqual((await call('DELETE', '/api/registry/files/' + fileId, { owner })).status, 200);
 });
 
 test('Чек ДДС: прежние правила — фото больше 3 МБ отклоняется', async () => {

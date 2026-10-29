@@ -28,8 +28,10 @@ async function requireDb(t) {
 }
 
 async function resetRegistry() {
-  await db.pool.query('TRUNCATE pay_files, pay_payments, pay_requests, pay_categories, pay_units RESTART IDENTITY CASCADE');
-  await db.pool.query('UPDATE config SET telegram_registry_chat_id = NULL WHERE id = 1');
+  await db.pool.query('TRUNCATE pay_notify_messages, pay_files, pay_payments, pay_requests, pay_categories, pay_units RESTART IDENTITY CASCADE');
+  await db.pool.query(`UPDATE config SET telegram_registry_chat_id = NULL, telegram_registry_thread_id = NULL,
+    telegram_registry_owner_username = NULL, telegram_registry_buh_chat_id = NULL, telegram_registry_buh_thread_id = NULL,
+    telegram_registry_buh_username = NULL, telegram_registry_events = NULL WHERE id = 1`);
   // Сбой отправки теперь кладёт сообщение в очередь (change
   // telegram-proxy-failover) — не тащим его в следующий тест.
   await db.pool.query('TRUNCATE telegram_outbox RESTART IDENTITY');
