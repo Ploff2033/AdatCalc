@@ -43,7 +43,7 @@
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'putevye-listy-' + new Date().toISOString().slice(0, 10) + (blob.type.indexOf('zip') >= 0 ? '.zip' : '.xlsx');
+    a.download = 'putevye-listy-' + new Date().toISOString().slice(0, 10) + '.zip';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -571,21 +571,12 @@ const routes = [
       // Форма №4-С (не 4-П) — см. обсуждение перехода. Группировка и
       // разбиение по 3 поездки на документ — в buildWaybill4sDocuments.
       const shaped = await buildWaybill4sDocuments(withTrips);
-      if (shaped.length === 1) {
-        const buf = await waybillXlsx4s.buildDocumentWorkbook(shaped[0], organization);
-        res.writeHead(200, {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': contentDispositionHeader(waybillXlsx4s.waybillFileName(shaped[0]))
-        });
-        res.end(buf);
-      } else {
-        const buf = await waybillXlsx4s.buildWaybillsZip(shaped, organization);
-        res.writeHead(200, {
-          'Content-Type': 'application/zip',
-          'Content-Disposition': 'attachment; filename="putevye-listy.zip"'
-        });
-        res.end(buf);
-      }
+      const buf = await waybillXlsx4s.buildWaybillsZip(shaped, organization);
+      res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': 'attachment; filename="putevye-listy.zip"'
+      });
+      res.end(buf);
     }
   },
 

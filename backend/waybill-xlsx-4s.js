@@ -338,10 +338,18 @@ function waybillFileName(doc) {
 
 async function buildWaybillsZip(docs, organization) {
   var archive = new JSZip();
-  for (var i = 0; i < docs.length; i++) {
-    var buf = await buildDocumentWorkbook(docs[i], organization);
-    archive.file(waybillFileName(docs[i]), buf);
+  var registryXlsx = require('./waybill-registry-xlsx');
+  var sortedDocs = docs.slice().sort(function (a, b) {
+    var byDate = String(a.tripDate || '').localeCompare(String(b.tripDate || ''));
+    if (byDate) return byDate;
+    return (Number(a.docNumber) || 0) - (Number(b.docNumber) || 0);
+  });
+  for (var i = 0; i < sortedDocs.length; i++) {
+    var doc = sortedDocs[i];
+    var buf = await buildDocumentWorkbook(doc, organization);
+    archive.file(registryXlsx.monthFolder(doc) + '/' + waybillFileName(doc), buf);
   }
+  archive.file('Реестр путевых.xlsx', registryXlsx.buildRegistryWorkbook(sortedDocs));
   return archive.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
