@@ -62,14 +62,22 @@ BEGIN
     IF EXISTS (
       SELECT 1
         FROM recipes r
-        JOIN recipe_items cement_item ON cement_item.recipe_id = r.id
-        JOIN materials cement ON cement.id = cement_item.material_id
         JOIN recipe_items p1_item ON p1_item.recipe_id = r.id
         JOIN materials p1 ON p1.id = p1_item.material_id
        WHERE r.plant_id = plant_row.id
          AND p1.name = 'Добавка П1'
          AND r.name NOT LIKE '% Зима'
-         AND (cement.name <> 'Цемент' OR cement.unit <> 'т' OR p1.unit <> 'кг')
+         AND (
+           p1.unit <> 'кг'
+           OR NOT EXISTS (
+             SELECT 1
+               FROM recipe_items cement_item
+               JOIN materials cement ON cement.id = cement_item.material_id
+              WHERE cement_item.recipe_id = r.id
+                AND cement.name = 'Цемент'
+                AND cement.unit = 'т'
+           )
+         )
     ) THEN
       RAISE EXCEPTION 'Для «%» ожидаются цемент в тоннах и П1 в килограммах', plant_row.name;
     END IF;
