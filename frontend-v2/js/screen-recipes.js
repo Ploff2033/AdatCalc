@@ -7,7 +7,7 @@
   // модалку.
   var HTML =
     '<div class="page-head"><div class="page-title-group"><span class="cap" id="rc-scope">Смеси</span><h1>Смеси</h1></div><div class="page-head-actions"><button class="btn pri sm" id="rc-add-btn">Новая смесь</button></div></div>' +
-    '<div style="display:grid;grid-template-columns:250px minmax(0,1fr) 280px;gap:16px;align-items:start;flex:1;min-height:0" class="rc-grid">' +
+    '<div style="display:grid;grid-template-columns:250px minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;flex:1;min-height:0" class="rc-grid">' +
       '<section class="card" style="display:flex;flex-direction:column;overflow:hidden;align-self:start">' +
         '<div style="padding:12px 14px;border-bottom:1px solid var(--border-soft)"><input class="inp" id="rc-search" placeholder="Поиск смеси" aria-label="Поиск смеси"></div>' +
         '<div id="rc-list"></div>' +
@@ -25,6 +25,7 @@
         '<div class="spread" style="padding:12px 22px 16px;margin:0 6px;font-weight:600"><span>Материалы на 1 м³</span><span class="num" id="rc-items-total">—</span></div>' +
       '</section>' +
       '<aside class="card" style="display:flex;flex-direction:column;overflow:hidden;align-self:start;border-color:var(--ink)" id="rc-summary" hidden>' +
+        '<div style="padding:12px 18px;border-bottom:1px solid var(--border-soft)"><button type="button" class="btn ghost sm" id="rc-active-toggle" style="width:100%"></button></div>' +
         '<div style="padding:16px 18px;background:var(--sidebar-bg);color:#fff" class="stack" style="gap:2px"><span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted);font-weight:600" id="rc-summary-scope">Себестоимость 1 м³</span><span class="num" id="rc-summary-cost" style="font-size:28px;font-weight:500">—</span></div>' +
         '<div class="stack g8" style="padding:16px 18px">' +
           '<div class="spread" style="font-size:13px"><span style="color:var(--ink-soft)">Материалы</span><span class="num" id="rc-sum-materials">—</span></div>' +
@@ -36,13 +37,14 @@
           '<div class="spread" style="font-size:13px"><span style="color:var(--ink-soft)">Цена безубыточности</span><span class="num" id="rc-sum-breakeven">—</span></div>' +
         '</div>' +
         '<div class="spread" id="rc-sum-margin-box" style="padding:14px 18px;border-top:1px solid var(--border-soft)"><span style="font-weight:600">Запас прочности</span><span class="num" id="rc-sum-margin" style="font-weight:600;font-size:18px">—</span></div>' +
-        '<div style="padding:14px 18px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;border-top:1px solid var(--border-soft)"><button type="button" class="btn ghost sm" id="rc-delete-btn" style="color:#8C2217;border-color:#E3B8B1">Удалить</button><button type="button" class="btn pri sm" id="rc-save-btn">Сохранить смесь</button></div>' +
+        '<div style="padding:14px 18px;display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:8px;border-top:1px solid var(--border-soft)"><button type="button" class="btn ghost sm" id="rc-delete-btn" style="color:#8C2217;border-color:#E3B8B1">Удалить</button><button type="button" class="btn ghost sm" id="rc-copy-btn">Копировать</button><button type="button" class="btn pri sm" id="rc-save-btn">Сохранить смесь</button></div>' +
       '</aside>' +
     '</div>';
 
   var VAT_MULT = 1.22;
   var searchValue = '';
   var selectedId = null; // null = создаём новую
+  var draftActive = true;
   var items = []; // [{materialId, qty}]
   var formError = null;
 
@@ -74,8 +76,9 @@
       var margin = r.salePrice > 0 ? ((r.salePrice - cost) / r.salePrice) * 100 : null;
       var mc = margin === null ? 'var(--muted)' : (margin < 8 ? '#6E4700' : '#1C1D1B');
       var active = r.id === selectedId;
-      return '<a href="#" class="lnk" data-recipe-id="' + r.id + '" style="display:flex;flex-direction:column;gap:4px;padding:12px 16px;border-bottom:1px solid var(--border-soft);border-left:3px solid ' + (active ? 'var(--accent)' : 'transparent') + ';background:' + (active ? 'var(--act-bg)' : 'transparent') + '">' +
+      return '<a href="#" class="lnk" data-recipe-id="' + r.id + '" style="display:flex;flex-direction:column;gap:4px;padding:12px 16px;border-bottom:1px solid var(--border-soft);border-left:3px solid ' + (active ? 'var(--accent)' : 'transparent') + ';background:' + (active ? 'var(--act-bg)' : 'transparent') + ';opacity:' + (r.isActive === false ? '.62' : '1') + '">' +
         '<div class="spread"><span style="font-weight:600">' + r.name + '</span><span class="num" style="font-weight:500">' + Format.fmt(r.salePrice, 0) + '</span></div>' +
+        '<div class="hint" style="font-size:11px">' + (r.isActive === false ? 'Не предлагается в новых заказах' : 'Доступна в новых заказах') + '</div>' +
         '<div class="spread"><span class="num hint">себест. ' + Format.fmt(cost, 0) + '</span><span class="num" style="font-size:12px;font-weight:600;color:' + mc + '">' + (margin === null ? '—' : 'запас ' + Format.fmtNum(margin, 1, '%')) + '</span></div>' +
       '</a>';
     }).join('');
@@ -181,11 +184,14 @@
 
   function selectRecipe(recipe) {
     selectedId = recipe.id;
+    draftActive = recipe.isActive !== false;
     items = recipe.items.map(function (i) { return { materialId: i.materialId, qty: i.qty }; });
     document.getElementById('rc-f-name').value = recipe.name;
     NumericInput.setFormattedValue(document.getElementById('rc-f-price-net'), recipe.salePrice);
     NumericInput.setFormattedValue(document.getElementById('rc-f-price-gross'), recipe.salePrice * VAT_MULT);
     document.getElementById('rc-delete-btn').hidden = false;
+    document.getElementById('rc-copy-btn').hidden = false;
+    renderActiveToggle();
     document.getElementById('rc-save-btn').textContent = 'Сохранить смесь';
     document.getElementById('rc-detail').hidden = false;
     document.getElementById('rc-summary').hidden = false;
@@ -199,16 +205,46 @@
       return;
     }
     selectedId = null;
+    draftActive = true;
     items = [{ materialId: State.data.materials[0].id, qty: '' }];
     document.getElementById('rc-f-name').value = '';
     document.getElementById('rc-f-price-net').value = '';
     document.getElementById('rc-f-price-gross').value = '';
     document.getElementById('rc-delete-btn').hidden = true;
+    document.getElementById('rc-copy-btn').hidden = true;
+    renderActiveToggle();
     document.getElementById('rc-save-btn').textContent = 'Добавить смесь';
     document.getElementById('rc-detail').hidden = false;
     document.getElementById('rc-summary').hidden = false;
     renderItems();
     renderList();
+  }
+
+  function copyRecipe() {
+    var source = (State.data.recipes || []).find(function (r) { return r.id === selectedId; });
+    if (!source) return;
+    selectedId = null;
+    draftActive = false;
+    items = source.items.map(function (i) { return { materialId: i.materialId, qty: i.qty }; });
+    document.getElementById('rc-f-name').value = source.name;
+    NumericInput.setFormattedValue(document.getElementById('rc-f-price-net'), source.salePrice);
+    NumericInput.setFormattedValue(document.getElementById('rc-f-price-gross'), source.salePrice * VAT_MULT);
+    document.getElementById('rc-delete-btn').hidden = true;
+    document.getElementById('rc-copy-btn').hidden = true;
+    document.getElementById('rc-save-btn').textContent = 'Сохранить копию';
+    document.getElementById('rc-detail').hidden = false;
+    document.getElementById('rc-summary').hidden = false;
+    renderActiveToggle();
+    renderItems();
+    renderList();
+  }
+
+  function renderActiveToggle() {
+    var button = document.getElementById('rc-active-toggle');
+    if (!button) return;
+    button.textContent = draftActive ? '✓ Доступна в новых заказах' : '○ Не предлагать в новых заказах';
+    button.setAttribute('aria-pressed', draftActive ? 'true' : 'false');
+    button.title = selectedId ? 'Изменение сохранится вместе с рецептом' : 'Новая копия будет сохранена с этим статусом';
   }
 
   async function handleSave() {
@@ -218,6 +254,7 @@
       plantId: Plant.currentPlantId(),
       name: name,
       salePrice: NumericInput.parseNumber(document.getElementById('rc-f-price-net').value) || 0,
+      isActive: draftActive,
       items: items.filter(function (i) { return i.materialId; }).map(function (i) { return { materialId: i.materialId, qty: i.qty || 0 }; })
     };
     var btn = document.getElementById('rc-save-btn');
@@ -275,6 +312,8 @@
     document.getElementById('rc-search').addEventListener('input', function () { searchValue = this.value; renderList(); });
     document.getElementById('rc-save-btn').addEventListener('click', handleSave);
     document.getElementById('rc-delete-btn').addEventListener('click', handleDelete);
+    document.getElementById('rc-copy-btn').addEventListener('click', copyRecipe);
+    document.getElementById('rc-active-toggle').addEventListener('click', function () { draftActive = !draftActive; renderActiveToggle(); });
     NumericInput.attach(document.getElementById('rc-f-price-net'));
     NumericInput.attach(document.getElementById('rc-f-price-gross'));
     document.getElementById('rc-f-price-net').addEventListener('input', function () {

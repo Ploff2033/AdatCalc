@@ -169,11 +169,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('#m-delivery-mode button'), function (b) { b.disabled = disabled; });
   }
 
-  function populateSelect(select, items, preferredId, labelFn) {
+  function populateSelect(select, items, preferredId, labelFn, emptyLabel) {
     select.innerHTML = '';
     var placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = '— выберите —';
+    placeholder.textContent = items.length ? '— выберите —' : (emptyLabel || '— выберите —');
     select.appendChild(placeholder);
     items.forEach(function (item) {
       var opt = document.createElement('option');
@@ -354,7 +354,9 @@
     document.getElementById('m-hire-rate-field').hidden = !hired;
     var hireRate = hired ? (NumericInput.parseNumber(hireRateInput.value) || 0) : 0;
 
-    selectedRecipeId = populateSelect(recipeSelect, data.recipes, selectedRecipeId || recipeSelect.value);
+    var editingOrder = !!(OrderEdit.current && OrderEdit.current());
+    var recipeOptions = editingOrder ? data.recipes : data.recipes.filter(function (r) { return r.isActive !== false; });
+    selectedRecipeId = populateSelect(recipeSelect, recipeOptions, selectedRecipeId || recipeSelect.value, null, 'Нет доступных рецептов');
     selectedMixerId = populateSelect(mixerSelect, data.mixers, selectedMixerId || mixerSelect.value, mixerLabel);
     populateClientSelect();
     var recipe = data.recipes.find(function (r) { return r.id === selectedRecipeId; });

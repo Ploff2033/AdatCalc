@@ -12,8 +12,15 @@ async function rowToRecipe(client, row) {
     plantId: row.plant_id,
     name: row.name,
     salePrice: Number(row.sale_price),
+    isActive: row.is_active !== false,
     items: items.map((it) => ({ materialId: it.material_id, qty: Number(it.qty) }))
   };
+}
+
+function activeValue(value, fallback) {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'boolean') throw new HttpError(400, 'isActive должен быть логическим значением');
+  return value;
 }
 
 async function validateItems(client, items, plantId) {
@@ -62,10 +69,11 @@ async function create(body) {
 
     const name = str(body.name, 'name');
     const salePrice = num(body.salePrice, 'salePrice');
+    const isActive = activeValue(body.isActive, true);
     const items = await validateItems(client, body.items, plantId);
 
     const id = db.genId('rec');
-    await client.query('INSERT INTO recipes (id, plant_id, name, sale_price) VALUES ($1,$2,$3,$4)', [id, plantId, name, salePrice]);
+    await client.query('INSERT INTO recipes (id, plant_id, name, sale_price, is_active) VALUES ($1,$2,$3,$4,$5)', [id, plantId, name, salePrice, isActive]);
     for (let i = 0; i < items.length; i++) {
       await client.query(
         'INSERT INTO recipe_items (recipe_id, material_id, qty, position) VALUES ($1,$2,$3,$4)',
@@ -95,9 +103,10 @@ async function update(id, body) {
 
     const name = str(body.name, 'name');
     const salePrice = num(body.salePrice, 'salePrice');
+    const isActive = activeValue(body.isActive, existing[0].is_active !== false);
     const items = await validateItems(client, body.items, plantId);
 
-    await client.query('UPDATE recipes SET name=$2, sale_price=$3 WHERE id=$1', [id, name, salePrice]);
+    await client.query('UPDATE recipes SET name=$2, sale_price=$3, is_active=$4 WHERE id=$1', [id, name, salePrice, isActive]);
     await client.query('DELETE FROM recipe_items WHERE recipe_id = $1', [id]);
     for (let i = 0; i < items.length; i++) {
       await client.query(
